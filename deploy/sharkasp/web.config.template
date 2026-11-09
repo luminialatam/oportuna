@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <system.webServer>
+    <handlers>
+      <add name="httpplatformhandler" path="*" verb="*" modules="httpPlatformHandler" resourceType="Unspecified" />
+    </handlers>
+    <httpPlatform
+      processPath="__NODE_EXE_ABSOLUTE_PATH_FROM_SHARKASP_PANEL__"
+      arguments="dist-server\server\src\sharkAspSmokeServer.js"
+      startupTimeLimit="60"
+      startupRetryCount="2"
+      processesPerApplication="1"
+      forwardWindowsAuthToken="false"
+      stdoutLogEnabled="false">
+      <environmentVariables>
+        <environmentVariable name="PORT" value="%HTTP_PLATFORM_PORT%" />
+        <environmentVariable name="HOST" value="127.0.0.1" />
+      </environmentVariables>
+    </httpPlatform>
+  </system.webServer>
+</configuration>

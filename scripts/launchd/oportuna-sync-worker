@@ -1,0 +1,134 @@
+#!/bin/bash
+set -euo pipefail
+
+PROJECT_ROOT='/Users/stef/Documents/Documentos - MacBook Pro de Stef/Stef/oportuna'
+NODE_BIN='/Users/stef/.nvm/versions/node/v24.16.0/bin/node'
+LABEL='com.oportuna.sync-worker'
+DOMAIN="gui/$(id -u)"
+TEMPLATE="$PROJECT_ROOT/scripts/launchd/$LABEL.plist"
+SUPERVISOR="$PROJECT_ROOT/scripts/launchd/supervise-sync-worker.mjs"
+AGENT_DIR="$HOME/Library/LaunchAgents"
+AGENT_PATH="$AGENT_DIR/$LABEL.plist"
+
+agent_loaded(){ launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
+
+worker_pids(){
+  python3 - "$PROJECT_ROOT" <<'PY'
+import subprocess,sys
+root=sys.argv[1]
+listing=subprocess.run(['ps','-axo','pid=,command='],capture_output=True,text=True).stdout
+for line in listing.splitlines():
+    fields=line.strip().split(None,1)
+    if len(fields)!=2: continue
+    pid,command=fields
+    if root not in command or 'tsx/dist/preflight.cjs' not in command or 'server/src/index.ts' not in command: continue
+    raw=subprocess.run(['ps','eww','-p',pid,'-o','command='],capture_output=True,text=True).stdout
+    if 'PROCESS_ROLE=sync-worker' in raw: print(pid)
+PY
+}
+
+worker_pid_list(){ worker_pids | awk 'NF {if (count++) printf " "; printf "%s", $1}'; }
+
+active_jobs(){ "$NODE_BIN" --import "$PROJECT_ROOT/node_modules/tsx/dist/loader.mjs" "$PROJECT_ROOT/scripts/launchd/check-sync-idle.mjs"; }
+
+require_idle(){
+  local count
+  count="$(active_jobs)" || { echo 'No se pudo comprobar MySQL local; transición cancelada.' >&2; exit 2; }
+  if [[ "$count" != '0' ]]; then
+    echo "Hay $count trabajo(s) pendiente(s) o activo(s); deja que terminen y vuelve a intentarlo." >&2
+    exit 2
+  fi
+}
+
+copy_and_bootstrap(){
+  mkdir -p "$AGENT_DIR"
+  cp "$TEMPLATE" "$AGENT_PATH"
+  chmod 600 "$AGENT_PATH"
+  if ! launchctl bootstrap "$DOMAIN" "$AGENT_PATH"; then
+    python3 -c 'from pathlib import Path; Path(__import__("sys").argv[1]).unlink(missing_ok=True)' "$AGENT_PATH"
+    echo 'launchd no aceptó el servicio.' >&2
+    return 1
+  fi
+}
+
+wait_for_worker_exit(){
+  local pid="$1"
+  for _ in {1..15}; do
+    if ! kill -0 "$pid" 2>/dev/null; then return 0; fi
+    sleep 1
+  done
+  echo "El worker PID $pid no cerró en 15 segundos; no se iniciará otro." >&2
+  return 1
+}
+
+show_status(){
+  local loaded='false' count pids scheduler='false'
+  if agent_loaded; then loaded='true'; scheduler='true'; fi
+  pids="$(worker_pid_list)"
+  count="$(active_jobs 2>/dev/null || echo 'desconocido')"
+  if [[ -n "$pids" ]]; then
+    local first_pid raw
+    first_pid="${pids%% *}"
+    raw="$(ps eww -p "$first_pid" -o command= 2>/dev/null || true)"
+    [[ "$raw" == *'SYNC_SCHEDULER_ENABLED=true'* ]] && scheduler='true'
+  fi
+  echo "LaunchAgent cargado: $loaded"
+  echo "Scheduler habilitado: $scheduler"
+  echo "Worker sync-worker PID(s): ${pids:-ninguno}"
+  echo "Trabajos pendientes/activos en MySQL: $count"
+  if [[ -f "$AGENT_PATH" ]]; then echo "Plist instalado: $AGENT_PATH"; else echo 'Plist instalado: no'; fi
+  SYNC_SCHEDULER_ENABLED="$scheduler" "$NODE_BIN" --import "$PROJECT_ROOT/node_modules/tsx/dist/loader.mjs" "$PROJECT_ROOT/scripts/launchd/show-sync-status.mjs" || true
+  echo "Logs: $HOME/Library/Logs/Oportuna/sync-worker.log (5 MiB × 5 archivos máximo)"
+}
+
+case "${1:-status}" in
+  status)
+    show_status
+    ;;
+  start)
+    if agent_loaded; then echo 'El LaunchAgent ya está cargado.'; exit 0; fi
+    existing="$(worker_pid_list)"
+    if [[ -n "$existing" ]]; then echo "Ya hay un sync-worker ($existing); usa replace tras confirmar que no haya trabajo activo." >&2; exit 2; fi
+    if ! copy_and_bootstrap; then
+      nohup "$NODE_BIN" "$SUPERVISOR" >/dev/null 2>&1 &
+      echo "Se restauró un sync-worker de sesión como respaldo (supervisor PID $!)." >&2
+      exit 1
+    fi
+    echo 'LaunchAgent iniciado.'
+    ;;
+  replace)
+    if agent_loaded; then echo 'El LaunchAgent ya está cargado; no se reemplazará.' >&2; exit 2; fi
+    require_idle
+    existing="$(worker_pid_list)"
+    if [[ -n "$existing" ]]; then
+      if [[ "$existing" == *' '* ]]; then echo "Hay más de un sync-worker ($existing); transición cancelada." >&2; exit 2; fi
+      echo "Reemplazando worker de sesión PID $existing después de verificar MySQL inactivo."
+      kill -TERM "$existing"
+      wait_for_worker_exit "$existing"
+    fi
+    copy_and_bootstrap
+    echo 'LaunchAgent iniciado tras la transición controlada.'
+    ;;
+  stop)
+    require_idle
+    if agent_loaded; then
+      existing="$(worker_pid_list)"
+      if [[ "$existing" == *' '* ]]; then echo "Hay más de un sync-worker ($existing); no se detuvo ninguno." >&2; exit 2; fi
+      launchctl bootout "$DOMAIN/$LABEL"
+      if [[ -n "$existing" ]]; then wait_for_worker_exit "$existing"; fi
+      python3 -c 'from pathlib import Path; Path(__import__("sys").argv[1]).unlink(missing_ok=True)' "$AGENT_PATH"
+      echo 'LaunchAgent detenido y descargado.'
+    else
+      existing="$(worker_pid_list)"
+      if [[ -z "$existing" ]]; then echo 'No hay un sync-worker activo.'; exit 0; fi
+      if [[ "$existing" == *' '* ]]; then echo "Hay más de un sync-worker ($existing); no se detuvo ninguno." >&2; exit 2; fi
+      kill -TERM "$existing"
+      wait_for_worker_exit "$existing"
+      echo "Worker de sesión PID $existing detenido después de verificar MySQL inactivo."
+    fi
+    ;;
+  *)
+    echo "Uso: $0 {status|start|replace|stop}" >&2
+    exit 64
+    ;;
+esac

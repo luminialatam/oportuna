@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.oportuna.sync-worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/stef/.nvm/versions/node/v24.16.0/bin/node</string>
+    <string>/Users/stef/Documents/Documentos - MacBook Pro de Stef/Stef/oportuna/scripts/launchd/supervise-sync-worker.mjs</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/stef/Documents/Documentos - MacBook Pro de Stef/Stef/oportuna</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>Umask</key>
+  <integer>63</integer>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/stef/.nvm/versions/node/v24.16.0/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PROCESS_ROLE</key>
+    <string>sync-worker</string>
+    <key>SYNC_SCHEDULER_ENABLED</key>
+    <string>true</string>
+    <key>ENRICHMENT_WORKER_ENABLED</key>
+    <string>false</string>
+    <key>ALERT_SCHEDULER_ENABLED</key>
+    <string>false</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/dev/null</string>
+  <key>StandardErrorPath</key>
+  <string>/dev/null</string>
+</dict>
+</plist>

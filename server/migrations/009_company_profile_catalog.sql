@@ -1,0 +1,59 @@
+USE oportuna;
+
+CREATE TABLE IF NOT EXISTS companies (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  nombre_comercial VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS company_local_context (
+  singleton_id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+  company_id BIGINT UNSIGNED NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_company_context_company FOREIGN KEY (company_id)
+    REFERENCES companies (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS commercial_profiles (
+  company_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+  razon_social VARCHAR(255) NULL,
+  rut VARCHAR(20) NULL,
+  actividad TEXT NULL,
+  rubros JSON NOT NULL,
+  regiones JSON NOT NULL,
+  sitio_web VARCHAR(500) NULL,
+  palabras_clave JSON NOT NULL,
+  terminos_excluidos JSON NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_commercial_profile_company FOREIGN KEY (company_id)
+    REFERENCES companies (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS company_search_preferences (
+  company_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+  estados JSON NOT NULL,
+  regiones JSON NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_company_search_preferences_company FOREIGN KEY (company_id)
+    REFERENCES companies (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS company_products (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  nombre VARCHAR(255) NOT NULL,
+  categoria VARCHAR(160) NULL,
+  descripcion TEXT NULL,
+  palabras_clave JSON NOT NULL,
+  sinonimos JSON NOT NULL,
+  terminos_relacionados JSON NULL,
+  aplicaciones JSON NOT NULL,
+  exclusiones JSON NOT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_company_products_active (company_id,activo),
+  CONSTRAINT fk_company_product_company FOREIGN KEY (company_id)
+    REFERENCES companies (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

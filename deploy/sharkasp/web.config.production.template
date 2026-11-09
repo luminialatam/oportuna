@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <system.webServer>
+        <handlers>
+            <add name="httpPlatformHandler" path="*" verb="*" modules="httpPlatformHandler" />
+        </handlers>
+        <httpPlatform processPath="node" arguments="sharkasp-bootstrap.mjs" startupTimeLimit="20" startupRetryCount="1" processesPerApplication="1" forwardWindowsAuthToken="false" stdoutLogEnabled="false">
+            <environmentVariables>
+                <environmentVariable name="PORT" value="%HTTP_PLATFORM_PORT%" />
+                <environmentVariable name="NODE_ENV" value="production" />
+            </environmentVariables>
+        </httpPlatform>
+    </system.webServer>
+</configuration>
