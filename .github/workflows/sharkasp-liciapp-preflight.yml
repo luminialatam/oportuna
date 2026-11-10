@@ -1,0 +1,69 @@
+name: SharkASP Liciapp preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sharkasp-liciapp-deploy
+  cancel-in-progress: false
+
+jobs:
+  inspect-iis:
+    name: Read-only IIS and Web Deploy check
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - name: Locate Web Deploy
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "$env:ProgramFiles\IIS\Microsoft Web Deploy V3\msdeploy.exe",
+            "${env:ProgramFiles(x86)}\IIS\Microsoft Web Deploy V3\msdeploy.exe"
+          )
+          $msdeploy = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $msdeploy) { throw 'Web Deploy client is not installed on the runner.' }
+          "MSDEPLOY_PATH=$msdeploy" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Authenticate and inspect only Liciapp
+        shell: pwsh
+        env:
+          WEBDEPLOY_USERNAME: ${{ secrets.SHARKASP_LICIAPP_WEBDEPLOY_USERNAME }}
+          WEBDEPLOY_PASSWORD: ${{ secrets.SHARKASP_LICIAPP_WEBDEPLOY_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:WEBDEPLOY_USERNAME) -or [string]::IsNullOrWhiteSpace($env:WEBDEPLOY_PASSWORD)) {
+            throw 'Required Liciapp Web Deploy secrets are not configured.'
+          }
+
+          $endpoint = 'https://win1006.site4now.net:8172/MsDeploy.axd?site=luminiadev-001-site5'
+          $site = 'luminiadev-001-site5'
+          $expectedPath = 'H:\root\home\luminiadev-001\www\Liciapp'
+          $provider = "appHostConfig=$site,computerName=$endpoint,userName=$env:WEBDEPLOY_USERNAME,password=$env:WEBDEPLOY_PASSWORD,authType=Basic"
+          $output = & $env:MSDEPLOY_PATH -verb:dump "-source:$provider" 2>&1 | Out-String
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            throw "Read-only Web Deploy inspection failed (exit $exitCode); no remote files were changed. Raw tool output was suppressed."
+          }
+
+          $start = $output.IndexOf('<appHostConfig', [StringComparison]::OrdinalIgnoreCase)
+          if ($start -lt 0) { throw 'Authenticated response did not contain readable IIS site configuration.' }
+          $xmlText = $output.Substring($start)
+          $document = [xml]$xmlText
+          $siteNode = $document.SelectSingleNode("//*[local-name()='site' and @name='$site']")
+          if (-not $siteNode) { throw 'Authenticated response did not include the expected IIS site.' }
+          $rootVdir = $siteNode.SelectSingleNode(".//*[local-name()='application' and @path='/']/*[local-name()='virtualDirectory' and @path='/']")
+          if (-not $rootVdir) { throw 'IIS site root virtual directory was not present in the response.' }
+          $actualPath = [Environment]::ExpandEnvironmentVariables($rootVdir.GetAttribute('physicalPath'))
+          if (-not [string]::Equals($actualPath.TrimEnd('\'), $expectedPath.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'IIS returned a physical path different from the confirmed Liciapp path; no remote files were changed.'
+          }
+
+          Write-Output 'AUTHENTICATION=PASS'
+          Write-Output "IIS_SITE=$site"
+          Write-Output "PHYSICAL_PATH=$actualPath"
+          $state = $siteNode.GetAttribute('state')
+          if ($state) { Write-Output "SITE_STATE=$state" } else { Write-Output 'SITE_STATE=not exposed by the read-only configuration provider' }
+          Write-Output 'REMOTE_CHANGES=none'
