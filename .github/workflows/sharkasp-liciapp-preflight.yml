@@ -1,10 +1,20 @@
-name: SharkASP Liciapp preflight
+name: SharkASP Liciapp recovery
 
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Read-only diagnosis or encrypted site backup
+        required: true
+        type: choice
+        default: diagnose
+        options:
+          - diagnose
+          - backup
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: sharkasp-liciapp-deploy
@@ -13,6 +23,7 @@ concurrency:
 jobs:
   inspect-iis:
     name: Read-only IIS and Web Deploy check
+    if: ${{ inputs.operation == 'diagnose' }}
     runs-on: windows-2022
     timeout-minutes: 10
     steps:
@@ -37,7 +48,6 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:WEBDEPLOY_USERNAME) -or [string]::IsNullOrWhiteSpace($env:WEBDEPLOY_PASSWORD)) {
             throw 'Required Liciapp Web Deploy secrets are not configured.'
           }
-
           $endpoint = 'https://win1006.site4now.net:8172/MsDeploy.axd?site=luminiadev-001-site5'
           $site = 'luminiadev-001-site5'
           $expectedPath = 'H:\root\home\luminiadev-001\www\Liciapp'
@@ -56,7 +66,6 @@ jobs:
             $errorCode = if ($safe -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
             throw "Read-only Web Deploy authentication/site-scope check failed: category=$category; code=$errorCode; exit=$exitCode. No remote files were changed."
           }
-
           Write-Output 'AUTHENTICATION_AND_IISAPP_SCOPE=PASS'
           Write-Output "IIS_SITE=$site"
           Write-Output 'REMOTE_CHANGES=none'
@@ -69,21 +78,197 @@ jobs:
             Write-Output "APPHOST_CONFIG_READ_EXIT=$configExit"
             exit 0
           }
-
           $start = $configOutput.IndexOf('<appHostConfig', [StringComparison]::OrdinalIgnoreCase)
           if ($start -lt 0) { throw 'Read-only IIS response did not contain parseable site configuration.' }
           $document = [xml]$configOutput.Substring($start)
           $siteNode = $document.SelectSingleNode("//*[local-name()='site' and @name='$site']")
           if (-not $siteNode) { throw 'Read-only IIS response did not include the expected site.' }
           $rootVdir = $siteNode.SelectSingleNode(".//*[local-name()='application' and @path='/']/*[local-name()='virtualDirectory' and @path='/']")
-          if (-not $rootVdir) { throw 'IIS site root virtual directory was not present in the read-only response.' }
+          if (-not $rootVdir) { throw 'IIS site root virtual directory was not present in the response.' }
           $actualPath = [Environment]::ExpandEnvironmentVariables($rootVdir.GetAttribute('physicalPath'))
           if (-not [string]::Equals($actualPath.TrimEnd('\'), $expectedPath.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
             throw 'IIS returned a physical path different from the confirmed Liciapp path; no remote files were changed.'
           }
-
           Write-Output 'APPHOST_CONFIG_READ=PASS'
           Write-Output "PHYSICAL_PATH=$actualPath"
           $state = $siteNode.GetAttribute('state')
           if ($state) { Write-Output "SITE_STATE=$state" } else { Write-Output 'SITE_STATE=not exposed by the read-only configuration provider' }
           Write-Output 'REMOTE_CHANGES=none'
+
+  backup-site:
+    name: Encrypted Liciapp backup (no remote writes)
+    if: ${{ inputs.operation == 'backup' }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Locate Web Deploy and install pinned age tools
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "$env:ProgramFiles\IIS\Microsoft Web Deploy V3\msdeploy.exe",
+            "${env:ProgramFiles(x86)}\IIS\Microsoft Web Deploy V3\msdeploy.exe"
+          )
+          $msdeploy = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $msdeploy) { throw 'Web Deploy client is not installed on the runner.' }
+          $env:GOBIN = Join-Path $env:RUNNER_TEMP 'age-bin'
+          New-Item -ItemType Directory -Path $env:GOBIN -Force | Out-Null
+          go install filippo.io/age/cmd/age@v1.3.2
+          $age = Join-Path $env:GOBIN 'age.exe'
+          if (-not (Test-Path -LiteralPath $age)) { throw 'Pinned age encryption tool was not installed.' }
+          "MSDEPLOY_PATH=$msdeploy" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "AGE_PATH=$age" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Prepare isolated local IIS restore target
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $feature = Get-WindowsFeature -Name Web-Server
+          if (-not $feature.Installed) {
+            $result = Install-WindowsFeature -Name Web-Server -IncludeManagementTools
+            if (-not $result.Success) { throw 'Could not enable temporary IIS on the isolated runner.' }
+          }
+          $appcmd = Join-Path $env:WINDIR 'System32\inetsrv\appcmd.exe'
+          if (-not (Test-Path -LiteralPath $appcmd)) { throw 'Temporary IIS appcmd is unavailable on the runner.' }
+          $siteName = 'OportunaBackupRestoreTest'
+          $root = Join-Path $env:RUNNER_TEMP ('oportuna-restore-check-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          $listener.Start(); $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port; $listener.Stop()
+          & $appcmd add site "/name:$siteName" "/bindings:http/127.0.0.1:${port}:" "/physicalPath:$root" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create isolated local IIS site.' }
+          "RESTORE_TEST_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "RESTORE_TEST_SITE=$siteName" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "APPCMD_PATH=$appcmd" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Read site, verify restore plan, and encrypt before upload
+        id: prepare
+        shell: pwsh
+        env:
+          WEBDEPLOY_USERNAME: ${{ secrets.SHARKASP_LICIAPP_WEBDEPLOY_USERNAME }}
+          WEBDEPLOY_PASSWORD: ${{ secrets.SHARKASP_LICIAPP_WEBDEPLOY_PASSWORD }}
+          AGE_RECIPIENT: ${{ vars.SHARKASP_BACKUP_AGE_RECIPIENT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:WEBDEPLOY_USERNAME) -or [string]::IsNullOrWhiteSpace($env:WEBDEPLOY_PASSWORD)) {
+            throw 'Required Liciapp Web Deploy secrets are not configured.'
+          }
+          if ($env:AGE_RECIPIENT -notmatch '^age1[0-9a-z]+$') { throw 'Recovery recipient is missing or invalid.' }
+
+          $site = 'luminiadev-001-site5'
+          $endpoint = 'https://win1006.site4now.net:8172/MsDeploy.axd?site=luminiadev-001-site5'
+          $auth = "computerName=$endpoint,userName=$env:WEBDEPLOY_USERNAME,password=$env:WEBDEPLOY_PASSWORD,authType=Basic"
+          $work = Join-Path $env:RUNNER_TEMP ('oportuna-liciapp-backup-' + [guid]::NewGuid().ToString('N'))
+          $artifactDir = Join-Path $work 'encrypted-artifact'
+          New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+          $plain = Join-Path $work 'liciapp-iisapp-backup.zip'
+          $encrypted = Join-Path $artifactDir 'liciapp-iisapp-backup.age'
+          $manifest = Join-Path $artifactDir 'manifest.json'
+
+          $source = "iisApp=$site,$auth"
+          $backupOutput = & $env:MSDEPLOY_PATH -verb:sync "-source:$source" "-dest:package=$plain" 2>&1 | Out-String
+          $backupExit = $LASTEXITCODE
+          if ($backupExit -ne 0 -or -not (Test-Path -LiteralPath $plain)) {
+            $safe = $backupOutput.Replace($env:WEBDEPLOY_PASSWORD, '[redacted]').Replace($env:WEBDEPLOY_USERNAME, '[redacted]')
+            $code = if ($safe -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
+            throw "Remote iisApp backup failed; code=$code; exit=$backupExit. No remote files were changed."
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($plain)
+          try {
+            $entries = @($archive.Entries)
+            $contentEntries = @($entries | Where-Object { $_.FullName -match '(^|/)Content/' -and -not $_.FullName.EndsWith('/') })
+            if ($entries.Count -lt 3 -or $contentEntries.Count -lt 1 -or -not ($entries | Where-Object { $_.FullName -match '(^|/)archive\.xml$' })) {
+              throw 'Backup package structure is incomplete; artifact was not uploaded.'
+            }
+            $privateNamePattern = '(?i)(^|/)(\.env(?:\.[^/]*)?|secrets?\.json|\.htpasswd|id_(?:rsa|ed25519)|credentials|[^/]*\.(?:pem|key|p12|pfx|p7b|credentials|secret|token))(?:$|/)'
+            $privateNames = @($entries | Where-Object { $_.FullName -match $privateNamePattern })
+            if ($privateNames.Count -gt 0) { throw "Backup contains $($privateNames.Count) private-named file(s); artifact was not uploaded." }
+            $credentialValuePattern = '(?im)(?:DB_PASSWORD|MERCADOPUBLICO_TICKET|SYNC_API_TOKEN|SMTP_PASSWORD|GROQ_API_KEY|password|pwd)\s*["'']?\s*[:=]\s*["'']?[^\s"'';,<>]{8,}'
+            $sensitiveMatches = 0
+            foreach ($entry in $entries | Where-Object { $_.FullName -match '(?i)\.(?:config|json|xml|ini|ya?ml)$' }) {
+              if ($entry.Length -gt 5MB) { continue }
+              $reader = [System.IO.StreamReader]::new($entry.Open())
+              try { $text = $reader.ReadToEnd(); if ([regex]::IsMatch($text, $credentialValuePattern)) { $sensitiveMatches++ } }
+              finally { $reader.Dispose() }
+            }
+            if ($sensitiveMatches -gt 0) { throw 'Backup contains a configured private credential value; artifact was not uploaded.' }
+            $entryCount = $contentEntries.Count
+          } finally { $archive.Dispose() }
+
+          $restoreSource = "package=$plain"
+          $restoreDestination = "iisApp=$site,$auth"
+          $restoreOutput = & $env:MSDEPLOY_PATH -verb:sync "-source:$restoreSource" "-dest:$restoreDestination" -whatif 2>&1 | Out-String
+          $restoreExit = $LASTEXITCODE
+          if ($restoreExit -ne 0) {
+            $safe = $restoreOutput.Replace($env:WEBDEPLOY_PASSWORD, '[redacted]').Replace($env:WEBDEPLOY_USERNAME, '[redacted]')
+            $code = if ($safe -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
+            throw "Restore simulation failed; code=$code; exit=$restoreExit. No remote files were changed."
+          }
+
+          $localSource = "package=$plain"
+          $localDestination = "iisApp=$env:RESTORE_TEST_SITE"
+          $localRestoreOutput = & $env:MSDEPLOY_PATH -verb:sync "-source:$localSource" "-dest:$localDestination" 2>&1 | Out-String
+          $localRestoreExit = $LASTEXITCODE
+          if ($localRestoreExit -ne 0) { throw 'Isolated local restore failed; encrypted artifact was not uploaded.' }
+          $restoredFiles = @(Get-ChildItem -LiteralPath $env:RESTORE_TEST_ROOT -File -Recurse -ErrorAction SilentlyContinue)
+          if ($restoredFiles.Count -lt 1) { throw 'Isolated restore completed without restoring files; artifact was not uploaded.' }
+
+          & $env:AGE_PATH -r $env:AGE_RECIPIENT -o $encrypted $plain
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $encrypted)) { throw 'Authenticated encryption failed; artifact was not uploaded.' }
+          $headerBytes = [System.IO.File]::ReadAllBytes($encrypted)
+          if ($headerBytes.Length -lt 21 -or [System.Text.Encoding]::ASCII.GetString($headerBytes, 0, 21) -ne 'age-encryption.org/v1') {
+            throw 'Encrypted artifact format check failed.'
+          }
+          $cipherHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $encrypted).Hash.ToLowerInvariant()
+          $payload = [ordered]@{
+            created_utc = [DateTime]::UtcNow.ToString('o')
+            site = $site
+            provider = 'iisApp'
+            content_entry_count = $entryCount
+            encrypted_bytes = (Get-Item -LiteralPath $encrypted).Length
+            encrypted_sha256 = $cipherHash
+            encryption = 'age v1.3.2; X25519 recipient; authenticated encrypted payload'
+            remote_restore_whatif = 'PASS'
+            isolated_local_restore = 'PASS'
+            restored_file_count = $restoredFiles.Count
+            remote_changes = 'none'
+          }
+          $payload | ConvertTo-Json | Set-Content -LiteralPath $manifest -Encoding utf8
+          Remove-Item -LiteralPath $plain -Force
+          "artifact_dir=$artifactDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Output "BACKUP_PACKAGE=PASS; content_entries=$entryCount"
+          Write-Output 'REMOTE_RESTORE_WHATIF=PASS'
+          Write-Output "ISOLATED_LOCAL_RESTORE=PASS; files=$($restoredFiles.Count)"
+          Write-Output "ENCRYPTION=PASS; algorithm=age; ciphertext_sha256=$cipherHash"
+          Write-Output 'PRIVATE_FILES_CHECK=PASS'
+          Write-Output 'REMOTE_CHANGES=none'
+
+      - name: Upload encrypted backup only
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: oportuna-liciapp-encrypted-backup-${{ github.run_id }}
+          path: ${{ steps.prepare.outputs.artifact_dir }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Report artifact identifier
+        shell: pwsh
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          Write-Output "BACKUP_ARTIFACT_ID=$env:ARTIFACT_ID"
+          Write-Output "BACKUP_ARTIFACT_URL=$env:ARTIFACT_URL"
+
+      - name: Remove plaintext and runner temporaries
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:APPCMD_PATH -and (Test-Path -LiteralPath $env:APPCMD_PATH)) {
+            & $env:APPCMD_PATH delete site "/site.name:$env:RESTORE_TEST_SITE" 2>$null | Out-Null
+          }
+          if ($env:RESTORE_TEST_ROOT) { Remove-Item -LiteralPath $env:RESTORE_TEST_ROOT -Recurse -Force -ErrorAction SilentlyContinue }
+          Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Directory -Filter 'oportuna-liciapp-backup-*' -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
