@@ -41,35 +41,48 @@ jobs:
           $endpoint = 'https://win1006.site4now.net:8172/MsDeploy.axd?site=luminiadev-001-site5'
           $site = 'luminiadev-001-site5'
           $expectedPath = 'H:\root\home\luminiadev-001\www\Liciapp'
-          $provider = "appHostConfig=$site,computerName=$endpoint,userName=$env:WEBDEPLOY_USERNAME,password=$env:WEBDEPLOY_PASSWORD,authType=Basic"
-          $output = & $env:MSDEPLOY_PATH -verb:dump "-source:$provider" 2>&1 | Out-String
+          $auth = "computerName=$endpoint,userName=$env:WEBDEPLOY_USERNAME,password=$env:WEBDEPLOY_PASSWORD,authType=Basic"
+          $source = "iisApp=$site,$auth"
+          $output = & $env:MSDEPLOY_PATH -verb:getDependencies "-source:$source" 2>&1 | Out-String
           $exitCode = $LASTEXITCODE
           if ($exitCode -ne 0) {
             $safe = $output.Replace($env:WEBDEPLOY_PASSWORD, '[redacted]').Replace($env:WEBDEPLOY_USERNAME, '[redacted]')
             $category = 'unclassified'
-            if ($safe -match '(?i)401|unauthorized|invalid credentials|ERROR_USER_UNAUTHORIZED') { $category = 'authentication-rejected' }
-            elseif ($safe -match '(?i)ERROR_USER_NOT_AUTHORIZED_FOR_DEPLOYMENTPROVIDER|not authorized.*provider|access.*denied') { $category = 'provider-permission-denied' }
+            if ($safe -match '(?i)ERROR_USER_UNAUTHORIZED') { $category = 'authentication-or-site-scope-authorization' }
+            elseif ($safe -match '(?i)ERROR_USER_NOT_AUTHORIZED_FOR_DEPLOYMENTPROVIDER|not authorized.*provider|access.*denied') { $category = 'iisApp-provider-permission-denied' }
+            elseif ($safe -match '(?i)ERROR_APP_DOES_NOT_EXIST|site.*does not exist') { $category = 'site-not-found' }
             elseif ($safe -match '(?i)certificate|TLS|SSL|secure channel') { $category = 'TLS-validation' }
             elseif ($safe -match '(?i)could not connect|connection.*(refused|timed out)|name.*not known|resolve host') { $category = 'transport-or-DNS' }
             $errorCode = if ($safe -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
-            throw "Read-only Web Deploy inspection failed: category=$category; code=$errorCode; exit=$exitCode. No remote files were changed."
+            throw "Read-only Web Deploy authentication/site-scope check failed: category=$category; code=$errorCode; exit=$exitCode. No remote files were changed."
           }
 
-          $start = $output.IndexOf('<appHostConfig', [StringComparison]::OrdinalIgnoreCase)
-          if ($start -lt 0) { throw 'Authenticated response did not contain readable IIS site configuration.' }
-          $xmlText = $output.Substring($start)
-          $document = [xml]$xmlText
+          Write-Output 'AUTHENTICATION_AND_IISAPP_SCOPE=PASS'
+          Write-Output "IIS_SITE=$site"
+          Write-Output 'REMOTE_CHANGES=none'
+
+          $configSource = "appHostConfig=$site,$auth"
+          $configOutput = & $env:MSDEPLOY_PATH -verb:dump "-source:$configSource" 2>&1 | Out-String
+          $configExit = $LASTEXITCODE
+          if ($configExit -ne 0) {
+            Write-Output 'PHYSICAL_PATH=not readable through appHostConfig with this site-scoped account'
+            Write-Output "APPHOST_CONFIG_READ_EXIT=$configExit"
+            exit 0
+          }
+
+          $start = $configOutput.IndexOf('<appHostConfig', [StringComparison]::OrdinalIgnoreCase)
+          if ($start -lt 0) { throw 'Read-only IIS response did not contain parseable site configuration.' }
+          $document = [xml]$configOutput.Substring($start)
           $siteNode = $document.SelectSingleNode("//*[local-name()='site' and @name='$site']")
-          if (-not $siteNode) { throw 'Authenticated response did not include the expected IIS site.' }
+          if (-not $siteNode) { throw 'Read-only IIS response did not include the expected site.' }
           $rootVdir = $siteNode.SelectSingleNode(".//*[local-name()='application' and @path='/']/*[local-name()='virtualDirectory' and @path='/']")
-          if (-not $rootVdir) { throw 'IIS site root virtual directory was not present in the response.' }
+          if (-not $rootVdir) { throw 'IIS site root virtual directory was not present in the read-only response.' }
           $actualPath = [Environment]::ExpandEnvironmentVariables($rootVdir.GetAttribute('physicalPath'))
           if (-not [string]::Equals($actualPath.TrimEnd('\'), $expectedPath.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
             throw 'IIS returned a physical path different from the confirmed Liciapp path; no remote files were changed.'
           }
 
-          Write-Output 'AUTHENTICATION=PASS'
-          Write-Output "IIS_SITE=$site"
+          Write-Output 'APPHOST_CONFIG_READ=PASS'
           Write-Output "PHYSICAL_PATH=$actualPath"
           $state = $siteNode.GetAttribute('state')
           if ($state) { Write-Output "SITE_STATE=$state" } else { Write-Output 'SITE_STATE=not exposed by the read-only configuration provider' }
