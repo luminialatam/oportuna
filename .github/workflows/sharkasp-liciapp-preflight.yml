@@ -45,7 +45,14 @@ jobs:
           $output = & $env:MSDEPLOY_PATH -verb:dump "-source:$provider" 2>&1 | Out-String
           $exitCode = $LASTEXITCODE
           if ($exitCode -ne 0) {
-            throw "Read-only Web Deploy inspection failed (exit $exitCode); no remote files were changed. Raw tool output was suppressed."
+            $safe = $output.Replace($env:WEBDEPLOY_PASSWORD, '[redacted]').Replace($env:WEBDEPLOY_USERNAME, '[redacted]')
+            $category = 'unclassified'
+            if ($safe -match '(?i)401|unauthorized|invalid credentials|ERROR_USER_UNAUTHORIZED') { $category = 'authentication-rejected' }
+            elseif ($safe -match '(?i)ERROR_USER_NOT_AUTHORIZED_FOR_DEPLOYMENTPROVIDER|not authorized.*provider|access.*denied') { $category = 'provider-permission-denied' }
+            elseif ($safe -match '(?i)certificate|TLS|SSL|secure channel') { $category = 'TLS-validation' }
+            elseif ($safe -match '(?i)could not connect|connection.*(refused|timed out)|name.*not known|resolve host') { $category = 'transport-or-DNS' }
+            $errorCode = if ($safe -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
+            throw "Read-only Web Deploy inspection failed: category=$category; code=$errorCode; exit=$exitCode. No remote files were changed."
           }
 
           $start = $output.IndexOf('<appHostConfig', [StringComparison]::OrdinalIgnoreCase)
