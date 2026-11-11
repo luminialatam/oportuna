@@ -150,6 +150,10 @@ jobs:
           $planExit = $LASTEXITCODE
           if ($planExit -ne 0) {
             $code = if ($plan -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
+            $safePlan = $plan.Replace($env:WEBDEPLOY_PASSWORD, '[redacted]').Replace($env:WEBDEPLOY_USERNAME, '[redacted]').Replace($endpoint, '[WebDeploy endpoint]').Replace('H:\root\home\luminiadev-001\www\Liciapp', '[Liciapp]')
+            $safePlan = $safePlan -replace '(?i)(password|token|ticket|api[_-]?key)\s*[:=]\s*[^,\s;]+', '$1=[redacted]'
+            $details = @($safePlan -split "`r?`n" | Where-Object { $_ -match '(?i)(ERROR_|error|denied|unauthor|unsupported|failed)' } | Select-Object -Last 3) -join ' | '
+            Write-Output "DRY_RUN_ERROR_CATEGORY=$code; SAFE_DETAIL=$details"
             throw "Single-file Web Deploy dry-run failed; code=$code. No remote files were changed."
           }
           if ($plan -notmatch '(?i)sharkasp-bootstrap\.mjs') { throw 'Dry-run did not identify the authorized bootstrap target; stopped without writing.' }
