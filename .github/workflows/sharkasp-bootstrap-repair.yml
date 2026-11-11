@@ -48,15 +48,18 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $checkoutSource = Join-Path $env:GITHUB_WORKSPACE 'deploy\sharkasp\sharkasp-bootstrap.mjs'
           if (-not (Test-Path -LiteralPath $checkoutSource -PathType Leaf)) { throw 'Corrected bootstrap is missing.' }
-          $source = Join-Path $env:WORK_DIR 'sharkasp-bootstrap.mjs'
+          $expectedBlob = '20a09c3ca5eedbbf461798c42f599c9d95d16859'
+          $actualBlob = & git -C $env:GITHUB_WORKSPACE hash-object --path=deploy/sharkasp/sharkasp-bootstrap.mjs $checkoutSource
+          if ($LASTEXITCODE -ne 0 -or $actualBlob.Trim() -ne $expectedBlob) { throw 'Bootstrap Git blob does not match the locally validated change.' }
           $text = [System.IO.File]::ReadAllText($checkoutSource)
-          $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
-          [System.IO.File]::WriteAllText($source, $text, [System.Text.UTF8Encoding]::new($false))
-          $expected = 'd85c830045216583dd8db5f06af50eccb5b7492fd575a622fc7ea5f98d85328c'
-          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw 'Normalized bootstrap SHA-256 does not match the locally validated payload.' }
           if (-not $text.Contains("resolve(appRoot, '..', 'oportuna-private', 'secrets.json')")) { throw 'Corrected sibling secret path is missing.' }
           if ($text.Contains("resolve(appRoot, '..', '..', 'oportuna-private', 'secrets.json')")) { throw 'Old two-level secret path remains.' }
+          $source = Join-Path $env:WORK_DIR 'sharkasp-bootstrap.mjs'
+          [System.IO.File]::Copy($checkoutSource, $source, $true)
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash.ToLowerInvariant()
+          & node --check $source
+          if ($LASTEXITCODE -ne 0) { throw 'Bootstrap syntax check failed on the deployment runner.' }
+          "NEW_BOOTSTRAP_SHA256=$actual" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $site = 'luminiadev-001-site5'
           $siteRoot = 'H:\root\home\luminiadev-001\www\Liciapp'
           $remoteFile = Join-Path $siteRoot 'sharkasp-bootstrap.mjs'
@@ -160,7 +163,7 @@ jobs:
           $verifyOutput = & $env:MSDEPLOY_PATH -verb:sync "-source:$remoteSource" "-dest:filePath=$after" 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $after -PathType Leaf)) { throw 'Remote bootstrap hash read failed after deploy; encrypted pre-deploy backup is retained.' }
           $remoteHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $after).Hash.ToLowerInvariant()
-          $expectedHash = 'd85c830045216583dd8db5f06af50eccb5b7492fd575a622fc7ea5f98d85328c'
+          $expectedHash = $env:NEW_BOOTSTRAP_SHA256
           if ($remoteHash -ne $expectedHash) { throw 'Remote bootstrap hash does not match the authorized replacement; encrypted backup is retained.' }
           Write-Output "REMOTE_BOOTSTRAP_SHA256=$remoteHash; MATCH=PASS"
           $urls = @(
