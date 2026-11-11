@@ -47,7 +47,7 @@ function loadPrivateSecrets() {
   for (const name of allowedSecretVariables) delete process.env[name];
   const secretPath = simulationSecretArgument
     ? resolve(simulationSecretArgument.slice('--simulate-secrets-file='.length))
-    : resolve(appRoot, '..', '..', 'oportuna-private', 'secrets.json');
+    : resolve(appRoot, '..', 'oportuna-private', 'secrets.json');
   if (!existsSync(secretPath)) return { error: `Falta el archivo privado; faltan ${requiredPrivateVariables.join(', ')}.` };
   const stat = lstatSync(secretPath);
   if (stat.isSymbolicLink() || !stat.isFile() || stat.size < 2 || stat.size > 8192) {
