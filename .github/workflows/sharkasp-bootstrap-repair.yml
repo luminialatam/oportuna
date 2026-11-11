@@ -64,7 +64,11 @@ jobs:
           $siteRoot = 'H:\root\home\luminiadev-001\www\Liciapp'
           $remoteFile = $siteRoot.TrimEnd('\') + '\sharkasp-bootstrap.mjs'
           if ($site -ne 'luminiadev-001-site5' -or $remoteFile -ne 'H:\root\home\luminiadev-001\www\Liciapp\sharkasp-bootstrap.mjs') { throw 'Remote target validation failed.' }
+          $sourceDirectory = Join-Path $env:WORK_DIR 'deploy-source'
+          New-Item -ItemType Directory -Path $sourceDirectory -Force | Out-Null
+          [System.IO.File]::Copy($source, (Join-Path $sourceDirectory 'sharkasp-bootstrap.mjs'), $true)
           "SOURCE_FILE=$source" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SOURCE_DIR=$sourceDirectory" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "REMOTE_FILE=$remoteFile" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Output 'SOURCE_HASH=PASS; SINGLE_FILE_TARGET=PASS; SECRETS_NOT_READ=PASS'
 
@@ -82,13 +86,23 @@ jobs:
           $endpoint = 'https://win1006.site4now.net:8172/MsDeploy.axd?site=luminiadev-001-site5'
           $auth = "computerName=$endpoint,userName=$env:WEBDEPLOY_USERNAME,password=$env:WEBDEPLOY_PASSWORD,authType=Basic"
           $before = Join-Path $env:WORK_DIR 'sharkasp-bootstrap.remote-before.mjs'
-          $remoteSource = "contentPath=$env:REMOTE_FILE,$auth"
-          $backupOutput = & $env:MSDEPLOY_PATH -verb:sync "-source:$remoteSource" "-dest:filePath=$before" 2>&1 | Out-String
+          $package = Join-Path $env:WORK_DIR 'remote-iisapp-before.zip'
+          $remoteSource = "iisApp=$site,$auth"
+          $backupOutput = & $env:MSDEPLOY_PATH -verb:sync "-source:$remoteSource" "-dest:package=$package" 2>&1 | Out-String
           $backupExit = $LASTEXITCODE
-          if ($backupExit -ne 0 -or -not (Test-Path -LiteralPath $before -PathType Leaf)) {
+          if ($backupExit -ne 0 -or -not (Test-Path -LiteralPath $package -PathType Leaf)) {
             $code = if ($backupOutput -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
-            throw "Remote bootstrap backup failed; code=$code. No remote files were changed."
+            throw "Remote Liciapp read for bootstrap backup failed; code=$code. No remote files were changed."
           }
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($package)
+          try {
+            $entry = $archive.GetEntry("Content/$site/sharkasp-bootstrap.mjs")
+            if (-not $entry) { throw 'Remote IIS package does not contain the authorized bootstrap file.' }
+            $inputStream = $entry.Open()
+            $outputStream = [System.IO.File]::Create($before)
+            try { $inputStream.CopyTo($outputStream) } finally { $outputStream.Dispose(); $inputStream.Dispose() }
+          } finally { $archive.Dispose() }
+          Remove-Item -LiteralPath $package -Force
           $oldHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $before).Hash.ToLowerInvariant()
           if ($oldHash -ne 'd72b2efdc9ce70bd7d12f691538570e65677af6c823bd102a0028e15298aacb8') { throw 'Remote bootstrap differs from the preserved pre-deploy version; stopped before writing.' }
           $encrypted = Join-Path $env:WORK_DIR 'sharkasp-bootstrap.remote-before.age'
@@ -130,9 +144,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $endpoint = 'https://win1006.site4now.net:8172/MsDeploy.axd?site=luminiadev-001-site5'
           $auth = "computerName=$endpoint,userName=$env:WEBDEPLOY_USERNAME,password=$env:WEBDEPLOY_PASSWORD,authType=Basic"
-          $source = "filePath=$env:SOURCE_FILE"
-          $destination = "contentPath=$env:REMOTE_FILE,$auth"
-          $plan = & $env:MSDEPLOY_PATH -verb:sync "-source:$source" "-dest:$destination" -whatif 2>&1 | Out-String
+          $source = "contentPath=$env:SOURCE_DIR"
+          $destination = "iisApp=luminiadev-001-site5,$auth"
+          $plan = & $env:MSDEPLOY_PATH -verb:sync "-source:$source" "-dest:$destination" -enableRule:DoNotDeleteRule -whatif 2>&1 | Out-String
           $planExit = $LASTEXITCODE
           if ($planExit -ne 0) {
             $code = if ($plan -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
@@ -141,7 +155,7 @@ jobs:
           if ($plan -notmatch '(?i)sharkasp-bootstrap\.mjs') { throw 'Dry-run did not identify the authorized bootstrap target; stopped without writing.' }
           if ($plan -match '(?i)(web\.config|oportuna-private|Deleting file|Removing file|DeleteRule)') { throw 'Dry-run included a protected or destructive operation; stopped without writing.' }
           Write-Output 'DRY_RUN=PASS; TARGET=Liciapp/sharkasp-bootstrap.mjs; OTHER_FILES=none; DELETIONS=none'
-          $apply = & $env:MSDEPLOY_PATH -verb:sync "-source:$source" "-dest:$destination" 2>&1 | Out-String
+          $apply = & $env:MSDEPLOY_PATH -verb:sync "-source:$source" "-dest:$destination" -enableRule:DoNotDeleteRule 2>&1 | Out-String
           $applyExit = $LASTEXITCODE
           if ($applyExit -ne 0) {
             $code = if ($apply -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
@@ -159,9 +173,18 @@ jobs:
           $endpoint = 'https://win1006.site4now.net:8172/MsDeploy.axd?site=luminiadev-001-site5'
           $auth = "computerName=$endpoint,userName=$env:WEBDEPLOY_USERNAME,password=$env:WEBDEPLOY_PASSWORD,authType=Basic"
           $after = Join-Path $env:WORK_DIR 'sharkasp-bootstrap.remote-after.mjs'
-          $remoteSource = "contentPath=$env:REMOTE_FILE,$auth"
-          $verifyOutput = & $env:MSDEPLOY_PATH -verb:sync "-source:$remoteSource" "-dest:filePath=$after" 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $after -PathType Leaf)) { throw 'Remote bootstrap hash read failed after deploy; encrypted pre-deploy backup is retained.' }
+          $afterPackage = Join-Path $env:WORK_DIR 'remote-iisapp-after.zip'
+          $remoteSource = "iisApp=luminiadev-001-site5,$auth"
+          $verifyOutput = & $env:MSDEPLOY_PATH -verb:sync "-source:$remoteSource" "-dest:package=$afterPackage" 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $afterPackage -PathType Leaf)) { throw 'Remote Liciapp read failed after deploy; encrypted pre-deploy backup is retained.' }
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($afterPackage)
+          try {
+            $entry = $archive.GetEntry('Content/luminiadev-001-site5/sharkasp-bootstrap.mjs')
+            if (-not $entry) { throw 'Post-deploy package does not contain the authorized bootstrap file.' }
+            $inputStream = $entry.Open(); $outputStream = [System.IO.File]::Create($after)
+            try { $inputStream.CopyTo($outputStream) } finally { $outputStream.Dispose(); $inputStream.Dispose() }
+          } finally { $archive.Dispose() }
+          Remove-Item -LiteralPath $afterPackage -Force
           $remoteHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $after).Hash.ToLowerInvariant()
           $expectedHash = $env:NEW_BOOTSTRAP_SHA256
           if ($remoteHash -ne $expectedHash) { throw 'Remote bootstrap hash does not match the authorized replacement; encrypted backup is retained.' }
