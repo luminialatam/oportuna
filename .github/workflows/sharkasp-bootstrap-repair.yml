@@ -62,7 +62,7 @@ jobs:
           "NEW_BOOTSTRAP_SHA256=$actual" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $site = 'luminiadev-001-site5'
           $siteRoot = 'H:\root\home\luminiadev-001\www\Liciapp'
-          $remoteFile = Join-Path $siteRoot 'sharkasp-bootstrap.mjs'
+          $remoteFile = $siteRoot.TrimEnd('\') + '\sharkasp-bootstrap.mjs'
           if ($site -ne 'luminiadev-001-site5' -or $remoteFile -ne 'H:\root\home\luminiadev-001\www\Liciapp\sharkasp-bootstrap.mjs') { throw 'Remote target validation failed.' }
           "SOURCE_FILE=$source" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "REMOTE_FILE=$remoteFile" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
