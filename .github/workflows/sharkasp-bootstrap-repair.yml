@@ -46,12 +46,15 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $source = Join-Path $env:GITHUB_WORKSPACE 'deploy\sharkasp\sharkasp-bootstrap.mjs'
-          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Corrected bootstrap is missing.' }
+          $checkoutSource = Join-Path $env:GITHUB_WORKSPACE 'deploy\sharkasp\sharkasp-bootstrap.mjs'
+          if (-not (Test-Path -LiteralPath $checkoutSource -PathType Leaf)) { throw 'Corrected bootstrap is missing.' }
+          $source = Join-Path $env:WORK_DIR 'sharkasp-bootstrap.mjs'
+          $text = [System.IO.File]::ReadAllText($checkoutSource)
+          $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+          [System.IO.File]::WriteAllText($source, $text, [System.Text.UTF8Encoding]::new($false))
           $expected = 'd85c830045216583dd8db5f06af50eccb5b7492fd575a622fc7ea5f98d85328c'
           $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw 'Bootstrap SHA-256 does not match the locally validated payload.' }
-          $text = [System.IO.File]::ReadAllText($source)
+          if ($actual -ne $expected) { throw 'Normalized bootstrap SHA-256 does not match the locally validated payload.' }
           if (-not $text.Contains("resolve(appRoot, '..', 'oportuna-private', 'secrets.json')")) { throw 'Corrected sibling secret path is missing.' }
           if ($text.Contains("resolve(appRoot, '..', '..', 'oportuna-private', 'secrets.json')")) { throw 'Old two-level secret path remains.' }
           $site = 'luminiadev-001-site5'
