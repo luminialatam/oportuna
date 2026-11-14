@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
