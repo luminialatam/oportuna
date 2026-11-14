@@ -10,7 +10,8 @@ import { checkRateLimit, consumeRateLimit } from './rateLimitStore.js';
 import pool from './db.js';
 import { getByCode, listByDate, MercadoPublicoError } from './mercadoPublico.js';
 import { startJob, getJob, pauseJob, resumeJob, retryJob, getHistory, recoverJobs, startScheduler, startSyncWorker, dailySchedulerStatus } from './syncService.js';
-import { searchListings, analyzeListing, findEnrichmentCandidates, groqConfigured } from './smartSearch.js';
+import { searchListings, analyzeListing, findEnrichmentCandidates, groqConfigured, clearSearchCache } from './smartSearch.js';
+import { parseTenderAmount, tenderAmountStatus, tenderAmountUpsertSql } from './tenderAmount.js';
 import { previewEnrichmentCandidates, enqueueEnrichment, enrichmentMetrics, enrichmentPilotStatus, enrichmentStatus, findPriorityCandidates, indexOfficialDetail, pauseEnrichmentPilot, resumeEnrichmentPilot, retryEnrichmentPilotFailures, startEnrichmentPilotBatch, recoverEnrichmentQueue, startEnrichmentWorker } from './listingEnrichment.js';
 import { deleteCompanyProduct, getCompanyMatches, getCompanyWorkspace, saveCompanyProfile, saveCompanyProduct, searchCompanyProducts, suggestCommercialTerms } from './companyService.js';
 import { addTrackedDate, deleteTrackedDate, deleteTrackedOpportunity, getTrackedCounts, getTrackedStatus, listTrackedOpportunities, saveTrackedOpportunity, trackingStates, updateTrackedDate, updateTrackedOpportunity } from './trackingService.js';
@@ -58,7 +59,7 @@ function dbDate(value: unknown): string | null {
 function normalized(row: ApiListing) {
   if (typeof row.CodigoExterno !== 'string' || !row.CodigoExterno.trim()) throw new Error('Una licitación de la API no incluye CodigoExterno.');
   const number = row.CodigoEstado == null || row.CodigoEstado === '' ? null : Number(row.CodigoEstado);
-  const amount = row.MontoEstimado == null || row.MontoEstimado === '' ? null : Number(row.MontoEstimado);
+  const amount = parseTenderAmount(row.MontoEstimado);
   return {
     codigo: row.CodigoExterno, nombre: typeof row.Nombre === 'string' ? row.Nombre : null,
     estado: number != null && Number.isFinite(number) ? number : null,
@@ -90,9 +91,9 @@ app.get('/api/licitaciones', requireDb, async (req, res, next) => {
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const [[countRows], [rows]] = await Promise.all([
       pool.query<any[]>(`SELECT COUNT(*) AS total FROM licitaciones ${where}`, values),
-      pool.query<any[]>(`SELECT id,codigo_externo,nombre,codigo_estado,fecha_cierre,fecha_publicacion,organismo,monto_estimado,moneda,last_synced_at FROM licitaciones ${where} ORDER BY fecha_cierre IS NULL, fecha_cierre ASC LIMIT ? OFFSET ?`, [...values, pageSize, (page - 1) * pageSize]),
+      pool.query<any[]>(`SELECT id,codigo_externo,nombre,codigo_estado,fecha_cierre,fecha_publicacion,organismo,monto_estimado,moneda,last_synced_at,JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.VisibilidadMonto')) amount_visibility FROM licitaciones ${where} ORDER BY fecha_cierre IS NULL, fecha_cierre ASC LIMIT ? OFFSET ?`, [...values, pageSize, (page - 1) * pageSize]),
     ]);
-    res.json({ items: rows, total: Number(countRows[0].total), page, pageSize });
+    res.json({ items: rows.map((row) => { const {amount_visibility:_visibility,...item}=row; return {...item,monto_estado:tenderAmountStatus(row.monto_estimado,row.amount_visibility)}; }), total: Number(countRows[0].total), page, pageSize });
   } catch (error) { next(error); }
 });
 app.get('/api/licitaciones/:codigo/local',requireDb,requestLimit(120,60_000),async(req,res,next)=>{
@@ -122,7 +123,8 @@ app.post('/api/licitaciones/:codigo/refresh',requireDb,requireAuth,requireCsrf,r
     const codigo = z.string().min(1).max(100).parse(req.params.codigo);
     const detail = await getByCode(codigo);
     const values = normalized(detail);
-    await pool.execute(`INSERT INTO licitaciones (codigo_externo,nombre,codigo_estado,fecha_cierre,fecha_publicacion,organismo,monto_estimado,moneda,payload_json,last_synced_at) VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE nombre=COALESCE(VALUES(nombre),nombre),codigo_estado=COALESCE(VALUES(codigo_estado),codigo_estado),fecha_cierre=COALESCE(VALUES(fecha_cierre),fecha_cierre),fecha_publicacion=COALESCE(VALUES(fecha_publicacion),fecha_publicacion),organismo=COALESCE(VALUES(organismo),organismo),monto_estimado=COALESCE(VALUES(monto_estimado),monto_estimado),moneda=COALESCE(VALUES(moneda),moneda),payload_json=JSON_MERGE_PATCH(payload_json,VALUES(payload_json)),last_synced_at=UTC_TIMESTAMP()`, [values.codigo, values.nombre, values.estado, values.cierre, values.publicacion, values.organismo, values.monto, values.moneda, JSON.stringify(detail)]);
+    await pool.execute(`INSERT INTO licitaciones (codigo_externo,nombre,codigo_estado,fecha_cierre,fecha_publicacion,organismo,monto_estimado,moneda,payload_json,last_synced_at) VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE nombre=COALESCE(VALUES(nombre),nombre),codigo_estado=COALESCE(VALUES(codigo_estado),codigo_estado),fecha_cierre=COALESCE(VALUES(fecha_cierre),fecha_cierre),fecha_publicacion=COALESCE(VALUES(fecha_publicacion),fecha_publicacion),organismo=COALESCE(VALUES(organismo),organismo),${tenderAmountUpsertSql},moneda=COALESCE(VALUES(moneda),moneda),payload_json=JSON_MERGE_PATCH(payload_json,VALUES(payload_json)),last_synced_at=UTC_TIMESTAMP()`, [values.codigo, values.nombre, values.estado, values.cierre, values.publicacion, values.organismo, values.monto, values.moneda, JSON.stringify(detail)]);
+    clearSearchCache();
     try { await indexOfficialDetail(values.codigo, detail as unknown as Record<string, any>); } catch (error) { console.warn(`[enrichment] detalle recibido pero no indexado; tipo=${error instanceof Error?error.name:'error'}`); }
     res.json(detail);
   } catch (error) { next(error); }

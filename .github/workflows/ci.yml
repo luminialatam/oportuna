@@ -19,6 +19,19 @@ jobs:
     name: Build, types, and safe tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: oportuna_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -40,3 +53,12 @@ jobs:
 
       - name: Run deterministic tests
         run: npm run test:ci
+
+      - name: Verify amount persistence in temporary MySQL table
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: ''
+          DB_NAME: oportuna_ci
+        run: npm run test:tender-amounts:mysql
