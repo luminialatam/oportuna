@@ -46,6 +46,8 @@
     "test:mp-transport": "tsx server/test/mercadoPublicoTransport.unit.ts",
     "test:commercial-intent-pilot": "tsx server/test/commercialIntentPilotRegression.local.ts",
     "test:chilean-rut": "tsx server/test/chileanRut.unit.ts",
+    "test:script-targets": "node server/test/packageScripts.unit.mjs",
+    "test:ci": "npm run test:script-targets && npm run test:runtime && npm run test:matching && npm run test:search-relevance && npm run test:chilean-rut && npm run test:listing-status && npm run test:email-service && npm run test:enrichment-evidence && npm run test:mp-transport",
     "test:saas-onboarding": "npm run test:onboarding:playwright",
     "test:onboarding:playwright": "tsx server/test/onboarding.playwright.ts",
     "test:email:playwright": "tsx server/test/emailAccess.playwright.ts"
