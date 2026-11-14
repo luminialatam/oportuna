@@ -3,6 +3,7 @@ import { getByCode } from './mercadoPublico.js';
 import { clearSearchCache } from './smartSearch.js';
 import { rankEnrichmentCandidates, type EnrichmentCandidate, type PreviewProduct, type PreviewListingRow } from './enrichmentPreview.js';
 import { loadRuntimeConfig } from './runtimeConfig.js';
+import { officialAmountWrite, parseTenderAmount } from './tenderAmount.js';
 
 type ApiItem = Record<string, unknown>;
 let worker: Promise<void> | null = null;
@@ -18,9 +19,7 @@ function text(value: unknown, max: number): string | null {
   return cleaned ? cleaned.slice(0, max) : null;
 }
 function decimal(value: unknown): number | null {
-  if (value == null || value === '') return null;
-  const result = Number(value);
-  return Number.isFinite(result) ? result : null;
+  return parseTenderAmount(value);
 }
 function preservedPayload(value: unknown): unknown {
   if (value == null) return undefined;
@@ -47,6 +46,7 @@ async function storeDetail(code: string, detail: Record<string, any>) {
   const payload = JSON.stringify(preservedPayload(detail) ?? {});
   const state = detail.CodigoEstado == null || detail.CodigoEstado === '' ? null : Number(detail.CodigoEstado);
   const amount = decimal(detail.MontoEstimado);
+  const amountWrite = officialAmountWrite(detail);
   const date = (value: unknown) => {
     if (typeof value !== 'string' || !value.trim()) return null;
     const parsed = new Date(value);
@@ -64,10 +64,10 @@ async function storeDetail(code: string, detail: Record<string, any>) {
       `UPDATE licitaciones SET
         nombre=COALESCE(?,nombre),codigo_estado=COALESCE(?,codigo_estado),fecha_cierre=COALESCE(?,fecha_cierre),
         fecha_publicacion=COALESCE(?,fecha_publicacion),organismo=COALESCE(?,organismo),
-        monto_estimado=COALESCE(?,monto_estimado),moneda=COALESCE(?,moneda),
+        monto_estimado=CASE WHEN ?='replace' THEN ? WHEN ?='clear' THEN NULL ELSE monto_estimado END,moneda=COALESCE(?,moneda),
         payload_json=JSON_MERGE_PATCH(COALESCE(payload_json,JSON_OBJECT()),CAST(? AS JSON))
        WHERE codigo_externo=?`,
-      [name, Number.isFinite(state) ? state : null, closeAt, publishAt, buyer, amount, currency, payload, code],
+      [name, Number.isFinite(state) ? state : null, closeAt, publishAt, buyer, amountWrite.mode, amount, amountWrite.mode, currency, payload, code],
     );
     for (const [index, item] of items.entries()) {
       const name = text(item.NombreProducto ?? item.Nombre, 1000);
