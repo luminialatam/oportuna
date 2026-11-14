@@ -54,6 +54,9 @@ jobs:
       - name: Run deterministic tests
         run: npm run test:ci
 
+      - name: Verify production settings validation
+        run: npm run test:production-config
+
       - name: Verify amount persistence in temporary MySQL table
         env:
           DB_HOST: 127.0.0.1
@@ -62,3 +65,31 @@ jobs:
           DB_PASSWORD: ''
           DB_NAME: oportuna_ci
         run: npm run test:tender-amounts:mysql
+
+  verify-windows-runtime:
+    name: Verify SharkASP Windows x64 runtime
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22 x64
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          architecture: x64
+          cache: npm
+
+      - name: Install locked dependencies once
+        run: npm ci
+
+      - name: Check types and build on Windows
+        run: |
+          npm run typecheck
+          npm run build
+
+      - name: Keep only runtime dependencies and verify native Argon2
+        run: |
+          npm prune --omit=dev
+          node scripts/validateSharkaspWindowsRuntime.mjs

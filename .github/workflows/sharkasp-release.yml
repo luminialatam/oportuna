@@ -1,0 +1,67 @@
+name: Oportuna SharkASP Windows release preparation
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oportuna-sharkasp-release
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Build and validate Windows x64 release (no publication)
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact CI-verified main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Node.js 22 x64
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          architecture: x64
+          cache: npm
+
+      - name: Install dependencies once on the Windows runner
+        run: npm ci
+
+      - name: Recheck types, deterministic tests, and build
+        run: |
+          npm run typecheck
+          npm run test:ci
+          npm run test:production-config
+          npm run build
+
+      - name: Prepare production-only runtime tree
+        run: |
+          npm prune --omit=dev
+          node scripts/validateSharkaspWindowsRuntime.mjs
+          node scripts/prepareSharkaspRelease.mjs "$env:RUNNER_TEMP\oportuna-sharkasp-release"
+
+      - name: Upload the validated Windows runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oportuna-sharkasp-windows-${{ github.event.workflow_run.head_sha }}
+          path: ${{ runner.temp }}/oportuna-sharkasp-release/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: State release status
+        shell: pwsh
+        run: |
+          Write-Output 'WINDOWS_X64_RELEASE=PREPARED'
+          Write-Output 'PRODUCTION_PUBLICATION=NOT_RUN'
+          Write-Output 'No SharkASP files were transferred; no Node App was restarted; no database or migrations were touched.'

@@ -31,6 +31,7 @@
     "test:coordination": "tsx server/test/coordination.integration.ts",
     "test:auth": "tsx server/test/auth.integration.ts",
     "test:email-service": "tsx server/test/emailService.unit.ts",
+    "test:production-config": "node server/test/productionConfig.unit.mjs",
     "test:email-failure-local": "tsx server/test/emailFailure.local.integration.ts",
     "test:launchd-config": "python3 server/test/launchdConfig.unit.py && bash -n scripts/launchd/oportuna-sync-worker && node --check scripts/launchd/supervise-sync-worker.mjs && node --check scripts/launchd/check-sync-idle.mjs && node --check scripts/launchd/show-sync-status.mjs",
     "test:qa": "tsx server/test/qa.integration.ts",
