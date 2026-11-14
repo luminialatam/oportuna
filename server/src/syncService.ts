@@ -1,5 +1,6 @@
 import pool from './db.js';
 import { listByDate, listActive, MercadoPublicoError } from './mercadoPublico.js';
+import { parseTenderAmount, tenderAmountUpsertSql } from './tenderAmount.js';
 import type { ApiListing } from './types.js';
 import { loadRuntimeConfig } from './runtimeConfig.js';
 
@@ -8,12 +9,12 @@ let workerRunning = false;
 let pauseRequested = false;
 let schedulerTimer: ReturnType<typeof setInterval> | undefined;
 let syncWorkerPoller: ReturnType<typeof setInterval> | undefined;
-const upsertSql = `INSERT INTO licitaciones (codigo_externo,nombre,codigo_estado,fecha_cierre,fecha_publicacion,organismo,monto_estimado,moneda,payload_json,last_synced_at) VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE nombre=COALESCE(VALUES(nombre),nombre),codigo_estado=COALESCE(VALUES(codigo_estado),codigo_estado),fecha_cierre=COALESCE(VALUES(fecha_cierre),fecha_cierre),fecha_publicacion=COALESCE(VALUES(fecha_publicacion),fecha_publicacion),organismo=COALESCE(VALUES(organismo),organismo),monto_estimado=COALESCE(VALUES(monto_estimado),monto_estimado),moneda=COALESCE(VALUES(moneda),moneda),payload_json=JSON_MERGE_PATCH(payload_json,VALUES(payload_json)),last_synced_at=UTC_TIMESTAMP()`;
+const upsertSql = `INSERT INTO licitaciones (codigo_externo,nombre,codigo_estado,fecha_cierre,fecha_publicacion,organismo,monto_estimado,moneda,payload_json,last_synced_at) VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE nombre=COALESCE(VALUES(nombre),nombre),codigo_estado=COALESCE(VALUES(codigo_estado),codigo_estado),fecha_cierre=COALESCE(VALUES(fecha_cierre),fecha_cierre),fecha_publicacion=COALESCE(VALUES(fecha_publicacion),fecha_publicacion),organismo=COALESCE(VALUES(organismo),organismo),${tenderAmountUpsertSql},moneda=COALESCE(VALUES(moneda),moneda),payload_json=JSON_MERGE_PATCH(payload_json,VALUES(payload_json)),last_synced_at=UTC_TIMESTAMP()`;
 function toDbDate(value: unknown): string | null { if (typeof value !== 'string' || !value) return null; const d = new Date(value); return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0,19).replace('T',' '); }
 function normalized(row: ApiListing) {
   if (typeof row.CodigoExterno !== 'string' || !row.CodigoExterno.trim()) throw new Error('La API devolvió una licitación sin código externo.');
   const state = row.CodigoEstado == null || row.CodigoEstado === '' ? null : Number(row.CodigoEstado);
-  const amount = row.MontoEstimado == null || row.MontoEstimado === '' ? null : Number(row.MontoEstimado);
+  const amount = parseTenderAmount(row.MontoEstimado);
   return [row.CodigoExterno, typeof row.Nombre === 'string' ? row.Nombre : null, Number.isFinite(state) ? state : null,
     toDbDate(row.FechaCierre ?? row.Fechas?.FechaCierre), toDbDate(row.Fechas?.FechaPublicacion ?? row.Fechas?.FechaCreacion),
     typeof row.Comprador?.NombreOrganismo === 'string' ? row.Comprador.NombreOrganismo : null,
