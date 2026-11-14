@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
@@ -26,7 +26,7 @@ async function walk(folder, relative = '') {
     const rel = join(relative, entry.name).replaceAll('\\', '/');
     assert.ok(!forbidden.test(entry.name), `Archivo no permitido en release: ${rel}`);
     if (entry.isDirectory()) await walk(current, rel);
-    else files.push({ path: rel, bytes: (await readFile(current)).byteLength });
+    else files.push({ path: rel, bytes: (await stat(current)).size });
   }
 }
 await walk(destination);

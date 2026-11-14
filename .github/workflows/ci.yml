@@ -93,3 +93,6 @@ jobs:
         run: |
           npm prune --omit=dev
           node scripts/validateSharkaspWindowsRuntime.mjs
+
+      - name: Assemble and validate the IIS release folder
+        run: node scripts/prepareSharkaspRelease.mjs "$env:RUNNER_TEMP\oportuna-sharkasp-release-check"
