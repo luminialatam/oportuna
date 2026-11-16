@@ -9,6 +9,11 @@ assert.equal(local.secureCookies, false);
 assert.equal(local.sharedRateLimits, false);
 const iisPort = loadRuntimeConfig({ APP_ENV: 'development', HTTP_PLATFORM_PORT: '49127' } as NodeJS.ProcessEnv);
 assert.equal(iisPort.port, 49127);
+const iisHost = loadRuntimeConfig({ APP_ENV: 'production', NODE_ENV: 'production', PROCESS_ROLE: 'web', HTTP_PLATFORM_PORT: '49127',
+  CLIENT_ORIGIN: 'https://example.test', TRUST_PROXY_HOPS: '1', DB_HOST: '127.0.0.1', DB_USER: 'qa', DB_PASSWORD: 'qa-only',
+  DB_NAME: 'qa', DB_SSL: 'true', MERCADOPUBLICO_TICKET: 'qa-only', SYNC_API_TOKEN: 'x'.repeat(32),
+} as NodeJS.ProcessEnv);
+assert.equal(iisHost.host, '127.0.0.1');
 
 assert.throws(() => loadRuntimeConfig({ APP_ENV: 'production' } as NodeJS.ProcessEnv), /Faltan variables obligatorias/);
 assert.throws(() => loadRuntimeConfig({ APP_ENV: 'development', CLIENT_ORIGIN: '*' } as NodeJS.ProcessEnv), /no se admite/);
@@ -23,6 +28,13 @@ const production = loadRuntimeConfig({
 assert.equal(production.secureCookies, true);
 assert.equal(production.sharedRateLimits, true);
 assert.equal(production.processRole, 'web');
+const railpack = loadRuntimeConfig({
+  APP_ENV: 'production', NODE_ENV: 'production', PROCESS_ROLE: 'web', PORT: '49128',
+  CLIENT_ORIGIN: 'https://example.test', TRUST_PROXY_HOPS: '1', DB_HOST: '127.0.0.1', DB_USER: 'qa', DB_PASSWORD: 'qa-only',
+  DB_NAME: 'qa', DB_SSL: 'true', MERCADOPUBLICO_TICKET: 'qa-only', SYNC_API_TOKEN: 'x'.repeat(32),
+} as NodeJS.ProcessEnv);
+assert.equal(railpack.port, 49128);
+assert.equal(railpack.host, '0.0.0.0');
 assert.throws(() => loadRuntimeConfig({
   APP_ENV: 'production', NODE_ENV: 'production', PROCESS_ROLE: 'web', HOST: '0.0.0.0', PORT: '4000',
   CLIENT_ORIGIN: 'https://app.example.test', TRUST_PROXY_HOPS: '1', DB_HOST: 'db.internal', DB_USER: 'oportuna',

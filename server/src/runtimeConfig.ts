@@ -35,7 +35,9 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     throw new Error('CLIENT_ORIGIN debe contener orígenes HTTP(S) explícitos; no se admite *.');
   }
   const trustProxyHops = Number(env.TRUST_PROXY_HOPS || 0);
-  const host = env.HOST?.trim() || '127.0.0.1';
+  // Railpack routes traffic to the container's assigned PORT, so the web process
+  // must bind all interfaces. IIS httpPlatformHandler connects through loopback.
+  const host = env.HOST?.trim() || (appEnv === 'development' || env.HTTP_PLATFORM_PORT ? '127.0.0.1' : '0.0.0.0');
   const dbSslMode = (env.DB_SSL_MODE?.trim().toUpperCase() || 'VERIFY_IDENTITY');
   if (dbSslMode !== 'VERIFY_IDENTITY' && dbSslMode !== 'VERIFY_CA' && dbSslMode !== 'SHARKASP_STAGING_COMPAT') {
     throw new Error('DB_SSL_MODE debe ser VERIFY_IDENTITY, VERIFY_CA o SHARKASP_STAGING_COMPAT.');
@@ -61,7 +63,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     throw new Error('DB_SSL_SHARKASP_COMPAT solo se admite con DB_SSL_MODE=SHARKASP_STAGING_COMPAT.');
   }
   if (appEnv !== 'development') {
-    const required = ['HOST', 'CLIENT_ORIGIN', 'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'MERCADOPUBLICO_TICKET', 'SYNC_API_TOKEN'];
+    const required = ['CLIENT_ORIGIN', 'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'MERCADOPUBLICO_TICKET', 'SYNC_API_TOKEN'];
     const missing = required.filter((name) => !env[name]?.trim());
     if (missing.length) throw new Error(`Faltan variables obligatorias para ${appEnv}: ${missing.join(', ')}.`);
     if (!env.PROCESS_ROLE || !['web', 'sync-worker', 'enrichment-worker', 'alert-worker'].includes(env.PROCESS_ROLE)) throw new Error('PROCESS_ROLE debe identificar web, sync-worker, enrichment-worker o alert-worker fuera de development.');

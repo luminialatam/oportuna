@@ -54,6 +54,24 @@ jobs:
       - name: Run deterministic tests
         run: npm run test:ci
 
+      - name: Prepare isolated email integration schema
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: ''
+          DB_NAME: oportuna
+        run: node scripts/prepareEmailTestDatabase.mjs
+
+      - name: Exercise registration, verification, reset, and admin SMTP check against loopback only
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: ''
+          DB_NAME: oportuna
+        run: npm run test:email-failure-local
+
       - name: Verify amount persistence in temporary MySQL table
         env:
           DB_HOST: 127.0.0.1
@@ -62,3 +80,28 @@ jobs:
           DB_PASSWORD: ''
           DB_NAME: oportuna_ci
         run: npm run test:tender-amounts:mysql
+
+  verify-railpack-runtime:
+    name: Verify Linux build and isolated runtime compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies as Railpack does
+        run: npm install --no-audit --no-fund
+
+      - name: Build after the single dependency install
+        run: npm run build
+
+      - name: Exercise compiled Express, static assets, health endpoint, and Linux Argon2
+        env:
+          RAILPACK_CI: 'true'
+        run: npm run test:railpack-runtime
