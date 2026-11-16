@@ -1,6 +1,6 @@
-# Diagnóstico del 503 en SharkASP
+# Diagnóstico de errores HTTP 503/502 en SharkASP
 
-## Evidencia del despliegue #3987942
+## Evidencia histórica del 503 en deploy #3987942
 
 El registro de GitHub Deploy muestra Railpack 0.35 / Node 22 como **constructor**: ejecuta instalación, `npm run build` y el comando de deploy `npm start`, crea el artefacto y lo copia por SCP a `H:\root\home\luminiadev-001\www\liciapp`. Después informa que recicló el pool IIS `luminiadev-001` y marca el paso de copia como exitoso. El registro no demuestra que Node iniciara ni que una solicitud llegara a Express. Por eso “Éxito” aquí significa deploy/copia, no disponibilidad.
 
@@ -50,10 +50,12 @@ Si el registro concluyó en error en una versión anterior, la fila de usuario p
 
 ## Diagnóstico reproducible del 502 en Node.js Application
 
-El log de deploy `#3988392` confirma recycle, extracción del artefacto y actualización de `web.config`; no registra que el proceso Node haya iniciado ni que el health check haya pasado. HTTP Platform Handler exige que el proceso hijo escuche el puerto asignado en `HTTP_PLATFORM_PORT` y que IIS pueda conectarse a ese listener. La app usa `PORT` como alias; el bootstrap de la raíz copia primero `HTTP_PLATFORM_PORT` a `PORT` y fija el bind en `127.0.0.1`.
+El log de deploy `#3988392` confirma recycle, extracción del artefacto y actualización de `web.config`; no registra que el proceso Node haya iniciado ni que el health check haya pasado. HTTP Platform Handler exige que el proceso hijo escuche el puerto asignado en `HTTP_PLATFORM_PORT` y que IIS pueda conectarse a ese listener. La app usa `PORT` como alias; el bootstrap de la raíz copia primero `HTTP_PLATFORM_PORT` a `PORT` y fija el bind en `127.0.0.1`. [La referencia oficial de IIS](https://learn.microsoft.com/en-us/iis/extensions/httpplatformhandler/httpplatformhandler-configuration-reference) documenta este módulo como gestor de procesos HTTP que también proxya las solicitudes al listener administrado.
 
 `sharkasp-bootstrap.mjs` ahora emite etapas de inicio sanitizadas y códigos concretos para puerto dinámico inválido, archivos de build faltantes, `runtimeConfig` inválido, carga de Argon2 e importación del servidor. No imprime variables ni sus valores. `server/test/iisRuntime.integration.mjs` arranca el artefacto realmente producido por la instalación Linux sobre un runner Windows x64, comprueba que el prebuild Argon2 funcione en ese runtime, da a `HTTP_PLATFORM_PORT` un puerto distinto de `PORT`, y verifica el listener, HTML, bundles y `/api/health`. Usa configuración ficticia y MySQL solamente en `127.0.0.1:1` (sin datos ni servidor productivo).
 
 CI materializa la raíz del sitio desde ese artefacto Linux y aplica como `web.config` el template versionado `deploy/sharkasp/web.config.production.template`; valida XML, handler, archivo de inicio, puerto y bind antes de iniciar Node. El template reserva 60 segundos para el arranque y enruta todas las solicitudes a `sharkasp-bootstrap.mjs`.
 
 Límite de la reproducción: GitHub no ejecuta el HttpPlatformHandler instalado en SharkASP ni captura el `web.config` final que el panel genera. El CI prueba el contrato versionado y hace la misma solicitud HTTP al puerto local dinámico; no afirma que el IIS de producción ya pueda alcanzar el proceso. Para confirmar o descartar que el proveedor sobrescriba un atributo distinto del template hace falta el archivo final o un smoke HTTPS posterior a una publicación autorizada. El estado SUCCESS de copia no es ese smoke.
+
+La corrida CI `43983422158` pasó los tres jobs. En particular, el artefacto instalado en Linux ejecutó Argon2id y el bootstrap sobre Windows Server 2025 x64, y atendió `/`, bundles y `/api/health` en un puerto dinámico distinto de `PORT`. Esto descarta, para el artefacto reproducido, que la instalación Linux por sí sola vuelva incompatible el prebuild Argon2 Windows o que el bootstrap ignore el puerto dinámico. No se obtuvo el artefacto exacto de `#3988392` ni el `web.config` final generado por SharkASP, así que el 502 de producción sigue sin causa inequívoca: la diferencia de runtime/configuración del panel sigue siendo posible y no se puede afirmar corregida sin un smoke HTTPS real.
