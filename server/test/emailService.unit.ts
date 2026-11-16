@@ -38,6 +38,7 @@ assert.equal(sanitizedSmtpFailureCode(new Error('timeout')),'SMTP_TIMEOUT');
 assert.equal(sanitizedSmtpFailureCode(Object.assign(new Error('refused'),{code:'ECONNREFUSED'})),'SMTP_CONNECTION_FAILED');
 assert.equal(sanitizedSmtpFailureCode(new Error('SMTP_550')),'SMTP_5xx');
 assert.equal(sanitizedSmtpFailureCode(new Error('SMTP_421')),'SMTP_4xx');
+assert.equal(sanitizedSmtpFailureCode(new Error('SMTP_CONNECTION_FAILED')),'SMTP_CONNECTION_FAILED','sanitization remains stable when an already-sanitized error is handled again');
 
 const smtpTestConfig={...smtpBase,SMTP_PORT:'465',SMTP_SECURE:'true'};
 const fakeConnect=async()=>new FakeSmtpSocket() as any;

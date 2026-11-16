@@ -35,6 +35,7 @@ export function smtpConfigurationStatus(env:NodeJS.ProcessEnv=process.env) {
 export function sanitizedSmtpFailureCode(error: unknown) {
   const candidate=error as NodeJS.ErrnoException;
   const message=error instanceof Error?error.message:'';
+  if(['SMTP_TIMEOUT','SMTP_4xx','SMTP_5xx','SMTP_CONNECTION_FAILED','SMTP_TLS_FAILED','SMTP_CONFIGURATION_INVALID','SMTP_DELIVERY_FAILED'].includes(message))return message;
   if(message==='SMTP_TIMEOUT'||/timeout/i.test(message))return 'SMTP_TIMEOUT';
   const response=message.match(/^SMTP_([45])\d{2}$/);
   if(response)return `SMTP_${response[1]}xx`;
