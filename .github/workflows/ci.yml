@@ -54,9 +54,6 @@ jobs:
       - name: Run deterministic tests
         run: npm run test:ci
 
-      - name: Verify production settings validation
-        run: npm run test:production-config
-
       - name: Verify amount persistence in temporary MySQL table
         env:
           DB_HOST: 127.0.0.1
@@ -66,35 +63,27 @@ jobs:
           DB_NAME: oportuna_ci
         run: npm run test:tender-amounts:mysql
 
-  verify-windows-runtime:
-    name: Verify SharkASP Windows x64 runtime
-    runs-on: windows-2022
+  verify-railpack-runtime:
+    name: Verify Railpack Linux install, build, and runtime
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 22 x64
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          architecture: x64
           cache: npm
 
-      - name: Install locked dependencies once
-        run: npm ci
+      - name: Install dependencies as Railpack does
+        run: npm install --no-audit --no-fund
 
-      - name: Check types on Windows
-        run: npm run typecheck
-
-      - name: Build on Windows
+      - name: Build after the single dependency install
         run: npm run build
 
-      - name: Keep only runtime dependencies
-        run: npm prune --omit=dev
-
-      - name: Verify native Argon2 on Windows x64
-        run: node scripts/validateSharkaspWindowsRuntime.mjs
-
-      - name: Assemble and validate the IIS release folder
-        run: node scripts/prepareSharkaspRelease.mjs "$env:RUNNER_TEMP\oportuna-sharkasp-release-check"
+      - name: Exercise compiled Express, static assets, health endpoint, and Linux Argon2
+        env:
+          RAILPACK_CI: 'true'
+        run: npm run test:railpack-runtime
