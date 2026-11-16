@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { access } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -10,6 +11,9 @@ import argon2 from 'argon2';
 const pkg = await import('../../package.json', { with: { type: 'json' } });
 assert.equal(pkg.default.scripts.start, 'node dist-server/server/src/index.js', 'Railpack start script must run the compiled Express server.');
 assert.equal(pkg.default.engines?.node, '22.x', 'Railpack Node runtime must stay pinned to the supported major.');
+assert.equal(existsSync(join(process.cwd(), 'app_offline.htm')), false, 'IIS app_offline marker must never be tracked or included in the source checkout.');
+assert.equal(existsSync(join(process.cwd(), 'sharkasp-bootstrap.mjs')), true, 'IIS Node.js Application startup file must be present at the site root.');
+assert.equal(existsSync(join(process.cwd(), 'node_modules/argon2/prebuilds/win32-x64/argon2.glibc.node')), true, 'The Linux-built runtime dependency tree must carry Argon2 N-API prebuild for Windows x64 IIS.');
 if (process.env.RAILPACK_CI === 'true') {
   assert.equal(process.platform, 'linux', 'Railpack CI runtime check must run on Linux.');
   assert.equal(process.arch, 'x64', 'SharkASP Railpack Node runtime must be Linux x64.');

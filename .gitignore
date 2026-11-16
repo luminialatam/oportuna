@@ -16,6 +16,7 @@ temp/
 *.temp
 *.swp
 *.tsbuildinfo
+/app_offline.htm
 *.bak
 *.backup
 *.dump

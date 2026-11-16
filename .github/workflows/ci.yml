@@ -64,7 +64,7 @@ jobs:
         run: npm run test:tender-amounts:mysql
 
   verify-railpack-runtime:
-    name: Verify Railpack Linux install, build, and runtime
+    name: Verify Linux build and isolated runtime compatibility
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
