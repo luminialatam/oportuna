@@ -84,15 +84,17 @@ jobs:
       - name: Install locked dependencies once
         run: npm ci
 
-      - name: Check types and build on Windows
-        run: |
-          npm run typecheck
-          npm run build
+      - name: Check types on Windows
+        run: npm run typecheck
 
-      - name: Keep only runtime dependencies and verify native Argon2
-        run: |
-          npm prune --omit=dev
-          node scripts/validateSharkaspWindowsRuntime.mjs
+      - name: Build on Windows
+        run: npm run build
+
+      - name: Keep only runtime dependencies
+        run: npm prune --omit=dev
+
+      - name: Verify native Argon2 on Windows x64
+        run: node scripts/validateSharkaspWindowsRuntime.mjs
 
       - name: Assemble and validate the IIS release folder
         run: node scripts/prepareSharkaspRelease.mjs "$env:RUNNER_TEMP\oportuna-sharkasp-release-check"
