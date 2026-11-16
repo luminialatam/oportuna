@@ -299,6 +299,11 @@ if (runtime.processRole.endsWith('-worker')) {
       void initializeWorker().catch((error) => console.error(`[worker] inicio fallido; tipo=${error instanceof Error ? error.name : 'error'}`));
     }
   });
+  server.once('error', (error: NodeJS.ErrnoException) => {
+    const code = /^[A-Z0-9_]+$/.test(error.code ?? '') ? error.code : 'LISTEN_FAILED';
+    console.error(`[server] listen_failed code=${code}`);
+    process.exitCode = 1;
+  });
   const shutdown = () => {
     server.close(() => { void pool.end().finally(() => process.exit(0)); });
     setTimeout(() => process.exit(1), 15_000).unref();
