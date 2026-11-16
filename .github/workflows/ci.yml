@@ -54,6 +54,24 @@ jobs:
       - name: Run deterministic tests
         run: npm run test:ci
 
+      - name: Prepare isolated email integration schema
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: ''
+          DB_NAME: oportuna
+        run: node scripts/prepareEmailTestDatabase.mjs
+
+      - name: Exercise registration, verification, reset, and admin SMTP check against loopback only
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: ''
+          DB_NAME: oportuna
+        run: npm run test:email-failure-local
+
       - name: Verify amount persistence in temporary MySQL table
         env:
           DB_HOST: 127.0.0.1

@@ -32,6 +32,22 @@ export function smtpConfigurationStatus(env:NodeJS.ProcessEnv=process.env) {
   catch{return{configured:true,valid:false,missing:[] as string[]};}
 }
 
+export function sanitizedSmtpFailureCode(error: unknown) {
+  const candidate=error as NodeJS.ErrnoException;
+  const message=error instanceof Error?error.message:'';
+  if(message==='SMTP_TIMEOUT'||/timeout/i.test(message))return 'SMTP_TIMEOUT';
+  const response=message.match(/^SMTP_([45])\d{2}$/);
+  if(response)return `SMTP_${response[1]}xx`;
+  if(['ECONNREFUSED','ECONNRESET','ENOTFOUND','EHOSTUNREACH','ETIMEDOUT','EAI_AGAIN'].includes(candidate?.code??''))return 'SMTP_CONNECTION_FAILED';
+  if(/TLS|SSL|CERT/i.test(candidate?.code??''))return 'SMTP_TLS_FAILED';
+  if(/SMTP configuration|EMAIL_TRANSPORT|Invalid email header/i.test(message))return 'SMTP_CONFIGURATION_INVALID';
+  return 'SMTP_DELIVERY_FAILED';
+}
+
+export function logSmtpFailure(purpose:MailPurpose,error:unknown) {
+  console.error(`[email] delivery_failed purpose=${purpose} code=${sanitizedSmtpFailureCode(error)}`);
+}
+
 export function getLocalMail(email: string, purpose?: MailPurpose) {
   const normalized = email.trim().normalize('NFKC').toLowerCase();
   return localOutbox.filter((mail) => mail.to.toLowerCase() === normalized && (!purpose || mail.purpose === purpose)).slice(-10).reverse();
@@ -95,11 +111,11 @@ function connectSmtp(host: string, port: number, secure: boolean, timeoutMs: num
     socket.once('error', (error) => { clearTimeout(timer); reject(error); });
   });
 }
-async function sendSmtp(message: MailMessage) {
-  const {host,port,secure:implicitTls,timeoutMs,from,username,password,heloName}=smtpConfig();
+async function authenticateSmtp(env:NodeJS.ProcessEnv=process.env,connect:typeof connectSmtp=connectSmtp) {
+  const {host,port,secure:implicitTls,timeoutMs,from,username,password,heloName}=smtpConfig(env);
   let socket: Socket | undefined;
   try {
-    socket = await connectSmtp(host, port, implicitTls, timeoutMs);
+    socket = await connect(host, port, implicitTls, timeoutMs);
     let reader = makeReader(socket);
     const greeting = await readReply(reader); if (greeting.code !== 220) throw new Error(`SMTP_${greeting.code}`);
     const domain = heloName;
@@ -110,24 +126,43 @@ async function sendSmtp(message: MailMessage) {
       socket=secured;reader=makeReader(socket);await command(socket,reader,`EHLO ${safeHeader(domain)}`,[250]);
     }
     await command(socket, reader, `AUTH PLAIN ${Buffer.from(`\0${username}\0${password}`).toString('base64')}`, [235]);
+    return {socket,reader,from,heloName};
+  } catch(error) {
+    socket?.destroy();
+    throw new Error(sanitizedSmtpFailureCode(error));
+  }
+}
+
+export async function probeSmtp(env:NodeJS.ProcessEnv=process.env,connect:typeof connectSmtp=connectSmtp) {
+  const {socket,reader}=await authenticateSmtp(env,connect);
+  try {
+    await command(socket,reader,'QUIT',[221]);
+    return {authenticated:true as const};
+  } catch(error) {
+    socket.destroy();
+    throw new Error(sanitizedSmtpFailureCode(error));
+  } finally { socket.end(); }
+}
+
+export async function sendSmtp(message: MailMessage,env:NodeJS.ProcessEnv=process.env,connect:typeof connectSmtp=connectSmtp) {
+  const {socket,reader,from,heloName}=await authenticateSmtp(env,connect);
+  try {
     await command(socket, reader, `MAIL FROM:<${safeHeader(from)}>`, [250]);
     await command(socket, reader, `RCPT TO:<${safeHeader(message.to)}>`, [250, 251]);
     await command(socket, reader, 'DATA', [354]);
     const body = message.text.replace(/\r?\n/g, '\r\n').split('\r\n').map((line) => line.startsWith('.') ? `.${line}` : line).join('\r\n');
     const content = [
       `From: ${from}`, `To: ${safeHeader(message.to)}`, `Subject: ${encodeHeader(safeHeader(message.subject))}`,
-      `Date: ${new Date().toUTCString()}`, `Message-ID: <${randomUUID()}@${domain}>`,
+      `Date: ${new Date().toUTCString()}`, `Message-ID: <${randomUUID()}@${heloName}>`,
       'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: 8bit', '', body, '.', '',
     ].join('\r\n');
     socket.write(content);
     const sent = await readReply(reader); if (sent.code !== 250) throw new Error(`SMTP_${sent.code}`);
     await command(socket, reader, 'QUIT', [221]);
+    return 'accepted' as const;
   } catch (error) {
     socket?.destroy();
-    // Deliberately omit server responses, credentials, recipient and token from logs/errors.
-    const message = error instanceof Error ? error.message : '';
-    const safeCode = /^SMTP_\d{3}$/.test(message) ? message : message.includes('timeout') ? 'SMTP_TIMEOUT' : 'SMTP_DELIVERY_FAILED';
-    throw new Error(safeCode);
+    throw new Error(sanitizedSmtpFailureCode(error));
   } finally { socket?.end(); }
 }
 
@@ -137,8 +172,7 @@ export async function sendEmail(message: MailMessage) {
     if (localOutbox.length > 200) localOutbox.splice(0, localOutbox.length - 200);
     return 'simulated' as const;
   }
-  await sendSmtp(message);
-  return 'smtp' as const;
+  return sendSmtp(message);
 }
 
 export function appBaseUrl() {
