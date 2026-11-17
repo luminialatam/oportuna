@@ -48,7 +48,9 @@ Después, comprobar las 13 versiones/resultados y `GET /api/health` desde HTTPS;
 
 ## HTTPS, cookies y proxy
 
-La URL de origen configurada es `https://luminiadev-001-site5.ltempurl.com`. Cookies usan `Secure` fuera de development; Origin/CSRF siguen activos. El smoke correcto verifica Node y HTTP Platform, pero no demuestra por sí solo que `X-Forwarded-Proto` sea confiable, que HTTP redirija/bloquee a HTTPS ni el conteo de proxies. Antes de usar credenciales de staging, verificar esas propiedades y `TRUST_PROXY_HOPS` de extremo a extremo. No pasar por HTTP credenciales ni cookies.
+`CLIENT_ORIGIN` se configura como `https://tailflow.pro,https://luminiadev-001-site5.ltempurl.com`: `tailflow.pro` es el origen canónico y queda primero para enlaces de correo; el hostname temporal se conserva como alias secundario para el acceso y las comprobaciones de staging ya existentes. Cookies usan `Secure` fuera de development; Origin/CSRF siguen activos. El smoke correcto verifica Node y HTTP Platform, pero no demuestra por sí solo que `X-Forwarded-Proto` sea confiable, que HTTP redirija/bloquee a HTTPS ni el conteo de proxies. Antes de usar credenciales de staging, verificar esas propiedades y `TRUST_PROXY_HOPS` de extremo a extremo. No pasar por HTTP credenciales ni cookies.
+
+El bootstrap carga los valores no secretos de `deploy/sharkasp/sharkasp-runtime-config.mjs` y los secretos permitidos desde `../oportuna-private/secrets.json`. El pool de `mysql2` recibe `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` y las opciones TLS creadas por `createMysqlTlsOptions`. `GET /api/health` ejecuta `SELECT 1`; el fallo deja `mysql:false` sin ampliar el JSON. El log muestra solo un código genérico `DB_ACCESS_DENIED`, `DB_TLS`, `DB_DNS`, `DB_TIMEOUT`, `DB_CONNECTION_REFUSED`, `DB_SCHEMA` o `DB_UNKNOWN`. Las variables secretas heredadas del Pool se eliminan antes de leer el JSON privado; para un error de acceso, revisar/actualizar `DB_PASSWORD` en ese archivo privado, no en el Pool.
 
 ## Sustitución y reversión (no ejecutadas)
 

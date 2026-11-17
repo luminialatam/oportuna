@@ -11,7 +11,7 @@ El ZIP staging actualmente instalado contiene en su raíz `web.config`, `dist/`,
 
 ## Arranque en SharkASP y archivo privado de credenciales
 
-El panel Node.js regenera la configuración de `httpPlatform` al guardar el archivo de inicio. Selecciona `sharkasp-bootstrap.mjs` como archivo de inicio. El bootstrap fija la configuración no secreta de staging, usa el puerto dinámico `HTTP_PLATFORM_PORT` (o `PORT`), fuerza `PROCESS_ROLE=web`, apaga los workers, desactiva la lectura de `.env` e importa después `dist-server/server/src/index.js`.
+El panel Node.js regenera la configuración de `httpPlatform` al guardar el archivo de inicio. Selecciona `sharkasp-bootstrap.mjs` como archivo de inicio. El bootstrap importa la configuración no secreta de `sharkasp-runtime-config.mjs`, usa el puerto dinámico `HTTP_PLATFORM_PORT` (o `PORT`), fuerza `PROCESS_ROLE=web`, apaga los workers, desactiva la lectura de `.env` e importa después `dist-server/server/src/index.js`. `CLIENT_ORIGIN` usa `https://tailflow.pro` como origen canónico primero; el hostname temporal del proveedor se conserva como origen adicional para el acceso/prueba de staging. Los enlaces de verificación y recuperación usan siempre el primer origen configurado.
 
 El bootstrap carga las credenciales desde `../../oportuna-private/secrets.json`, resuelto desde la raíz de `/Liciapp` (fuera de `www`). El archivo es JSON UTF-8, objeto plano con `DB_PASSWORD`, `MERCADOPUBLICO_TICKET`, `SYNC_API_TOKEN` y opcionalmente `GROQ_API_KEY`. No se leen esos valores desde el entorno heredado del Pool: antes de abrir el archivo el bootstrap borra esas variables del proceso. Crea el directorio y archivo desde el administrador de archivos o mecanismo privado del hosting y concede lectura únicamente a la identidad del Pool `luminiadev-001`; el bootstrap verifica que sea un archivo regular, no un symlink, que esté fuera de la raíz web y, en sistemas POSIX, que tenga permisos `0600`. Nunca guardes el archivo en `/Liciapp`, en frontend, en `web.config` ni dentro del ZIP.
 
@@ -19,7 +19,23 @@ El bootstrap carga las credenciales desde `../../oportuna-private/secrets.json`,
 
 Ruta esperada dada la ruta física observada del sitio: `H:\root\home\luminiadev-001\oportuna-private\secrets.json`. Confirma en el panel que esa carpeta está fuera de `www`, que el proceso puede leer el archivo y que las ACL son las esperadas; no habilites descarga HTTP para probarlo. El bootstrap informa solo si el archivo es legible y qué variables están presentes, nunca sus valores. El modo `SHARKASP_STAGING_COMPAT` conserva TLS cifrado pero no valida la identidad del certificado y sigue limitado a staging.
 
-El inicio imprime solo nombres/estados de configuración; nunca valores secretos. Para ejecutar el diagnóstico sin iniciar Express: `node sharkasp-bootstrap.mjs --diagnose`. Para verificar tras el arranque: `node deploy/sharkasp/smoke-test.mjs`, que consulta únicamente `/` y `/api/health`.
+El inicio imprime solo nombres/estados de configuración; nunca valores secretos. Para ejecutar el diagnóstico sin iniciar Express: `node sharkasp-bootstrap.mjs --diagnose`. Para verificar tras el arranque: `node deploy/sharkasp/smoke-test.mjs`, que consulta únicamente `/` y `/api/health` usando `https://tailflow.pro` por defecto.
+
+### Diagnóstico MySQL sin datos sensibles
+
+`/api/health` mantiene la respuesta pública `{ok, apiConfigured, mysql}`. Si `SELECT 1` falla, el proceso registra únicamente `[db] health_check_failed code=DB_…`; las barreras de base de otras rutas registran `request_guard_failed` con el mismo clasificador. No se registran el mensaje de mysql2, host, usuario, contraseña ni SQL. El bootstrap fija host, base, usuario y TLS desde `sharkasp-runtime-config.mjs`; `DB_PASSWORD`, `MERCADOPUBLICO_TICKET` y `SYNC_API_TOKEN` se cargan desde el JSON privado. El bootstrap borra primero esos nombres del entorno heredado del Pool, por lo que cambiar `DB_PASSWORD` únicamente en el Pool no cambia la contraseña que utiliza Oportuna.
+
+Acción operativa según el código observado en el log:
+
+| Código | Acción única |
+| --- | --- |
+| `DB_ACCESS_DENIED` | Actualizar `DB_PASSWORD` en el JSON privado para el usuario MySQL configurado; no cambiar la variable del Pool. |
+| `DB_TLS` | Confirmar con SharkASP el modo TLS/CA compatible y configurar esa CA verificada; no desactivar la validación. |
+| `DB_DNS` | Confirmar el nombre de host MySQL asignado en el panel y corregir `DB_HOST` en la configuración no secreta del bootstrap. |
+| `DB_TIMEOUT` | Pedir al proveedor verificar accesibilidad del servidor MySQL y su puerto desde el proceso Node. |
+| `DB_CONNECTION_REFUSED` | Confirmar con el proveedor que MySQL escucha en el host y puerto configurados. |
+| `DB_SCHEMA` | Confirmar que `DB_NAME` existe y contiene el esquema/migraciones requeridos. |
+| `DB_UNKNOWN` | Consultar el registro sanitizado del proceso para obtener un código más específico; no copiar mensajes crudos ni datos de conexión. |
 
 Tras instalar, el smoke test sin autenticación ni secretos se ejecuta desde Node 18+: `node deploy/sharkasp/smoke-test.mjs`. Solo hace GET a `/` y `/api/health`, e informa si frontend, API y MySQL responden. Ejecutarlo una vez configuradas las variables privadas.
 

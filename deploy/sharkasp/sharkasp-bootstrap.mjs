@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fixedEnvironment } from './sharkasp-runtime-config.mjs';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const appRoot = existsSync(join(scriptDirectory, 'dist-server'))
@@ -12,27 +13,6 @@ const diagnoseOnly = args.has('--diagnose');
 const simulateIis = args.has('--simulate-iis');
 const simulationSecretArgument = process.argv.find((arg) => arg.startsWith('--simulate-secrets-file='));
 
-const fixedEnvironment = {
-  APP_ENV: 'staging',
-  NODE_ENV: 'production',
-  PROCESS_ROLE: 'web',
-  HOST: '127.0.0.1',
-  CLIENT_ORIGIN: 'https://luminiadev-001-site5.ltempurl.com',
-  DB_HOST: 'mysql1002.site4now.net',
-  DB_PORT: '3306',
-  DB_NAME: 'db_ac9392_licitapp',
-  DB_USER: 'ac9392_licitapp',
-  DB_SSL: 'true',
-  DB_SSL_MODE: 'SHARKASP_STAGING_COMPAT',
-  DB_SSL_SHARKASP_COMPAT: 'true',
-  DB_SSL_CA: '',
-  DB_SSL_CA_SHA256: '',
-  TRUST_PROXY_HOPS: '1',
-  SYNC_SCHEDULER_ENABLED: 'false',
-  ENRICHMENT_WORKER_ENABLED: 'false',
-  ALERT_SCHEDULER_ENABLED: 'false',
-  RATE_LIMIT_SHARED: 'true',
-};
 const requiredPrivateVariables = ['DB_PASSWORD', 'MERCADOPUBLICO_TICKET', 'SYNC_API_TOKEN'];
 const allowedSecretVariables = new Set([...requiredPrivateVariables, 'GROQ_API_KEY']);
 

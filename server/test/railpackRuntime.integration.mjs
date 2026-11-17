@@ -103,10 +103,20 @@ try {
 
   const healthResponse = await fetchReady(`${base}/api/health`, { headers: secureHeaders });
   assert.equal(healthResponse.status, 200);
-  const health = await healthResponse.json();
+  const healthBody = await healthResponse.text();
+  const health = JSON.parse(healthBody);
   assert.equal(health.ok, true);
   assert.equal(health.apiConfigured, true);
   assert.equal(health.mysql, false, 'isolated smoke test must not connect to a real database');
+  for (let attempt = 0; attempt < 20 && !output.includes('[db] health_check_failed code='); attempt += 1) {
+    await delay(25);
+  }
+  assert.match(output, /\[db\] health_check_failed code=DB_CONNECTION_REFUSED/, 'database failure must be classified in logs');
+  for (const privateValue of [childEnv.DB_PASSWORD, childEnv.MERCADOPUBLICO_TICKET, childEnv.SYNC_API_TOKEN]) {
+    assert.equal(output.includes(privateValue), false, 'database diagnostics must not log secrets');
+    assert.equal(healthBody.includes(privateValue), false, 'health response must not expose secrets');
+  }
+  assert.deepEqual(Object.keys(health).sort(), ['apiConfigured', 'mysql', 'ok'], 'health response remains limited to its public status fields');
   assert.match(output, /API Oportuna escuchando en 0\.0\.0\.0:/, 'production Railpack must bind all interfaces');
   console.log('PASS Railpack runtime: npm start, Linux-compatible Argon2id, 0.0.0.0/PORT, SPA assets and API health (isolated DB unavailable as expected).');
 } finally {

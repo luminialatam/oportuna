@@ -1,8 +1,8 @@
-const origin = process.argv[2] || 'https://luminiadev-001-site5.ltempurl.com';
+const origin = process.argv[2] || 'https://tailflow.pro';
 const base = new URL(origin);
 
 if (base.protocol !== 'https:') {
-  process.stderr.write('Usa el origen HTTPS de staging.\n');
+  process.stderr.write('Usa el origen HTTPS de Oportuna.\n');
   process.exit(2);
 }
 
