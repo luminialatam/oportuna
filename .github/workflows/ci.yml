@@ -105,3 +105,67 @@ jobs:
         env:
           RAILPACK_CI: 'true'
         run: npm run test:railpack-runtime
+
+      - name: Stage the Linux-built files as the SharkASP IIS deployment would receive them
+        shell: bash
+        run: |
+          site="$RUNNER_TEMP/oportuna-iis-linux-artifact"
+          mkdir -p "$site"
+          cp -R dist dist-server node_modules package.json sharkasp-bootstrap.mjs "$site/"
+          cp deploy/sharkasp/web.config.production.template "$site/web.config"
+          test -f "$site/node_modules/argon2/prebuilds/win32-x64/argon2.glibc.node"
+
+      - name: Preserve the exact Linux-built runtime tree for Windows x64 verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: oportuna-iis-runtime-linux-artifact
+          path: ${{ runner.temp }}/oportuna-iis-linux-artifact/
+          if-no-files-found: error
+          include-hidden-files: true
+          compression-level: 1
+          retention-days: 1
+
+  verify-iis-windows-runtime:
+    name: Verify Linux-built artifact under IIS Node contract (Windows x64)
+    needs: verify-railpack-runtime
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source test harness
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22 x64
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          architecture: x64
+
+      - name: Download the exact Linux-built deployment artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: oportuna-iis-runtime-linux-artifact
+          path: ${{ runner.temp }}/oportuna-iis-linux-artifact
+
+      - name: Reproduce the final site directory and validate HttpPlatformHandler config
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $site = Join-Path $env:RUNNER_TEMP 'oportuna-iis-site'
+          New-Item -ItemType Directory -Path $site -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:RUNNER_TEMP 'oportuna-iis-linux-artifact\*') -Destination $site -Recurse -Force
+          Copy-Item -LiteralPath 'deploy/sharkasp/web.config.production.template' -Destination (Join-Path $site 'web.config') -Force
+          [xml]$config = Get-Content -Raw (Join-Path $site 'web.config')
+          $handler = $config.configuration.'system.webServer'.handlers.add
+          if ($handler.path -ne '*' -or $handler.verb -ne '*' -or $handler.modules -ne 'httpPlatformHandler') { throw 'web.config does not route requests to HttpPlatformHandler.' }
+          $platform = $config.configuration.'system.webServer'.httpPlatform
+          if ($platform.processPath -ne 'node' -or $platform.arguments -ne 'sharkasp-bootstrap.mjs') { throw 'web.config does not launch the configured root Node startup file.' }
+          $variables = @($platform.environmentVariables.environmentVariable)
+          $port = $variables | Where-Object { $_.name -eq 'PORT' } | Select-Object -First 1
+          $hostVariable = $variables | Where-Object { $_.name -eq 'HOST' } | Select-Object -First 1
+          if ($port.value -ne '%HTTP_PLATFORM_PORT%' -or $hostVariable.value -ne '127.0.0.1') { throw 'web.config does not pass the dynamic port and loopback bind expected by IIS.' }
+          "APPLICATION_ROOT=$site" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Output 'PASS final site directory and HttpPlatformHandler config contract.'
+
+      - name: Start the Linux-built package with HTTP_PLATFORM_PORT and smoke the IIS handoff
+        shell: pwsh
+        run: node server/test/iisRuntime.integration.mjs "$env:APPLICATION_ROOT"
