@@ -70,7 +70,9 @@ async function runExpectedStartupFailure(expectedCode, env) {
   const exitCode = await Promise.race([new Promise((resolveExit) => probe.once('exit', resolveExit)), delay(10000).then(() => null)]);
   if (exitCode === null) { probe.kill(); throw new Error(`Bootstrap did not stop on ${expectedCode}.`); }
   assert.notEqual(exitCode, 0, `${expectedCode} must fail fast.`);
-  assert.ok(probeOutput.includes(`code=${expectedCode}`), `Expected sanitized ${expectedCode} diagnostic.`);
+  let safeProbeOutput = probeOutput;
+  for (const value of Object.values(fakeSecrets)) safeProbeOutput = safeProbeOutput.split(value).join('[redacted]');
+  assert.ok(safeProbeOutput.includes(`code=${expectedCode}`), `Expected sanitized ${expectedCode} diagnostic; output=${safeProbeOutput.slice(-1000)}`);
   for (const value of Object.values(fakeSecrets)) assert.ok(!probeOutput.includes(value), 'startup diagnostic must not print configuration values');
   return probeOutput;
 }
