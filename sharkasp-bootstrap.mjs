@@ -17,6 +17,31 @@ const privateVariableNames = [
 ];
 const allowedPrivateVariables = new Set(privateVariableNames);
 
+// Public deployment settings for the dedicated Oportuna site. Credentials stay
+// in the private sibling file or the site's process environment.
+const fixedEnvironment = Object.freeze({
+  APP_ENV: 'production',
+  NODE_ENV: 'production',
+  PROCESS_ROLE: 'web',
+  HOST: '127.0.0.1',
+  CLIENT_ORIGIN: 'https://tailflow.pro',
+  TRUST_PROXY_HOPS: '1',
+  DB_HOST: 'mysql1002.site4now.net',
+  DB_PORT: '3306',
+  DB_NAME: 'db_ac9392_licitapp',
+  DB_USER: 'ac9392_licitapp',
+  DB_SSL: 'true',
+  DB_SSL_MODE: 'SHARKASP_INTERNAL_TRUST',
+  DB_SSL_SHARKASP_COMPAT: 'true',
+  DB_SSL_CA: '',
+  DB_SSL_CA_SHA256: '',
+  EMAIL_TRANSPORT: 'smtp',
+  SYNC_SCHEDULER_ENABLED: 'false',
+  ENRICHMENT_WORKER_ENABLED: 'false',
+  ALERT_SCHEDULER_ENABLED: 'false',
+  RATE_LIMIT_SHARED: 'true',
+});
+
 function isInside(candidate, parent) {
   const rel = relative(parent, candidate);
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel));
@@ -80,7 +105,7 @@ if (!existsSync(entrypoint) || !existsSync(join(appRoot, 'dist', 'index.html')))
 
 const portSource = process.env.HTTP_PLATFORM_PORT?.trim() ? 'HTTP_PLATFORM_PORT' : 'PORT';
 process.env.PORT = port;
-process.env.HOST = '127.0.0.1';
+Object.assign(process.env, fixedEnvironment);
 // Do not let a deployed .env file silently override the Node App's environment.
 process.env.DOTENV_CONFIG_PATH = join(appRoot, '.oportuna-dotenv-disabled');
 const privateSecrets = loadPrivateSecrets();

@@ -26,9 +26,12 @@ $archive = [System.IO.Path]::GetFullPath($OutputZip)
 try {
   New-Item -ItemType Directory -Path $stage | Out-Null
   Copy-Item $frontendBuild (Join-Path $stage 'dist') -Recurse
+  Copy-Item (Join-Path $frontendBuild 'index.html') (Join-Path $stage 'index.html')
+  Copy-Item (Join-Path $frontendBuild 'assets') (Join-Path $stage 'assets') -Recurse
   Copy-Item $backendBuild (Join-Path $stage 'dist-server') -Recurse
-  Copy-Item (Join-Path $PSScriptRoot 'sharkasp-bootstrap.mjs') $stage
-  Copy-Item (Join-Path $PSScriptRoot 'sharkasp-runtime-config.mjs') $stage
+  if ($Mode -eq 'Production') {
+    Copy-Item (Join-Path $projectRoot 'sharkasp-bootstrap.mjs') $stage
+  }
   Copy-Item (Join-Path $projectRoot 'package.json') $stage
   Copy-Item (Join-Path $projectRoot 'package-lock.json') $stage
 
@@ -36,6 +39,22 @@ try {
   $configTemplate = Join-Path $PSScriptRoot $templateName
   $config = Get-Content -Raw $configTemplate
   Set-Content -Path (Join-Path $stage 'web.config') -Value $config -Encoding UTF8
+
+  $rootIndex = Get-Content -Raw (Join-Path $stage 'index.html')
+  if ($rootIndex -match '/src/main\.tsx|@vite/client') { throw 'El index.html raíz sigue siendo la fuente de Vite.' }
+  $rootAssets = [regex]::Matches($rootIndex, '(?:src|href)="(/assets/[^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+  if (-not ($rootAssets | Where-Object { $_ -match '^/assets/index-[A-Za-z0-9_-]+\.js$' })) { throw 'Falta el bundle JavaScript hashed del build.' }
+  if (-not ($rootAssets | Where-Object { $_ -match '^/assets/index-[A-Za-z0-9_-]+\.css$' })) { throw 'Falta el CSS hashed del build.' }
+  foreach ($asset in $rootAssets) {
+    if (-not (Test-Path -LiteralPath (Join-Path $stage $asset.TrimStart('/')) -PathType Leaf)) { throw "Falta el asset referenciado $asset." }
+  }
+  if ($Mode -eq 'Production') {
+    [xml]$configXml = Get-Content -Raw (Join-Path $stage 'web.config')
+    $platform = $configXml.configuration.'system.webServer'.httpPlatform
+    if ($platform.processPath -ne 'node' -or $platform.arguments -ne 'sharkasp-bootstrap.mjs') { throw 'web.config no inicia el bootstrap Node de producción.' }
+    if ($null -ne $configXml.configuration.'system.webServer'.rewrite) { throw 'web.config contiene rewrite que puede interceptar la API.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $stage 'sharkasp-bootstrap.mjs') -PathType Leaf)) { throw 'Falta sharkasp-bootstrap.mjs en la raíz del paquete.' }
+  }
 
   Push-Location $stage
   try {

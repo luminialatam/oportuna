@@ -2,6 +2,8 @@
 
 El smoke y la aplicación completa usan el sitio `luminiadev-001-site5`, carpeta `/Liciapp`, módulo `Node.JS + httpPlatforma` y el proceso `node` confirmado por el `web.config` funcional.
 
+Para GitHub Deploy, configura el comando de build como `npm run build:sharkasp`. Este comando ejecuta el build normal y luego prepara el directorio raíz efímero que SharkASP publica: copia `dist/index.html` y `dist/assets/` a la raíz, valida los nombres hashed y exige que `web.config` dirija todas las rutas a `sharkasp-bootstrap.mjs` mediante `HTTP_PLATFORM_PORT`. `npm run build` por sí solo conserva el `index.html` fuente de Vite en la raíz.
+
 ## Paquetes
 
 - `../../artifacts/oportuna-sharkasp-smoke.zip`: smoke autónomo.
