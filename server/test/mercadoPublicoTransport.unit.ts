@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { classifyTransportError } from '../src/mercadoPublico.js';
+import { classifyTransportError } from '../src/mercadoPublicoTransport.js';
 
 assert.deepEqual(classifyTransportError(Object.assign(new Error('dns failed'), { code: 'ENOTFOUND' })), { code: 'ENOTFOUND', phase: 'dns' });
 assert.deepEqual(classifyTransportError(Object.assign(new Error('refused'), { code: 'ECONNREFUSED' })), { code: 'ECONNREFUSED', phase: 'tcp' });
