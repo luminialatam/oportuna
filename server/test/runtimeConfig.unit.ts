@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { loadRuntimeConfig } from '../src/runtimeConfig.js';
-import { MemoryRateLimitStore } from '../src/rateLimitStore.js';
-import pool from '../src/db.js';
+import { MemoryRateLimitStore } from '../src/memoryRateLimitStore.js';
 
 const local = loadRuntimeConfig({ APP_ENV: 'development', PORT: '4000' } as NodeJS.ProcessEnv);
 assert.equal(local.host, '127.0.0.1');
@@ -53,4 +52,3 @@ assert.ok(blocked.retryAfterSeconds > 0);
 assert.equal((await store.consume('test', 2, 60_000, now + 60_000)).allowed, true);
 
 console.log('PASS runtime config, secure proxy defaults and rate-limit store behavior.');
-await pool.end();
