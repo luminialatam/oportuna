@@ -28,6 +28,7 @@ try {
   Copy-Item $frontendBuild (Join-Path $stage 'dist') -Recurse
   Copy-Item $backendBuild (Join-Path $stage 'dist-server') -Recurse
   Copy-Item (Join-Path $PSScriptRoot 'sharkasp-bootstrap.mjs') $stage
+  Copy-Item (Join-Path $PSScriptRoot 'sharkasp-runtime-config.mjs') $stage
   Copy-Item (Join-Path $projectRoot 'package.json') $stage
   Copy-Item (Join-Path $projectRoot 'package-lock.json') $stage
 

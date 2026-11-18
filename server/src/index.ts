@@ -23,6 +23,7 @@ import { clearSessionCookies, csrfCookieName, getRequestCsrfToken, getRequestSes
 import { appBaseUrl, emailMode, getLocalMail, localMailPreviewEnabled, logSmtpFailure, probeSmtp, sanitizedSmtpFailureCode, sendEmail, type MailPurpose } from './emailService.js';
 import { listCompanyAccessRequests, registerCompanyForCurrentUser, requestCompanyAccess, reviewCompanyAccessRequest } from './onboardingService.js';
 import { normalizeChileanRut } from './chileanRut.js';
+import { logMysqlFailure } from './mysqlDiagnostics.js';
 
 const app = express();
 const runtime = loadRuntimeConfig();
@@ -71,11 +72,14 @@ function normalized(row: ApiListing) {
   };
 }
 function requireDb(_req: express.Request, _res: express.Response, next: express.NextFunction) {
-  void pool.query('SELECT 1').then(() => next()).catch(() => next(new MercadoPublicoError('MySQL no está disponible o la migración aún no se ha ejecutado.', 503)));
+  void pool.query('SELECT 1').then(() => next()).catch((error) => {
+    logMysqlFailure('request_guard', error);
+    next(new MercadoPublicoError('MySQL no está disponible o la migración aún no se ha ejecutado.', 503));
+  });
 }
 app.get('/api/health', async (_req, res) => {
   let mysqlOk = false;
-  try { await pool.query('SELECT 1'); mysqlOk = true; } catch { /* report status, not secrets */ }
+  try { await pool.query('SELECT 1'); mysqlOk = true; } catch (error) { logMysqlFailure('health_check', error); }
   res.json({ ok: true, apiConfigured: Boolean(process.env.MERCADOPUBLICO_TICKET?.trim()), mysql: mysqlOk });
 });
 app.get('/api/auth/email-mode',(_req,res)=>res.set('Cache-Control','no-store').json({localPreview:localMailPreviewEnabled(),mode:emailMode()}));
