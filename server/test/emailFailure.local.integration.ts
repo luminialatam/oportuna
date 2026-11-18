@@ -74,6 +74,9 @@ try{
   const duplicate=await fetch(`${origin}/api/auth/register`,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({firstName:'Pendiente',lastName:'SMTP',email:pendingEmail,password})});
   assert.equal(duplicate.status,202,'an already-pending registration stays neutral and does not create another account');
   const [duplicateRows]=await pool.query<any[]>('SELECT COUNT(*) total FROM app_users WHERE email_normalized=?',[pendingEmail]);assert.equal(Number(duplicateRows[0].total),1);
+  const publicResend=await fetch(`${origin}/api/auth/email-verification/resend-request`,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({email:pendingEmail})});
+  assert.equal(publicResend.status,202);assert.match((await publicResend.json() as any).message,/Solicitud recibida/,'public resend response remains neutral while SMTP fails');
+  const [publicTokens]=await pool.query<any[]>('SELECT COUNT(*) total FROM email_verification_tokens WHERE user_id=? AND used_at IS NULL AND expires_at>UTC_TIMESTAMP()',[pendingId]);assert.equal(Number(publicTokens[0].total),1,'public resend stores one usable replacement token before attempting SMTP');
 
   const login=await fetch(`${origin}/api/auth/login`,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({email:adminEmail,password})});
   assert.equal(login.status,200);
@@ -107,6 +110,8 @@ try{
   assert.equal(unknownReset.status,202);assert.equal(existingReset.status,202);
   assert.deepEqual(await unknownReset.json(),await existingReset.json(),'reset response remains neutral on SMTP failure');
   assert.match(childOutput,/\[email\] delivery_failed purpose=verification code=SMTP_CONNECTION_FAILED/);
+  assert.match(childOutput,/\[email\] verification_token_issued channel=public/);
+  assert.equal((childOutput.match(/\[email\] delivery_failed purpose=verification code=SMTP_CONNECTION_FAILED/g)||[]).length,2,'both authenticated and public resend log sanitized SMTP failures');
   assert.match(childOutput,/\[email\] delivery_failed purpose=password-reset code=SMTP_CONNECTION_FAILED/);
   assert.ok(!childOutput.includes('QA-SECRET-MUST-NOT-APPEAR')&&!childOutput.includes(pendingEmail)&&!childOutput.includes(adminEmail),'SMTP credentials, recipient addresses, tokens, and message content are never logged');
   console.log('PASS local SMTP failure integration: pending user session and resend, duplicate guard, platform-only SMTP diagnostic, neutral password reset and sanitized logs; all SMTP connections were loopback-only.');
