@@ -35,8 +35,9 @@ const interpretationCache = new Map<string, CacheEntry<{criteria:Criteria;provid
 const analysisCache = new Map<string, CacheEntry<any>>();
 const analysisInFlight = new Map<string, Promise<any>>();
 const searchCache = new Map<string, CacheEntry<any>>();
-const CACHE_TTL = 15 * 60_000;
-const ANALYSIS_TTL = 6 * 60 * 60_000;
+const CACHE_TTL = 5 * 60_000;
+const ANALYSIS_TTL = 60 * 60_000;
+const MAX_CACHE_ENTRIES = 100;
 const STOP = new Set('busco busca necesito necesitamos para con en de del la el los las un una unos unas por que y o a al sobre servicios servicio equipos equipo licitacion licitaciones chile santiago millones millon clp pesos region desde hasta entre antes despues mas mayor superior'.split(' '));
 const LOW_SIGNAL = new Set('equipo equipos equipamiento maquina maquinas maquinaria industrial industriales servicio servicios suministro suministros compra compras adquisicion adquisiciones fabricar fabricacion comercial'.split(' '));
 
@@ -64,7 +65,7 @@ function sqlRegexTerm(term:string){const accents:Record<string,string>={a:'[aรกร
 const tidy = (s: string) => s.replace(/[^\p{L}\p{N}\s-]/gu,' ').replace(/\s+/g,' ').trim().slice(0,500);
 const keyOf = (s: string) => createHash('sha256').update(s).digest('hex');
 function getCache<T>(map: Map<string,CacheEntry<T>>, key: string): T | undefined { const entry=map.get(key);if(!entry)return; if(entry.expiresAt<Date.now()){map.delete(key);return;}return entry.value; }
-function setCache<T>(map: Map<string,CacheEntry<T>>,key:string,value:T,ttl:number){map.set(key,{value,expiresAt:Date.now()+ttl});if(map.size>500){for(const [k,v] of map)if(v.expiresAt<Date.now())map.delete(k);if(map.size>600)map.delete(map.keys().next().value!);}}
+function setCache<T>(map: Map<string,CacheEntry<T>>,key:string,value:T,ttl:number){const now=Date.now();for(const [k,v] of map)if(v.expiresAt<=now)map.delete(k);map.delete(key);map.set(key,{value,expiresAt:now+ttl});while(map.size>MAX_CACHE_ENTRIES)map.delete(map.keys().next().value!);}
 function fallbackCriteria(query: string): Criteria {
   const searchQuery=removeExplicitExclusionPhrases(query);const plain=stripAccents(searchQuery);const products:string[]=[];const synonyms:string[]=[];const relatedTerms:string[]=[];let sector:string|null=null;
   for(const [pattern, direct, related, group] of synonymGroups){if(pattern.test(query)){sector=sector??group;for(const term of direct){if(!plain.includes(stripAccents(term))&&!synonyms.includes(term))synonyms.push(term);}for(const term of related){if(!plain.includes(stripAccents(term))&&!relatedTerms.includes(term))relatedTerms.push(term);}}}
