@@ -93,6 +93,16 @@ jobs:
           DB_NAME: oportuna
         run: npm run test:email-failure-local
 
+      - name: Verify account lifecycle and company profile persistence with simulated mail
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: ''
+          DB_NAME: oportuna
+          EMAIL_TRANSPORT: simulated
+        run: npm run test:auth-lifecycle && npm run test:company-profile-validation
+
       - name: Verify amount persistence in temporary MySQL table
         env:
           DB_HOST: 127.0.0.1

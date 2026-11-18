@@ -1,59 +1,1059 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Building2, Check, LoaderCircle, PackagePlus, Pencil, Plus, Save, Search, Sparkles, Trash2, X } from 'lucide-react';
+import {
+  Building2,
+  CheckCircle2,
+  Info,
+  LoaderCircle,
+  Package,
+  PackagePlus,
+  Pencil,
+  Plus,
+  Save,
+  Search,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react';
 
-type Profile = { nombreComercial:string;razonSocial:string;rut:string;emailContacto:string;telefono:string;direccion:string;comuna:string;regionPrincipal:string;descripcionComercial:string;actividad:string;rubros:string[];regiones:string[];sitioWeb:string;palabrasClave:string[];terminosExcluidos:string[];estados:number[] };
-type OfferType='product_supply'|'service'|'installation'|'maintenance_repair'|'rental'|'construction';
-const offerTypes:Array<{value:OfferType;label:string}>=[{value:'product_supply',label:'Compra o suministro'},{value:'service',label:'Servicios'},{value:'installation',label:'Instalación y puesta en marcha'},{value:'maintenance_repair',label:'Mantención y reparación'},{value:'rental',label:'Arriendo de equipamiento'},{value:'construction',label:'Construcción y obras'}];
-type Product = { id?:number;nombre:string;categoria:string;descripcion:string;palabrasClave:string[];sinonimos:string[];terminosRelacionados:string[];aplicaciones:string[];exclusiones:string[];tiposComerciales:OfferType[];activo:boolean };
-type Suggestions = { directSynonyms:string[];relatedTerms:string[];applications:string[];provider?:'groq'|'fallback' };
-const blankProfile:Profile={nombreComercial:'',razonSocial:'',rut:'',emailContacto:'',telefono:'',direccion:'',comuna:'',regionPrincipal:'',descripcionComercial:'',actividad:'',rubros:[],regiones:[],sitioWeb:'',palabrasClave:[],terminosExcluidos:[],estados:[5]};
-const blankProduct:Product={nombre:'',categoria:'',descripcion:'',palabrasClave:[],sinonimos:[],terminosRelacionados:[],aplicaciones:[],exclusiones:[],tiposComerciales:[],activo:true};
-const listValue=(value:string)=>value.split(/[\n,;]+/).map(item=>item.trim()).filter(Boolean);
-async function request<T>(url:string,options?:RequestInit,csrfToken=''):Promise<T>{const headers=new Headers(options?.headers);if(!['GET','HEAD','OPTIONS'].includes((options?.method??'GET').toUpperCase())&&csrfToken)headers.set('X-CSRF-Token',csrfToken);const response=await fetch(url,{...options,headers,credentials:'same-origin'});const data=await response.json();if(!response.ok)throw new Error(data.error||'No fue posible completar la solicitud.');return data as T;}
+type Profile = {
+  nombreComercial: string;
+  razonSocial: string;
+  rut: string;
+  emailContacto: string;
+  telefono: string;
+  direccion: string;
+  comuna: string;
+  regionPrincipal: string;
+  descripcionComercial: string;
+  actividad: string;
+  rubros: string[];
+  regiones: string[];
+  sitioWeb: string;
+  palabrasClave: string[];
+  terminosExcluidos: string[];
+  estados: number[];
+};
 
-export function CompanyWorkspace({onSaved,csrfToken,canEdit=true,accessRole='admin'}:{onSaved:()=>void;csrfToken:string;canEdit?:boolean;accessRole?:'admin'|'collaborator'|'read_only'|null}){
- const [profile,setProfile]=useState<Profile>(blankProfile);const [products,setProducts]=useState<Product[]>([]);const [progress,setProgress]=useState<any>(null);const [loading,setLoading]=useState(true);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');const [query,setQuery]=useState('');const [editingId,setEditingId]=useState<number|null>(null);const [product,setProduct]=useState<Product>(blankProduct);const [suggestions,setSuggestions]=useState<Suggestions|null>(null);const [suggesting,setSuggesting]=useState(false);
- const load=async(search='')=>{setLoading(true);try{const [workspace,catalog,setup]=await Promise.all([request<{profile:Profile;products:Product[]}>('/api/company/profile'),request<{items:Product[]}>(`/api/company/catalog?q=${encodeURIComponent(search)}`),request<any>('/api/onboarding/progress')]);setProfile({...blankProfile,...workspace.profile});setProducts(catalog.items);setProgress(setup)}catch(e){setError(e instanceof Error?e.message:'No se pudo cargar el perfil de empresa.')}finally{setLoading(false)}};
- useEffect(()=>{void load()},[]);
- const updateProfile=<K extends keyof Profile>(key:K,value:Profile[K])=>setProfile(current=>({...current,[key]:value}));
- const saveProfile=async(event:FormEvent)=>{event.preventDefault();if(!canEdit)return;setBusy(true);setError('');setNotice('');try{const saved=await request<{profile:Profile}>('/api/company/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(profile)},csrfToken);setProfile({...blankProfile,...saved.profile});setNotice('Perfil guardado.');onSaved();void load(query)}catch(e){setError(e instanceof Error?e.message:'No se pudo guardar el perfil.')}finally{setBusy(false)}};
- const resetProduct=()=>{setProduct(blankProduct);setEditingId(null);setSuggestions(null)};
- const setProductField=<K extends keyof Product>(key:K,value:Product[K])=>setProduct(current=>({...current,[key]:value}));
- const editProduct=(item:Product)=>{setEditingId(item.id??null);setProduct({...item});setSuggestions(null);window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'})};
- const saveProduct=async(event:FormEvent)=>{event.preventDefault();setBusy(true);setError('');setNotice('');try{const url=editingId?`/api/company/catalog/${editingId}`:'/api/company/catalog';const saved=await request<{items:Product[]}>(url,{method:editingId?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(product)},csrfToken);setProducts(saved.items);setNotice(editingId?'Producto actualizado.':'Producto agregado al catálogo.');resetProduct();onSaved()}catch(e){setError(e instanceof Error?e.message:'No se pudo guardar el producto.')}finally{setBusy(false)}};
- const deleteProduct=async(id:number)=>{if(!window.confirm('¿Eliminar este producto o servicio del catálogo?'))return;setBusy(true);try{await request(`/api/company/catalog/${id}`,{method:'DELETE'},csrfToken);await load(query);setNotice('Producto eliminado.');onSaved()}catch(e){setError(e instanceof Error?e.message:'No se pudo eliminar el producto.')}finally{setBusy(false)}};
- const toggleActive=async(item:Product)=>{if(!item.id)return;setBusy(true);setError('');try{const saved=await request<{items:Product[]}>(`/api/company/catalog/${item.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({...item,activo:!item.activo})},csrfToken);setProducts(saved.items);setNotice(item.activo?'Producto desactivado del Match.':'Producto activado para el Match.');onSaved()}catch(e){setError(e instanceof Error?e.message:'No se pudo cambiar el estado del producto.')}finally{setBusy(false)}};
- const suggest=async()=>{if(product.nombre.trim().length<2){setError('Ingresa el nombre del producto para pedir sugerencias.');return;}setSuggesting(true);setError('');setSuggestions(null);try{setSuggestions(await request<Suggestions>('/api/company/catalog/suggestions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:product.nombre,categoria:product.categoria||null,descripcion:product.descripcion||null})},csrfToken))}catch(e){setError(e instanceof Error?e.message:'No se pudieron generar sugerencias.')}finally{setSuggesting(false)}};
- const useSuggestion=(key:'sinonimos'|'terminosRelacionados'|'aplicaciones',items:string[])=>setProduct(current=>({...current,[key]:[...new Set([...current[key],...items])]}));
- const activeCount=products.filter(item=>item.activo).length;
- const missingMatchData=[!profile.actividad.trim()&&!profile.rubros.length?'rubro o actividad comercial':'',!profile.palabrasClave.length?'palabras clave del perfil':'',!activeCount?'al menos un producto o servicio activo':''].filter(Boolean);
- const toggleState=(state:number)=>updateProfile('estados',profile.estados.includes(state)?profile.estados.filter(value=>value!==state):[...profile.estados,state]);
- return <>
-  <div className="page-heading company-heading"><div><div className="eyebrow">PERFIL COMERCIAL</div><h1>Mi empresa</h1><p>Define los productos y servicios que quieres encontrar en oportunidades públicas.</p></div><span className="company-local-pill"><Building2 size={14}/>Espacio local</span></div>
-  {progress&&<section className="panel onboarding-progress-card"><div><b>Configuración inicial</b><span>{progress.completed} de {progress.total} pasos completados · {progress.activeProducts} productos activos</span></div><progress value={progress.completed} max={progress.total}/><small>{progress.representationStatus==='verified'?'Representación verificada':'Empresa registrada; representación legal no verificada automáticamente'}</small></section>}
-  {!canEdit&&<p className="company-readonly-note">{accessRole==='read_only'?'Tienes acceso de solo lectura a esta empresa.':'Tu rol de colaborador permite revisar oportunidades y seguimiento, pero no editar el perfil ni el catálogo.'} Un administrador puede gestionar esos datos.</p>}
-  {error&&<div className="alert company-alert"><div><b>No se pudo completar</b><span>{error}</span></div><button onClick={()=>setError('')} aria-label="Cerrar aviso"><X size={15}/></button></div>}{notice&&<div className="company-success"><Check size={15}/>{notice}<button onClick={()=>setNotice('')} aria-label="Cerrar aviso"><X size={14}/></button></div>}
-  <div className="company-layout">
-   <form className="panel company-panel" onSubmit={saveProfile}><div className="company-section-heading"><div><h2>Perfil de empresa</h2><p>Los campos quedan vacíos hasta que los completes.</p></div></div>
-    <div className="company-form-grid"><label>Nombre comercial<input value={profile.nombreComercial} maxLength={255} disabled={!canEdit} onChange={e=>updateProfile('nombreComercial',e.target.value)}/></label><label>Razón social<input value={profile.razonSocial} maxLength={255} disabled={!canEdit} onChange={e=>updateProfile('razonSocial',e.target.value)}/></label><label>RUT de empresa<input value={profile.rut} maxLength={20} readOnly aria-readonly="true"/></label><label>Email de contacto<input type="email" value={profile.emailContacto} disabled={!canEdit} onChange={e=>updateProfile('emailContacto',e.target.value)}/></label><label>Teléfono<input value={profile.telefono} disabled={!canEdit} onChange={e=>updateProfile('telefono',e.target.value)}/></label><label>Dirección<input value={profile.direccion} disabled={!canEdit} onChange={e=>updateProfile('direccion',e.target.value)}/></label><label>Comuna<input value={profile.comuna} disabled={!canEdit} onChange={e=>updateProfile('comuna',e.target.value)}/></label><label>Región principal<input value={profile.regionPrincipal} disabled={!canEdit} onChange={e=>updateProfile('regionPrincipal',e.target.value)}/></label><label>Sitio web (opcional)<input type="url" placeholder="https://" value={profile.sitioWeb} disabled={!canEdit} onChange={e=>updateProfile('sitioWeb',e.target.value)}/></label><label className="company-field-wide">Descripción de la empresa<textarea rows={3} maxLength={3000} value={profile.descripcionComercial||profile.actividad} disabled={!canEdit} onChange={e=>{updateProfile('actividad',e.target.value);updateProfile('descripcionComercial',e.target.value)}} placeholder="Qué ofrece la empresa y en qué actividades trabaja"/></label><label>Rubros comerciales<textarea rows={3} placeholder="Uno por línea" value={profile.rubros.join('\n')} disabled={!canEdit} onChange={e=>updateProfile('rubros',listValue(e.target.value))}/></label><label>Regiones donde opera<textarea rows={3} placeholder="Ej. Región Metropolitana" value={profile.regiones.join('\n')} disabled={!canEdit} onChange={e=>updateProfile('regiones',listValue(e.target.value))}/></label><label>Palabras clave comerciales<textarea rows={3} placeholder="Una por línea" value={profile.palabrasClave.join('\n')} disabled={!canEdit} onChange={e=>updateProfile('palabrasClave',listValue(e.target.value))}/></label><label>Términos excluidos<textarea rows={3} placeholder="Una por línea" value={profile.terminosExcluidos.join('\n')} disabled={!canEdit} onChange={e=>updateProfile('terminosExcluidos',listValue(e.target.value))}/></label></div>
-    <div className="company-preferences"><div><b>Estados que quieres considerar</b><span>Por defecto se muestran oportunidades publicadas y vigentes.</span></div><div className="company-state-options">{[[5,'Publicada'],[6,'Cerrada'],[7,'Desierta'],[8,'Adjudicada']].map(([state,label])=><label key={state}><input type="checkbox" checked={profile.estados.includes(Number(state))} disabled={!canEdit} onChange={()=>toggleState(Number(state))}/>{label}</label>)}</div></div>
-    {canEdit&&<div className="company-form-actions"><span>El RUT se conserva como identificador único de la empresa.</span><button className="button button-primary" disabled={busy||loading}>{busy?<LoaderCircle className="spin" size={15}/>:<Save size={15}/>}Guardar perfil</button></div>}
-   </form>
-   <section className="panel company-panel company-catalog"><div className="company-section-heading"><div><h2>Mi catálogo</h2><p>Productos y servicios que respaldan tus búsquedas personalizadas.</p></div><span className="company-count">{products.length} productos</span></div>
-    <div className={`company-readiness ${missingMatchData.length?'company-readiness-incomplete':'company-readiness-ready'}`} role="status"><b>{missingMatchData.length?'Falta información para un Match más útil':'Perfil listo para calcular Match'}</b><span>{missingMatchData.length?`Completa: ${missingMatchData.join(', ')}.`:`${activeCount} producto(s) activo(s). La coincidencia es comercial y textual; no confirma cumplimiento de bases técnicas.`}</span></div>
-    <form className="company-catalog-search" onSubmit={event=>{event.preventDefault();void load(query)}}><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar en mi catálogo"/><button className="button button-secondary" type="submit">Buscar</button></form>
-    {loading?<div className="company-loading"><LoaderCircle className="spin" size={18}/>Cargando perfil y catálogo…</div>:products.length?<div className="company-product-list">{products.map(item=><article className="company-product-row" key={item.id}><div className="company-product-copy"><div><h3>{item.nombre}</h3><span className={item.activo?'company-active':'company-inactive'}>{item.activo?'Activo':'Inactivo'}</span></div>{item.categoria&&<small>{item.categoria}</small>}{item.tiposComerciales?.length>0&&<div className="company-product-tags company-product-offer-tags">{offerTypes.filter(option=>item.tiposComerciales.includes(option.value)).map(option=><span key={option.value}>{option.label}</span>)}</div>}{item.descripcion&&<p>{item.descripcion}</p>}<div className="company-product-tags">{[...item.palabrasClave,...item.sinonimos].slice(0,5).map(term=><span key={term}>{term}</span>)}</div></div><div className="company-product-actions">{canEdit&&<><button type="button" className="text-button" disabled={busy} onClick={()=>void toggleActive(item)}>{item.activo?'Desactivar':'Activar'}</button><button type="button" className="icon-button" onClick={()=>editProduct(item)} aria-label={`Editar ${item.nombre}`}><Pencil size={15}/></button><button type="button" className="icon-button company-delete" onClick={()=>item.id&&void deleteProduct(item.id)} aria-label={`Eliminar ${item.nombre}`}><Trash2 size={15}/></button></>}</div></article>)}</div>:<div className="company-empty"><PackagePlus size={22}/><b>Tu catálogo está vacío</b><span>Agrega productos o servicios para calcular matches con evidencia.</span><button className="button button-primary" type="button" onClick={()=>document.querySelector('.company-product-form')?.scrollIntoView({behavior:'smooth',block:'center'})}>Agregar primer producto</button></div>}
-    {canEdit&&<form className="company-product-form" onSubmit={saveProduct}><div className="company-product-form-heading"><div><h3>{editingId?'Editar producto o servicio':'Agregar producto o servicio'}</h3><p>Solo se recomendarán oportunidades con coincidencias concretas.</p></div>{editingId&&<button className="text-button" type="button" onClick={resetProduct}>Cancelar edición</button>}</div><div className="company-form-grid"><label>Nombre<input required minLength={2} maxLength={255} value={product.nombre} onChange={e=>setProductField('nombre',e.target.value)}/></label><label>Categoría<input maxLength={160} value={product.categoria} onChange={e=>setProductField('categoria',e.target.value)}/></label><label className="company-field-wide">Descripción y aplicaciones<textarea rows={2} maxLength={3000} value={product.descripcion} onChange={e=>setProductField('descripcion',e.target.value)} placeholder="Qué es, para qué se usa y en qué contexto comercial se ofrece"/></label><label className="company-field-wide">Palabras clave<textarea rows={2} placeholder="Una por línea" value={product.palabrasClave.join('\n')} onChange={e=>setProductField('palabrasClave',listValue(e.target.value))}/></label></div><fieldset className="company-offer-types"><legend>Tipo de oferta comercial <span>(opcional, puedes elegir varios)</span></legend><div>{offerTypes.map(option=><label key={option.value}><input type="checkbox" checked={product.tiposComerciales.includes(option.value)} onChange={event=>setProductField('tiposComerciales',event.target.checked?[...product.tiposComerciales,option.value]:product.tiposComerciales.filter(value=>value!==option.value))}/>{option.label}</label>)}</div><small>Se usa para descartar modalidades incompatibles; no confirma requisitos técnicos.</small></fieldset><details className="company-advanced-terms"><summary>Sinónimos, conceptos relacionados y exclusiones</summary><div className="company-form-grid">{([['sinonimos','Sinónimos directos'],['terminosRelacionados','Conceptos relacionados'],['aplicaciones','Aplicaciones comerciales'],['exclusiones','Exclusiones']] as const).map(([key,label])=><label key={key}>{label}<textarea rows={2} placeholder="Uno por línea" value={product[key].join('\n')} onChange={e=>setProductField(key,listValue(e.target.value))}/></label>)}</div></details><label className="company-active-toggle"><input type="checkbox" checked={product.activo} onChange={e=>setProductField('activo',e.target.checked)}/>Incluir este producto en el Match IA</label>
-     <div className="company-product-form-actions"><button type="button" className="button button-secondary" disabled={suggesting||busy} onClick={()=>void suggest()}>{suggesting?<LoaderCircle className="spin" size={15}/>:<Sparkles size={15}/>}Sugerir con IA</button><button type="submit" className="button button-primary" disabled={busy||loading}>{busy?<LoaderCircle className="spin" size={15}/>:editingId?<Save size={15}/>:<Plus size={15}/>} {editingId?'Guardar cambios':'Agregar al catálogo'}</button></div>
-     {suggestions&&<div className="company-suggestions"><div className="company-suggestions-heading"><div><b>{suggestions.provider==='fallback'?'Sugerencias convencionales':'Sugerencias para revisar'}</b><span>{suggestions.provider==='fallback'?'Groq no está disponible; se usaron términos locales. ':''}Se basan en el producto ingresado y no se guardan hasta que los apruebes.</span></div><button type="button" onClick={()=>setSuggestions(null)} aria-label="Cerrar sugerencias"><X size={15}/></button></div>{([['directSynonyms','Sinónimos directos','sinonimos'],['relatedTerms','Conceptos relacionados','terminosRelacionados'],['applications','Aplicaciones posibles','aplicaciones']] as const).map(([key,label,target])=><div className="company-suggestion-group" key={key}><span>{label}</span><div>{suggestions[key].length?suggestions[key].map(term=><button key={term} type="button" onClick={()=>useSuggestion(target,[term])}>{term}<Plus size={12}/></button>):<small>Sin sugerencias</small>}</div></div>)}</div>}
-    </form>}
-   </section>
-  </div>
- </>;
+type Product = {
+  id?: number;
+  nombre: string;
+  categoria: string;
+  descripcion: string;
+  palabrasClave: string[];
+  sinonimos: string[];
+  terminosRelacionados: string[];
+  aplicaciones: string[];
+  exclusiones: string[];
+  activo: boolean;
+};
+
+type Suggestions = {
+  directSynonyms: string[];
+  relatedTerms: string[];
+  applications: string[];
+  provider?: 'groq' | 'fallback';
+};
+type FieldErrors = Record<string, string>;
+
+class RequestError extends Error {
+  fieldErrors: FieldErrors;
+  constructor(message: string, fieldErrors: unknown) {
+    super(message);
+    this.name = 'RequestError';
+    this.fieldErrors = fieldErrors && typeof fieldErrors === 'object' ? fieldErrors as FieldErrors : {};
+  }
 }
 
-export function CompanyOpportunities({onConfigure}:{onConfigure:()=>void}){
- const [data,setData]=useState<any>(null);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
- useEffect(()=>{let live=true;request<any>('/api/company/matches').then(value=>{if(live)setData(value)}).catch(e=>{if(live)setError(e instanceof Error?e.message:'No se pudieron cargar las oportunidades.')}).finally(()=>{if(live)setLoading(false)});return()=>{live=false}},[]);
- return <section className="panel company-opportunities"><div className="company-opportunities-heading"><div><div className="eyebrow">MATCH PERSONALIZADO</div><h2>Oportunidades para tu empresa</h2><p>Coincidencias justificadas con tu catálogo, títulos, descripciones y partidas disponibles.</p></div><button className="button button-secondary" onClick={onConfigure}>Configurar perfil</button></div>{loading?<div className="company-loading"><LoaderCircle className="spin" size={18}/>Buscando coincidencias en MySQL…</div>:error?<div className="company-empty"><span>{error}</span></div>:!data?.configured?<div className="company-empty"><PackagePlus size={22}/><b>Agrega productos a tu catálogo</b><span>El perfil está listo; las recomendaciones aparecerán cuando registres tus productos o servicios.</span><button className="button button-primary" onClick={onConfigure}>Crear mi catálogo</button></div>:<><div className="company-match-metrics"><div><span>Oportunidades relevantes</span><b>{data.total}</b></div><div><span>Coincidencias altas</span><b>{data.high}</b></div><div><span>Coincidencias medias</span><b>{data.medium}</b></div><div><span>Exploratorias</span><b>{data.exploratory??0}</b></div><div><span>Cierran en 14 días</span><b>{data.closingSoon}</b></div></div>{data.items?.length?<div className="company-match-list">{data.items.map((item:any)=><article key={item.codigo_externo}><div className="company-match-main"><div><h3>{item.nombre}</h3><small>{item.codigo_externo} · {item.organismo||'Organismo no informado'} · Cierre {item.fecha_cierre?new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(item.fecha_cierre)):'sin fecha'}</small><p>{item.matchReasons.join(' ')}</p></div><strong>{item.score}<small>%</small></strong></div><span className={`company-match-level company-match-${item.level}`}>{item.level==='high'?'Coincidencia alta':item.level==='exploratory'?'Coincidencia exploratoria':'Coincidencia media'} · {item.productName}</span><span className={`company-match-coverage company-coverage-${item.coverageStatus==='indexed'?'indexed':'limited'}`}>{item.coverageStatus==='indexed'?'Partidas indexadas':'Sin partidas indexadas · información limitada'}</span></article>)}</div>:<div className="company-empty"><b>Aún no hay coincidencias verificables</b><span>Se revisaron {data.candidatesEvaluated} licitaciones elegibles con el catálogo activo. Amplía o corrige sus términos si esperabas otros resultados.</span></div>}<p className="company-match-disclaimer">{data.disclaimer} Se evaluaron {Number(data.candidatesEvaluated??0).toLocaleString('es-CL')} licitaciones elegibles en MySQL.</p></>}</section>;
+const blankProfile: Profile = {
+  nombreComercial: '',
+  razonSocial: '',
+  rut: '',
+  emailContacto: '',
+  telefono: '',
+  direccion: '',
+  comuna: '',
+  regionPrincipal: '',
+  descripcionComercial: '',
+  actividad: '',
+  rubros: [],
+  regiones: [],
+  sitioWeb: '',
+  palabrasClave: [],
+  terminosExcluidos: [],
+  estados: [5],
+};
+
+const blankProduct: Product = {
+  nombre: '',
+  categoria: '',
+  descripcion: '',
+  palabrasClave: [],
+  sinonimos: [],
+  terminosRelacionados: [],
+  aplicaciones: [],
+  exclusiones: [],
+  activo: true,
+};
+
+const listValue = (value: string) =>
+  value
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const profileListText = (value: string[] | null | undefined) => (value ?? []).join('\n');
+const profileListValue = (value: string) =>
+  value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+
+function formatRutForDisplay(value: string) {
+  const compact = value.trim().toUpperCase().replace(/[.\-\s]/g, '');
+  if (!/^\d{1,8}[0-9K]$/.test(compact)) return value;
+  const body = compact.slice(0, -1).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${body}-${compact.slice(-1)}`;
+}
+
+async function request<T>(url: string, options?: RequestInit, csrfToken = ''): Promise<T> {
+  const headers = new Headers(options?.headers);
+  if (!['GET', 'HEAD', 'OPTIONS'].includes((options?.method ?? 'GET').toUpperCase()) && csrfToken) {
+    headers.set('X-CSRF-Token', csrfToken);
+  }
+  const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
+  const data = await response.json();
+  if (!response.ok) throw new RequestError(data.error || 'No fue posible completar la solicitud.', data.fieldErrors);
+  return data as T;
+}
+
+export function CompanyWorkspace({
+  onSaved,
+  csrfToken,
+  canEdit = true,
+  accessRole = 'admin',
+}: {
+  onSaved: () => void;
+  csrfToken: string;
+  canEdit?: boolean;
+  accessRole?: 'admin' | 'collaborator' | 'read_only' | null;
+}) {
+  const [activeTab, setActiveTab] = useState<'profile' | 'catalog'>('profile');
+  const [profile, setProfile] = useState<Profile>(blankProfile);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [profileListDraft, setProfileListDraft] = useState({
+    rubros: '',
+    regiones: '',
+    palabrasClave: '',
+    terminosExcluidos: '',
+  });
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [query, setQuery] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [product, setProduct] = useState<Product>(blankProduct);
+  const [suggestions, setSuggestions] = useState<Suggestions | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [showProductForm, setShowProductForm] = useState(false);
+
+  const load = async (search = '') => {
+    setLoading(true);
+    try {
+      const [workspace, catalog] = await Promise.all([
+        request<{ profile: Profile; products: Product[] }>('/api/company/profile'),
+        request<{ items: Product[] }>(`/api/company/catalog?q=${encodeURIComponent(search)}`),
+      ]);
+      const loadedProfile = { ...blankProfile, ...workspace.profile };
+      setProfile(loadedProfile);
+      setProfileListDraft({
+        rubros: profileListText(loadedProfile.rubros),
+        regiones: profileListText(loadedProfile.regiones),
+        palabrasClave: profileListText(loadedProfile.palabrasClave),
+        terminosExcluidos: profileListText(loadedProfile.terminosExcluidos),
+      });
+      setProducts(catalog.items);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cargar el perfil de empresa.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const updateProfile = <K extends keyof Profile>(key: K, value: Profile[K]) => {
+    setProfile((current) => ({ ...current, [key]: value }));
+    setFieldErrors((current) => { const next = { ...current }; delete next[key]; return next; });
+  };
+  const updateProfileListDraft = (key: keyof typeof profileListDraft, value: string) => {
+    setProfileListDraft((current) => ({ ...current, [key]: value }));
+    setFieldErrors((current) => { const next = { ...current }; delete next[key]; return next; });
+  };
+  const fieldError = (field: string) => fieldErrors[field] ? (
+    <p id={`${field}-error`} role="alert" className="mt-1 text-[11px] text-red-700">{fieldErrors[field]}</p>
+  ) : null;
+
+  const saveProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!canEdit) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    setFieldErrors({});
+    try {
+      const saved = await request<{ profile: Profile }>(
+        '/api/company/profile',
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...profile,
+            rubros: profileListValue(profileListDraft.rubros),
+            regiones: profileListValue(profileListDraft.regiones),
+            palabrasClave: profileListValue(profileListDraft.palabrasClave),
+            terminosExcluidos: profileListValue(profileListDraft.terminosExcluidos),
+          }),
+        },
+        csrfToken
+      );
+      const savedProfile = { ...blankProfile, ...saved.profile };
+      setProfile(savedProfile);
+      setProfileListDraft({
+        rubros: profileListText(savedProfile.rubros),
+        regiones: profileListText(savedProfile.regiones),
+        palabrasClave: profileListText(savedProfile.palabrasClave),
+        terminosExcluidos: profileListText(savedProfile.terminosExcluidos),
+      });
+      setNotice('Perfil de empresa actualizado con éxito.');
+      onSaved();
+      void load(query);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar el perfil.');
+      setFieldErrors(e instanceof RequestError ? e.fieldErrors : {});
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetProduct = () => {
+    setProduct(blankProduct);
+    setEditingId(null);
+    setSuggestions(null);
+    setShowProductForm(false);
+  };
+
+  const setProductField = <K extends keyof Product>(key: K, value: Product[K]) =>
+    setProduct((current) => ({ ...current, [key]: value }));
+
+  const editProduct = (item: Product) => {
+    setEditingId(item.id ?? null);
+    setProduct({ ...item });
+    setSuggestions(null);
+    setShowProductForm(true);
+  };
+
+  const saveProduct = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const url = editingId ? `/api/company/catalog/${editingId}` : '/api/company/catalog';
+      const saved = await request<{ items: Product[] }>(
+        url,
+        {
+          method: editingId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(product),
+        },
+        csrfToken
+      );
+      setProducts(saved.items);
+      setNotice(editingId ? 'Producto actualizado.' : 'Producto agregado al catálogo.');
+      resetProduct();
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar el producto.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteProduct = async (id: number) => {
+    if (!window.confirm('¿Eliminar este producto o servicio del catálogo?')) return;
+    setBusy(true);
+    try {
+      await request(`/api/company/catalog/${id}`, { method: 'DELETE' }, csrfToken);
+      await load(query);
+      setNotice('Producto eliminado del catálogo.');
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo eliminar el producto.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActive = async (item: Product) => {
+    if (!item.id) return;
+    setBusy(true);
+    setError('');
+    try {
+      const saved = await request<{ items: Product[] }>(
+        `/api/company/catalog/${item.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...item, activo: !item.activo }),
+        },
+        csrfToken
+      );
+      setProducts(saved.items);
+      setNotice(
+        item.activo ? 'Producto pausado del Match IA.' : 'Producto reactivado para el Match IA.'
+      );
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cambiar el estado del producto.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const suggest = async () => {
+    if (product.nombre.trim().length < 2) {
+      setError('Ingresa el nombre del producto para pedir sugerencias de IA.');
+      return;
+    }
+    setSuggesting(true);
+    setError('');
+    setSuggestions(null);
+    try {
+      setSuggestions(
+        await request<Suggestions>(
+          '/api/company/catalog/suggestions',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              nombre: product.nombre,
+              categoria: product.categoria || null,
+              descripcion: product.descripcion || null,
+            }),
+          },
+          csrfToken
+        )
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudieron generar sugerencias.');
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  const useSuggestion = (
+    key: 'sinonimos' | 'terminosRelacionados' | 'aplicaciones',
+    items: string[]
+  ) =>
+    setProduct((current) => ({
+      ...current,
+      [key]: [...new Set([...current[key], ...items])],
+    }));
+
+  return (
+    <div className="space-y-6">
+      {/* Top Heading */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <div className="text-[11px] font-bold text-[#5636D9] uppercase tracking-wider mb-1">
+            Configuración Comercial
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">
+            Mi Empresa y Catálogo
+          </h1>
+          <p className="text-sm text-[#5D6472] mt-1">
+            Administra los datos de tu empresa y el catálogo de productos para potenciar el Match de
+            oportunidades.
+          </p>
+        </div>
+
+        {/* Tab switchers */}
+        <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-[#E1E4EA] shadow-sm self-start sm:self-auto">
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              activeTab === 'profile'
+                ? 'bg-[#5636D9] text-white shadow-sm'
+                : 'text-[#5D6472] hover:bg-gray-100'
+            }`}
+          >
+            <Building2 size={14} /> Perfil de Empresa
+          </button>
+          <button
+            onClick={() => setActiveTab('catalog')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              activeTab === 'catalog'
+                ? 'bg-[#5636D9] text-white shadow-sm'
+                : 'text-[#5D6472] hover:bg-gray-100'
+            }`}
+          >
+            <Package size={14} /> Catálogo ({products.length})
+          </button>
+        </div>
+      </div>
+
+      {!canEdit && (
+        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center gap-2">
+          <Info size={15} />
+          <span>
+            {accessRole === 'read_only'
+              ? 'Tienes permisos de solo lectura para esta empresa.'
+              : 'Tu rol de colaborador permite ver datos pero no modificar el perfil ni el catálogo.'}{' '}
+            Contacta a un administrador para solicitar cambios.
+          </span>
+        </div>
+      )}
+
+      {error && (
+        <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError('')}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {notice && (
+        <div className="p-3.5 rounded-xl bg-[#f0edff] border border-[#5636D9]/30 text-xs text-[#5636D9] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={15} />
+            <span>{notice}</span>
+          </div>
+          <button onClick={() => setNotice('')}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* TAB 1: PERFIL DE EMPRESA */}
+      {activeTab === 'profile' && (
+        <form onSubmit={saveProfile} className="space-y-6">
+          <div className="bg-white rounded-xl border border-[#E1E4EA] p-6 shadow-sm space-y-5">
+            <div className="border-b border-[#E1E4EA] pb-3">
+              <h2 className="font-bold text-base text-[#171A24]">Datos Tributarios y Comerciales</h2>
+              <p className="text-xs text-[#5D6472] mt-0.5">
+                Información básica registrada para identificar a tu empresa ante Mercado Público.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+              <div>
+                <label htmlFor="company-rut" className="block font-semibold text-[#5D6472] mb-1">RUT Empresa</label>
+                <input
+                  id="company-rut"
+                  name="rut"
+                  value={profile.rut}
+                  disabled={!canEdit}
+                  autoComplete="off"
+                  inputMode="text"
+                  spellCheck={false}
+                  onChange={(e) => updateProfile('rut', e.target.value)}
+                  onBlur={(e) => updateProfile('rut', formatRutForDisplay(e.target.value))}
+                  aria-describedby={fieldErrors.rut ? 'company-rut-help rut-error' : 'company-rut-help'}
+                  aria-invalid={Boolean(fieldErrors.rut)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] font-mono font-bold text-[#171A24] focus:outline-none focus:border-[#5636D9] disabled:bg-[#F5F6F8]"
+                />
+                <p id="company-rut-help" className="mt-1 text-[11px] text-[#8A92A6]">Se valida al guardar y se usa para identificar a la empresa.</p>
+                {fieldError('rut')}
+              </div>
+              <div>
+                <label htmlFor="company-name" className="block font-semibold text-[#5D6472] mb-1">Nombre Comercial <span className="text-red-600">*</span></label>
+                <input
+                  id="company-name" name="nombreComercial"
+                  value={profile.nombreComercial}
+                  required
+                  minLength={2}
+                  maxLength={255}
+                  disabled={!canEdit}
+                  onChange={(e) => updateProfile('nombreComercial', e.target.value)}
+                  aria-describedby={fieldErrors.nombreComercial ? 'nombreComercial-error' : undefined}
+                  aria-invalid={Boolean(fieldErrors.nombreComercial)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+                {fieldError('nombreComercial')}
+              </div>
+              <div>
+                <label htmlFor="company-legal-name" className="block font-semibold text-[#5D6472] mb-1">Razón Social</label>
+                <input
+                  id="company-legal-name" name="razonSocial"
+                  value={profile.razonSocial}
+                  maxLength={255}
+                  disabled={!canEdit}
+                  onChange={(e) => updateProfile('razonSocial', e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+                {fieldError('razonSocial')}
+              </div>
+              <div>
+                <label htmlFor="company-email" className="block font-semibold text-[#5D6472] mb-1">Email de Contacto</label>
+                <input
+                  id="company-email" name="emailContacto"
+                  type="email"
+                  value={profile.emailContacto}
+                  disabled={!canEdit}
+                  onChange={(e) => updateProfile('emailContacto', e.target.value)}
+                  aria-describedby={fieldErrors.emailContacto ? 'emailContacto-help emailContacto-error' : 'emailContacto-help'}
+                  aria-invalid={Boolean(fieldErrors.emailContacto)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+                <p id="emailContacto-help" className="mt-1 text-[11px] text-[#8A92A6]">Opcional.</p>
+                {fieldError('emailContacto')}
+              </div>
+              <div>
+                <label htmlFor="company-phone" className="block font-semibold text-[#5D6472] mb-1">Teléfono</label>
+                <input
+                  id="company-phone" name="telefono"
+                  value={profile.telefono}
+                  disabled={!canEdit}
+                  onChange={(e) => updateProfile('telefono', e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+                {fieldError('telefono')}
+              </div>
+              <div>
+                <label htmlFor="company-website" className="block font-semibold text-[#5D6472] mb-1">Sitio Web</label>
+                <input
+                  id="company-website" name="sitioWeb"
+                  type="url"
+                  placeholder="https://"
+                  value={profile.sitioWeb}
+                  disabled={!canEdit}
+                  onChange={(e) => updateProfile('sitioWeb', e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+                {fieldError('sitioWeb')}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs pt-2">
+              <div>
+                <label htmlFor="company-address" className="block font-semibold text-[#5D6472] mb-1">Dirección</label>
+                <input
+                  id="company-address" name="direccion"
+                  value={profile.direccion}
+                  disabled={!canEdit}
+                  onChange={(e) => updateProfile('direccion', e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+                {fieldError('direccion')}
+              </div>
+              <div>
+                <label htmlFor="company-commune" className="block font-semibold text-[#5D6472] mb-1">Comuna</label>
+                <input
+                  id="company-commune" name="comuna"
+                  value={profile.comuna}
+                  disabled={!canEdit}
+                  onChange={(e) => updateProfile('comuna', e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+                {fieldError('comuna')}
+              </div>
+              <div>
+                <label htmlFor="company-region" className="block font-semibold text-[#5D6472] mb-1">Región Principal</label>
+                <input
+                  id="company-region" name="regionPrincipal"
+                  value={profile.regionPrincipal}
+                  disabled={!canEdit}
+                  onChange={(e) => updateProfile('regionPrincipal', e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+                {fieldError('regionPrincipal')}
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-3 border-t border-[#E1E4EA]">
+              <div>
+                  <label htmlFor="company-description" className="block text-xs font-semibold text-[#5D6472] mb-1">
+                  Descripción comercial y actividades
+                </label>
+                <textarea
+                  id="company-description" name="descripcionComercial"
+                  rows={3}
+                  value={profile.descripcionComercial || profile.actividad}
+                  disabled={!canEdit}
+                  onChange={(e) => {
+                    updateProfile('actividad', e.target.value);
+                    updateProfile('descripcionComercial', e.target.value);
+                  }}
+                  placeholder="Qué ofrece tu empresa, experiencia previa y tipo de soluciones que comercializa..."
+                  className="w-full p-3 rounded-xl border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+                {fieldError('descripcionComercial')}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label htmlFor="company-industries" className="block font-semibold text-[#5D6472] mb-1">
+                    Rubros comerciales (uno por línea)
+                  </label>
+                  <textarea
+                    id="company-industries" name="rubros"
+                    rows={3}
+                    value={profileListDraft.rubros}
+                    disabled={!canEdit}
+                    aria-describedby={fieldErrors.rubros ? 'rubros-error' : undefined}
+                    onChange={(e) => updateProfileListDraft('rubros', e.target.value)}
+                    className="w-full p-2.5 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                  />
+                  {fieldError('rubros')}
+                </div>
+                <div>
+                  <label htmlFor="company-regions" className="block font-semibold text-[#5D6472] mb-1">
+                    Regiones donde opera (una por línea)
+                  </label>
+                  <textarea
+                    id="company-regions" name="regiones"
+                    rows={3}
+                    value={profileListDraft.regiones}
+                    disabled={!canEdit}
+                    aria-describedby={fieldErrors.regiones ? 'regiones-error' : undefined}
+                    onChange={(e) => updateProfileListDraft('regiones', e.target.value)}
+                    className="w-full p-2.5 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                  />
+                  {fieldError('regiones')}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label htmlFor="company-keywords" className="block font-semibold text-[#5D6472] mb-1">
+                    Palabras clave comerciales (una por línea)
+                  </label>
+                  <textarea
+                    id="company-keywords" name="palabrasClave"
+                    rows={3}
+                    value={profileListDraft.palabrasClave}
+                    disabled={!canEdit}
+                    aria-describedby={fieldErrors.palabrasClave ? 'palabrasClave-error' : undefined}
+                    onChange={(e) => updateProfileListDraft('palabrasClave', e.target.value)}
+                    className="w-full p-2.5 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                  />
+                  {fieldError('palabrasClave')}
+                </div>
+                <div>
+                  <label htmlFor="company-excluded-terms" className="block font-semibold text-[#5D6472] mb-1">
+                    Términos excluidos (uno por línea)
+                  </label>
+                  <textarea
+                    id="company-excluded-terms" name="terminosExcluidos"
+                    rows={3}
+                    value={profileListDraft.terminosExcluidos}
+                    disabled={!canEdit}
+                    aria-describedby={fieldErrors.terminosExcluidos ? 'terminosExcluidos-error' : undefined}
+                    onChange={(e) => updateProfileListDraft('terminosExcluidos', e.target.value)}
+                    className="w-full p-2.5 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                  />
+                  {fieldError('terminosExcluidos')}
+                </div>
+              </div>
+            </div>
+
+            {canEdit && (
+              <div className="pt-4 border-t border-[#E1E4EA] flex items-center justify-between">
+                <span className="text-xs text-[#8A92A6]">
+                  Los cambios se aplican al cálculo de coincidencia comercial.
+                </span>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="h-10 px-5 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+                >
+                  {busy ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
+                  Guardar Perfil
+                </button>
+              </div>
+            )}
+          </div>
+        </form>
+      )}
+
+      {/* TAB 2: CATÁLOGO DE PRODUCTOS */}
+      {activeTab === 'catalog' && (
+        <div className="space-y-6">
+          {/* Catalog Top Bar & Search */}
+          <div className="bg-white rounded-xl border border-[#E1E4EA] p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search size={16} className="absolute left-3 top-3 text-[#8A92A6]" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar producto o servicio en catálogo..."
+                className="w-full h-10 pl-9 pr-3 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+              />
+            </div>
+
+            {canEdit && (
+              <button
+                onClick={() => {
+                  resetProduct();
+                  setShowProductForm(true);
+                }}
+                className="h-10 px-4 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+              >
+                <Plus size={16} /> Agregar Producto / Servicio
+              </button>
+            )}
+          </div>
+
+          {/* New / Edit Product Form */}
+          {showProductForm && canEdit && (
+            <form
+              onSubmit={saveProduct}
+              className="bg-white rounded-xl border-2 border-[#5636D9]/30 p-6 shadow-md space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-[#E1E4EA] pb-3">
+                <h3 className="font-bold text-sm text-[#171A24] flex items-center gap-2">
+                  <PackagePlus size={18} className="text-[#5636D9]" />
+                  {editingId ? 'Editar producto o servicio' : 'Nuevo producto o servicio'}
+                </h3>
+                <button
+                  type="button"
+                  onClick={resetProduct}
+                  className="text-xs text-[#5D6472] hover:text-[#171A24]"
+                >
+                  Cancelar
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label className="block font-semibold text-[#5D6472] mb-1">Nombre del producto *</label>
+                  <input
+                    required
+                    value={product.nombre}
+                    onChange={(e) => setProductField('nombre', e.target.value)}
+                    placeholder="Ej. Ventilador mecánico de transporte"
+                    className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-[#5D6472] mb-1">Categoría</label>
+                  <input
+                    value={product.categoria}
+                    onChange={(e) => setProductField('categoria', e.target.value)}
+                    placeholder="Ej. Equipamiento Médico y Hospitalario"
+                    className="w-full h-10 px-3 rounded-lg border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                  />
+                </div>
+              </div>
+
+              <div className="text-xs">
+                <label className="block font-semibold text-[#5D6472] mb-1">Descripción y usos comerciales</label>
+                <textarea
+                  rows={2}
+                  value={product.descripcion}
+                  onChange={(e) => setProductField('descripcion', e.target.value)}
+                  placeholder="Especificaciones técnicas y ámbito de aplicación..."
+                  className="w-full p-2.5 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+              </div>
+
+              <div className="text-xs">
+                <label className="block font-semibold text-[#5D6472] mb-1">
+                  Palabras clave y términos equivalentes (uno por línea)
+                </label>
+                <textarea
+                  rows={2}
+                  value={product.palabrasClave.join('\n')}
+                  onChange={(e) => setProductField('palabrasClave', listValue(e.target.value))}
+                  placeholder="autoclave, esterilización, vapor..."
+                  className="w-full p-2.5 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                />
+              </div>
+
+              {/* Suggestions with IA */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={suggesting}
+                  onClick={() => void suggest()}
+                  className="h-9 px-3 bg-[#f0edff] hover:bg-[#e4ddff] text-[#5636D9] text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors self-start"
+                >
+                  <Sparkles size={14} />
+                  {suggesting ? 'Generando sugerencias…' : 'Sugerir términos con IA'}
+                </button>
+
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={resetProduct}
+                    className="h-9 px-3 text-xs text-[#5D6472] hover:bg-gray-100 rounded-lg"
+                  >
+                    Descartar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="h-9 px-4 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-lg shadow-sm"
+                  >
+                    {editingId ? 'Actualizar Producto' : 'Guardar en Catálogo'}
+                  </button>
+                </div>
+              </div>
+
+              {suggestions && (
+                <div className="p-3.5 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA] space-y-2 text-xs">
+                  <span className="font-bold text-[#171A24] flex items-center gap-1">
+                    <Sparkles size={13} className="text-[#5636D9]" />
+                    Sugerencias generadas para revisar (haz clic para agregar):
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      ...suggestions.directSynonyms,
+                      ...suggestions.relatedTerms,
+                      ...suggestions.applications,
+                    ].map((term) => (
+                      <button
+                        key={term}
+                        type="button"
+                        onClick={() => useSuggestion('sinonimos', [term])}
+                        className="px-2 py-0.5 rounded-full bg-white border border-[#E1E4EA] hover:border-[#5636D9] text-[#5D6472] hover:text-[#5636D9] text-[11px]"
+                      >
+                        + {term}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </form>
+          )}
+
+          {/* Products List */}
+          {loading ? (
+            <div className="p-12 text-center text-sm text-[#5D6472] bg-white rounded-xl border border-[#E1E4EA]">
+              <LoaderCircle size={24} className="spin mx-auto text-[#5636D9] mb-2" />
+              Cargando catálogo de productos…
+            </div>
+          ) : products.length === 0 ? (
+            <div className="p-12 text-center bg-white rounded-xl border border-[#E1E4EA] space-y-3">
+              <Package size={24} className="mx-auto text-[#8A92A6]" />
+              <h3 className="font-bold text-base text-[#171A24]">El catálogo está vacío</h3>
+              <p className="text-xs text-[#5D6472] max-w-sm mx-auto">
+                Registra tus productos o servicios para que el motor de coincidencia pueda encontrar
+                licitaciones afines.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {products.map((item) => (
+                <div
+                  key={item.id}
+                  className="bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-3 flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-bold text-sm text-[#171A24]">{item.nombre}</h4>
+                        {item.categoria && (
+                          <span className="text-[11px] text-[#5D6472] block mt-0.5">
+                            {item.categoria}
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                          item.activo
+                            ? 'bg-[#f0edff] text-[#5636D9]'
+                            : 'bg-gray-100 text-[#5D6472]'
+                        }`}
+                      >
+                        {item.activo ? 'Activo en Match' : 'Pausado'}
+                      </span>
+                    </div>
+
+                    {item.descripcion && (
+                      <p className="text-xs text-[#5D6472] line-clamp-2">{item.descripcion}</p>
+                    )}
+
+                    {/* Keywords pills */}
+                    {item.palabrasClave?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {item.palabrasClave.slice(0, 4).map((kw) => (
+                          <span
+                            key={kw}
+                            className="text-[10px] px-2 py-0.5 rounded-md bg-[#F5F6F8] text-[#5D6472]"
+                          >
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {canEdit && (
+                    <div className="pt-3 border-t border-[#E1E4EA] flex items-center justify-between text-xs">
+                      <button
+                        onClick={() => void toggleActive(item)}
+                        className="text-xs text-[#5D6472] hover:text-[#171A24] font-medium"
+                      >
+                        {item.activo ? 'Pausar Match' : 'Activar Match'}
+                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => editProduct(item)}
+                          className="p-1.5 rounded-lg text-[#5D6472] hover:bg-gray-100 hover:text-[#171A24]"
+                          title="Editar producto"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => item.id && void deleteProduct(item.id)}
+                          className="p-1.5 rounded-lg text-[#5D6472] hover:bg-red-50 hover:text-red-600"
+                          title="Eliminar producto"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function CompanyOpportunities({
+  onConfigure,
+  onOpenListing,
+  onViewAll,
+}: {
+  onConfigure: () => void;
+  onOpenListing?: (code: string) => void;
+  onViewAll?: () => void;
+}) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    request<any>('/api/company/matches')
+      .then((val) => {
+        if (live) setData(val);
+      })
+      .catch((e) => {
+        if (live) setError(e instanceof Error ? e.message : 'No se pudieron cargar las oportunidades.');
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  return (
+    <section className="summary-matches-panel bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E1E4EA] pb-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-sm text-[#171A24] flex items-center gap-2">
+              <Sparkles size={16} className="text-[#5636D9]" />
+              Mejores coincidencias para tu empresa
+            </h3>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#f0edff] text-[#5636D9] whitespace-nowrap">
+              Match personalizado
+            </span>
+          </div>
+          <p className="text-xs text-[#5D6472] mt-0.5">
+            Ordenadas por coincidencia con el catálogo y los términos configurados de la empresa.
+          </p>
+        </div>
+        <div className="flex items-center gap-4 shrink-0">
+          <button onClick={onConfigure} className="text-xs font-semibold text-[#5636D9] hover:underline self-start sm:self-auto">
+            Configurar catálogo
+          </button>
+          {onViewAll && (
+            <button onClick={onViewAll} className="text-xs font-semibold text-[#5636D9] hover:underline inline-flex items-center gap-1">
+              Ver todas <Search size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-8 text-center text-xs text-[#5D6472]">
+          Calculando coincidencias con tu catálogo en MySQL…
+        </div>
+      ) : error ? (
+        <div className="py-4 text-xs text-red-600">{error}</div>
+      ) : !data?.configured ? (
+        <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472] space-y-2">
+          <Sparkles size={20} className="mx-auto text-[#8A92A6]" />
+          <p>Configura productos en tu catálogo para calcular coincidencias con oportunidades indexadas.</p>
+          <button
+            onClick={onConfigure}
+            className="px-4 py-2 bg-[#5636D9] text-white rounded-lg text-xs font-semibold"
+          >
+            Registrar productos
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="summary-match-metrics grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div><span>Coincidencias</span><b>{Number(data.total || 0).toLocaleString('es-CL')}</b></div>
+            <div><span>Alta</span><b>{Number(data.high || 0).toLocaleString('es-CL')}</b></div>
+            <div><span>Media</span><b>{Number(data.medium || 0).toLocaleString('es-CL')}</b></div>
+            <div><span>Cierran en 14 días</span><b>{Number(data.closingSoon || 0).toLocaleString('es-CL')}</b></div>
+          </div>
+          {data.items?.length ? (
+            <div className="summary-matches-table-wrap">
+              <table className="summary-matches-table">
+                <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Match</th><th>Acción</th></tr></thead>
+                <tbody>
+                  {data.items.slice(0, 6).map((item: any) => {
+                    const closing = item.fecha_cierre ? new Date(item.fecha_cierre) : null;
+                    const closingLabel = closing && Number.isFinite(closing.getTime())
+                      ? new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }).format(closing)
+                      : 'No informado';
+                    const amount = item.monto_estimado == null || item.monto_estimado === ''
+                      ? 'No informado'
+                      : new Intl.NumberFormat('es-CL', { style: 'currency', currency: item.moneda || 'CLP', maximumFractionDigits: 0 }).format(Number(item.monto_estimado));
+                    return (
+                      <tr key={item.codigo_externo}>
+                        <td>
+                          <b className="summary-match-title">{item.nombre || 'Nombre no disponible'}</b>
+                          <small>{item.codigo_externo}{item.productName ? ` · Coincide con ${item.productName}` : ''}</small>
+                        </td>
+                        <td><span className="summary-match-buyer">{item.organismo || 'No informado'}</span></td>
+                        <td className="summary-match-nowrap">{closingLabel}</td>
+                        <td className="summary-match-amount">{amount}</td>
+                        <td><span className="summary-match-score">{Number(item.score || 0)}%</span></td>
+                        <td>
+                          {onOpenListing ? (
+                            <button className="summary-match-action" onClick={() => onOpenListing(item.codigo_externo)}>Ver ficha</button>
+                          ) : <span>—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472]">
+              No encontramos coincidencias con el catálogo actual.
+            </div>
+          )}
+          {data.disclaimer && <p className="summary-match-disclaimer">{data.disclaimer}</p>}
+        </>
+      )}
+    </section>
+  );
 }

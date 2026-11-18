@@ -44,7 +44,11 @@ const smtpTestConfig={...smtpBase,SMTP_PORT:'465',SMTP_SECURE:'true'};
 const fakeConnect=async()=>new FakeSmtpSocket() as any;
 const smtpLink='https://example.invalid/?verifyEmail=fake-token';
 const smtpMessage={to:'qa@example.invalid',purpose:'verification' as const,subject:'QA verify',text:`Open ${smtpLink}`,link:smtpLink};
-assert.equal(await sendSmtp(smtpMessage,smtpTestConfig,fakeConnect),'accepted','a local SMTP server accepting DATA confirms SMTP acceptance');
+const acceptedLogs:string[]=[];const originalConsoleInfo=console.info;console.info=(line?:unknown)=>acceptedLogs.push(String(line));
+try { assert.equal(await sendSmtp(smtpMessage,smtpTestConfig,fakeConnect),'accepted','a local SMTP server accepting DATA confirms SMTP acceptance'); }
+finally { console.info=originalConsoleInfo; }
+assert.deepEqual(acceptedLogs,['[email] delivery_accepted purpose=verification code=SMTP_250']);
+assert.ok(!acceptedLogs.join(' ').includes(smtpMessage.to)&&!acceptedLogs.join(' ').includes('fake-token'),'acceptance logs omit recipient and token');
 assert.deepEqual(await probeSmtp(smtpTestConfig,fakeConnect),{authenticated:true},'SMTP diagnostic checks connection/auth without sending a message');
 await assert.rejects(probeSmtp(smtpTestConfig,async()=>{throw Object.assign(new Error('connection refused'),{code:'ECONNREFUSED'});}),/SMTP_CONNECTION_FAILED/);
 await assert.rejects(probeSmtp(smtpTestConfig,async()=>new FakeSmtpSocket(535) as any),/SMTP_5xx/);

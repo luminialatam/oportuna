@@ -159,7 +159,10 @@ export async function sendSmtp(message: MailMessage,env:NodeJS.ProcessEnv=proces
     ].join('\r\n');
     socket.write(content);
     const sent = await readReply(reader); if (sent.code !== 250) throw new Error(`SMTP_${sent.code}`);
-    await command(socket, reader, 'QUIT', [221]);
+    console.info(`[email] delivery_accepted purpose=${message.purpose} code=SMTP_250`);
+    // The relay's DATA 250 is the acceptance point. A QUIT failure after that
+    // must not be reported as a rejected message.
+    try { await command(socket, reader, 'QUIT', [221]); } catch { /* best effort */ }
     return 'accepted' as const;
   } catch (error) {
     socket?.destroy();
@@ -177,6 +180,6 @@ export async function sendEmail(message: MailMessage) {
 }
 
 export function appBaseUrl() {
-  const origin = process.env.CLIENT_ORIGIN?.split(',')[0]?.trim() || 'http://127.0.0.1:5173';
+  const origin = process.env.CLIENT_ORIGIN?.split(',')[0]?.trim() || 'http://127.0.0.1:5180';
   return origin.replace(/\/$/, '');
 }

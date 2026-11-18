@@ -29,12 +29,12 @@ try {
 
   const desktop = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await desktop.goto(base);
-  await desktop.getByRole('button', { name: 'Crear cuenta' }).click();
+  await desktop.getByRole('button', { name: 'Registrarse' }).click();
   await desktop.getByLabel('Nombre').fill('Correo');
   await desktop.getByLabel('Apellido').fill('Pendiente');
   await desktop.getByLabel('Correo electrónico').fill(pendingEmail);
-  await desktop.getByLabel('Contraseña').fill(password);
-  await desktop.getByRole('button', { name: 'Crear cuenta', exact: true }).click();
+  await desktop.getByLabel('Contraseña', { exact: true }).fill(password);
+  await desktop.getByRole('button', { name: 'Registrar cuenta', exact: true }).click();
   await desktop.getByRole('heading', { name: 'Revisa tu correo' }).waitFor({timeout:8000}).catch(async()=>{throw new Error(`registration UI did not advance: ${(await desktop.locator('body').innerText()).slice(0,500)}`)});
   const [pendingAccount] = await pool.query<any[]>('SELECT id FROM app_users WHERE email_normalized=?', [pendingEmail]);
   userIds.push(Number(pendingAccount[0].id));
@@ -50,13 +50,13 @@ try {
   const firstMail = (await firstInbox.json() as any).messages[0];
   const firstToken = new URL(firstMail.link).searchParams.get('verifyEmail');
   await desktop.getByRole('button', { name: 'Reenviar enlace' }).click();
-  await desktop.getByText(/Si tu cuenta necesita verificación/).waitFor();
+  await desktop.getByText(/Se creó un correo de prueba/).waitFor({ timeout: 5000 }).catch(async () => { throw new Error((await desktop.locator('body').innerText()).slice(0, 1000)); });
   const oldTokenResponse = await desktop.request.post(`${origin}/api/auth/email-verification/confirm`, { headers: { Origin: origin, 'Content-Type': 'application/json' }, data: { token: firstToken } });
   assert.equal(oldTokenResponse.status(), 400, 'resending invalidates the previous verification token');
   await desktop.getByRole('button', { name: 'Reenviar enlace' }).click();
-  await desktop.getByText(/Si tu cuenta necesita verificación/).waitFor();
+  await desktop.getByText(/Se creó un correo de prueba/).waitFor();
   await desktop.getByRole('button', { name: 'Reenviar enlace' }).click();
-  await desktop.getByText(/Si tu cuenta necesita verificación/).waitFor();
+  await desktop.getByText(/Se creó un correo de prueba/).waitFor();
   await desktop.getByRole('button', { name: 'Reenviar enlace' }).click();
   await desktop.getByText(/Demasiadas solicitudes/).waitFor();
   await desktop.getByRole('button', { name: 'Buzón local de prueba' }).click();
@@ -64,8 +64,8 @@ try {
   const newMail = (await newInbox.json() as any).messages[0];
   const crossDevice = await browser.newPage({ viewport: { width: 375, height: 667 } });
   await crossDevice.goto(newMail.link);
-  await crossDevice.getByRole('button', { name: 'Verificar cuenta' }).click();
-  await crossDevice.getByText('Correo verificado. Inicia sesión para continuar.').waitFor();
+  await crossDevice.getByRole('button', { name: 'Confirmar verificación' }).click();
+  await crossDevice.getByText('Correo verificado exitosamente. Inicia sesión para continuar.').waitFor();
   await desktop.reload();
   await desktop.getByRole('heading', { name: 'Conecta tu empresa' }).waitFor({ timeout: 8000 });
   await desktop.screenshot({ path: 'artifacts/qa-email/verification-desktop.png', fullPage: true });
@@ -81,7 +81,7 @@ try {
 
   const resetPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await resetPage.goto(base);
-  await resetPage.getByRole('button', { name: 'Olvidé mi contraseña' }).click();
+  await resetPage.getByRole('button', { name: /Olvidaste tu contraseña/ }).click();
   await resetPage.getByLabel('Correo electrónico').fill(pendingEmail);
   await resetPage.getByRole('button', { name: 'Solicitar recuperación' }).click();
   await resetPage.getByText(/Si existe una cuenta/).waitFor();
@@ -92,7 +92,7 @@ try {
   const resetInbox = await resetPage.request.get(`${origin}/api/auth/local-outbox?email=${encodeURIComponent(pendingEmail)}&purpose=password-reset`);
   const resetMail = (await resetInbox.json() as any).messages[0];
   const resetToken = new URL(resetMail.link).searchParams.get('resetPassword');
-  await resetPage.getByRole('link', { name: 'Abrir enlace de recuperación simulado' }).click();
+  await resetPage.getByRole('link', { name: 'Abrir enlace simulado en desarrollo' }).click();
   await resetPage.getByLabel('Nueva contraseña').fill(changedPassword);
   await resetPage.getByRole('button', { name: 'Actualizar contraseña' }).click();
   await resetPage.getByText('Contraseña actualizada. Inicia sesión nuevamente.').waitFor();
@@ -110,8 +110,8 @@ try {
   const adminPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await adminPage.goto(base);
   await adminPage.getByLabel('Correo electrónico').fill(adminEmail);
-  await adminPage.getByLabel('Contraseña').fill(password);
-  await adminPage.getByRole('button', { name: 'Entrar' }).click();
+  await adminPage.getByLabel('Contraseña', { exact: true }).fill(password);
+  await adminPage.getByRole('button', { name: 'Iniciar sesión' }).click();
   await adminPage.getByText('Resumen', { exact: true }).first().waitFor({ timeout: 8000 });
   const cookies = await adminPage.context().cookies();
   const csrf = cookies.find((cookie) => cookie.name === 'oportuna.csrf')?.value ?? '';
@@ -130,13 +130,13 @@ try {
   await invitePage.getByLabel('Nombre').fill('Colaborador');
   await invitePage.getByLabel('Apellido').fill('Invitado');
   await invitePage.getByLabel('Correo electrónico').fill(invitedEmail);
-  await invitePage.getByLabel('Contraseña').fill(password);
-  await invitePage.getByRole('button', { name: 'Crear cuenta y verificar correo' }).click();
+  await invitePage.getByLabel('Contraseña', { exact: true }).fill(password);
+  await invitePage.getByRole('button', { name: 'Aceptar invitación', exact: true }).click();
   await invitePage.getByRole('heading', { name: 'Revisa tu correo' }).waitFor();
   await invitePage.getByRole('button', { name: 'Buzón local de prueba' }).click();
   await invitePage.getByRole('link', { name: 'Abrir enlace de verificación simulado' }).click();
   await invitePage.getByRole('button', { name: 'Verificar cuenta' }).click();
-  await invitePage.getByText('Licitaciones', { exact: true }).first().waitFor({ timeout: 8000 });
+  await invitePage.getByText('Resumen', { exact: true }).first().waitFor({ timeout: 8000 }).catch(async () => { throw new Error((await invitePage.locator('body').innerText()).slice(0, 1200)); });
   await invitePage.screenshot({ path: 'artifacts/qa-email/invitation-tablet.png', fullPage: true });
   const invitedAccount = await pool.query<any[]>('SELECT id FROM app_users WHERE email_normalized=?', [invitedEmail]);
   userIds.push(Number(invitedAccount[0][0].id));
@@ -153,7 +153,7 @@ try {
   const expiredMail = (await expiredInbox.json() as any).messages[0];
   const expiredPage = await browser.newPage({ viewport: { width: 375, height: 667 } });
   await expiredPage.goto(expiredMail.link);
-  await expiredPage.getByRole('button', { name: 'Verificar cuenta' }).click();
+  await expiredPage.getByRole('button', { name: 'Confirmar verificación' }).click();
   await expiredPage.getByText(/enlace de verificación no es válido/i).waitFor();
   await expiredPage.screenshot({ path: 'artifacts/qa-email/expired-link-mobile.png', fullPage: true });
   const expiredConfirm = await desktop.request.post(`${origin}/api/auth/email-verification/confirm`, { headers: { Origin: origin, 'Content-Type': 'application/json' }, data: { token: new URL(expiredMail.link).searchParams.get('verifyEmail') } });
