@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
@@ -10,7 +10,46 @@ function fail(message) {
   process.exit(1);
 }
 
-const privateVariableNames = ['DB_PASSWORD', 'MERCADOPUBLICO_TICKET', 'SYNC_API_TOKEN', 'SMTP_PASSWORD', 'GROQ_API_KEY'];
+const privateVariableNames = [
+  'DB_PASSWORD', 'MERCADOPUBLICO_TICKET', 'SYNC_API_TOKEN', 'GROQ_API_KEY',
+  'SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_FROM',
+  'SMTP_HELO_NAME', 'SMTP_TIMEOUT_MS',
+];
+const allowedPrivateVariables = new Set(privateVariableNames);
+
+function isInside(candidate, parent) {
+  const rel = relative(parent, candidate);
+  return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel));
+}
+
+function loadPrivateSecrets() {
+  const secretPath = resolve(appRoot, '..', 'oportuna-private', 'secrets.json');
+  if (!existsSync(secretPath)) return { source: 'process_environment' };
+  const stat = lstatSync(secretPath);
+  if (stat.isSymbolicLink() || !stat.isFile() || stat.size < 2 || stat.size > 8192) {
+    return { error: 'El archivo privado debe ser un archivo regular, pequeño y no ser un enlace.' };
+  }
+  if (process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
+    return { error: 'En sistemas POSIX el archivo privado debe tener permisos 0600.' };
+  }
+  const actualPath = realpathSync(secretPath);
+  if (isInside(actualPath, realpathSync(appRoot))) return { error: 'El archivo privado debe estar fuera de la raíz web de Liciapp.' };
+  let values;
+  try {
+    values = JSON.parse(readFileSync(actualPath, 'utf8'));
+  } catch {
+    return { error: 'El archivo privado no es JSON válido o no pudo leerse.' };
+  }
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return { error: 'El archivo privado debe ser un objeto JSON.' };
+  if (Object.keys(values).some((name) => !allowedPrivateVariables.has(name))) {
+    return { error: 'El archivo privado contiene campos no permitidos.' };
+  }
+  for (const [name, value] of Object.entries(values)) {
+    if (typeof value !== 'string' || !value.trim()) return { error: 'El archivo privado contiene un valor vacío o no textual.' };
+  }
+  for (const [name, value] of Object.entries(values)) process.env[name] = value;
+  return { source: 'private_file' };
+}
 function safeError(error) {
   let message = error instanceof Error ? `${error.name}: ${error.message}` : 'Error de inicio no clasificado';
   for (const name of privateVariableNames) {
@@ -44,6 +83,9 @@ process.env.PORT = port;
 process.env.HOST = '127.0.0.1';
 // Do not let a deployed .env file silently override the Node App's environment.
 process.env.DOTENV_CONFIG_PATH = join(appRoot, '.oportuna-dotenv-disabled');
+const privateSecrets = loadPrivateSecrets();
+if (privateSecrets.error) diagnostic('PRIVATE_CONFIG_INVALID', privateSecrets.error);
+process.stdout.write(`[oportuna-iis-startup] phase=secrets source=${privateSecrets.source}.\n`);
 process.stdout.write(`[oportuna-iis-startup] phase=preflight node=${process.versions.node}; host=win32/x64; port_source=${portSource}; port=valid; bind=loopback; build=present.\n`);
 
 try {
