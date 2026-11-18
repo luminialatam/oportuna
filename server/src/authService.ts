@@ -63,6 +63,32 @@ export async function login(emailInput:string,password:string) {
   return Number(user.id);
 }
 
+export async function updatePersonalProfile(userId:number,firstName:string,lastName:string) {
+  const [users]=await pool.execute<any[]>("SELECT id FROM app_users WHERE id=? AND status='active' LIMIT 1",[userId]);
+  if(!users.length)return false;
+  await pool.execute("UPDATE app_users SET first_name=?,last_name=? WHERE id=? AND status='active'",[firstName.trim(),lastName.trim(),userId]);
+  return true;
+}
+
+export async function changePasswordForSession(userId:number,sessionId:string,currentPassword:string,newPassword:string) {
+  const conn=await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows]=await conn.query<any[]>("SELECT password_hash FROM app_users WHERE id=? AND status='active' LIMIT 1 FOR UPDATE",[userId]);
+    const user=rows[0];
+    let valid=false;
+    if(user) { try { valid=await argon2.verify(user.password_hash,currentPassword); } catch { valid=false; } }
+    if(!valid) { await conn.rollback(); return 'invalid_current_password' as const; }
+    if(currentPassword===newPassword) { await conn.rollback(); return 'same_password' as const; }
+    const passwordHash=await hashPassword(newPassword);
+    await conn.execute('UPDATE app_users SET password_hash=? WHERE id=?',[passwordHash,userId]);
+    await conn.execute('UPDATE app_sessions SET revoked_at=UTC_TIMESTAMP() WHERE user_id=? AND id<>UUID_TO_BIN(?) AND revoked_at IS NULL',[userId,sessionId]);
+    await conn.commit();
+    return 'changed' as const;
+  } catch(error) { await conn.rollback(); throw error; }
+  finally { conn.release(); }
+}
+
 export async function createUser(emailInput:string,password:string,platformRole:'user'|'admin'='user',firstName='',lastName='') {
   const email=normalizeEmail(emailInput);if(!validEmail(email))throw new Error('Correo inválido.');const passwordHash=await hashPassword(password);
   const [result]=await pool.execute<any>("INSERT INTO app_users (email_normalized,first_name,last_name,password_hash,platform_role,status,email_verified_at) VALUES (?,?,?,?,?,'active',UTC_TIMESTAMP())",[email,firstName.trim().slice(0,100),lastName.trim().slice(0,100),passwordHash,platformRole]);return Number(result.insertId);
@@ -81,6 +107,12 @@ export async function registerPendingUser(emailInput:string,password:string,firs
 export async function issueEmailVerification(userId:number) {
   const token=opaqueToken();const conn=await pool.getConnection();
   try{await conn.beginTransaction();const [rows]=await conn.query<any[]>("SELECT email_normalized,email_verified_at FROM app_users WHERE id=? AND status='active' LIMIT 1 FOR UPDATE",[userId]);const user=rows[0];if(!user||user.email_verified_at){await conn.rollback();return null;}await conn.execute('UPDATE email_verification_tokens SET used_at=COALESCE(used_at,UTC_TIMESTAMP()) WHERE user_id=? AND used_at IS NULL',[userId]);await conn.execute('INSERT INTO email_verification_tokens (user_id,token_hash,expires_at) VALUES (?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 30 MINUTE))',[userId,verificationDigest(token)]);await conn.commit();return {email:String(user.email_normalized),token};}
+  catch(error){await conn.rollback();throw error;}finally{conn.release();}
+}
+
+export async function issueEmailVerificationForAddress(emailInput:string) {
+  const email=normalizeEmail(emailInput);if(!validEmail(email))return null;const token=opaqueToken();const conn=await pool.getConnection();
+  try{await conn.beginTransaction();const [rows]=await conn.query<any[]>("SELECT id,email_normalized,email_verified_at FROM app_users WHERE email_normalized=? AND status='active' LIMIT 1 FOR UPDATE",[email]);const user=rows[0];if(!user||user.email_verified_at){await conn.rollback();return null;}const userId=Number(user.id);await conn.execute('UPDATE email_verification_tokens SET used_at=COALESCE(used_at,UTC_TIMESTAMP()) WHERE user_id=? AND used_at IS NULL',[userId]);await conn.execute('INSERT INTO email_verification_tokens (user_id,token_hash,expires_at) VALUES (?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 30 MINUTE))',[userId,verificationDigest(token)]);await conn.commit();return {email:String(user.email_normalized),token};}
   catch(error){await conn.rollback();throw error;}finally{conn.release();}
 }
 

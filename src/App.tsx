@@ -1,182 +1,1951 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, ArrowDownUp, ArrowLeft, ArrowRight, BookmarkPlus, Building2, Check, ChevronDown, CircleHelp, Clock3, Database, ExternalLink, FileSearch, Filter, LayoutDashboard, ListFilter, LoaderCircle, LogOut, MailPlus, Menu, MoreHorizontal, Plus, RefreshCw, Search, Settings, Sparkles, TrendingUp, Users, X } from 'lucide-react';
+import {
+  Activity,
+  ArrowRight,
+  BarChart3,
+  Bell,
+  Building2,
+  Clock3,
+  Database,
+  ExternalLink,
+  FileSearch,
+  Filter,
+  FlaskConical,
+  LayoutDashboard,
+  LoaderCircle,
+  LogOut,
+  MailPlus,
+  Menu,
+  Search,
+  Settings,
+  Sparkles,
+  Star,
+  Shield,
+  UserRound,
+  Users,
+  X,
+} from 'lucide-react';
+
 import { CompanyOpportunities, CompanyWorkspace } from './CompanyWorkspace';
 import { TrackingWorkspace } from './TrackingWorkspace';
 import { AlertNotificationPanel, AlertsPage, type AlertItem } from './AlertCenter';
-import { formatBinaryFlag, formatListingType, formatPaymentMode } from './listingApiLabels';
 import { AuthGate, EmailVerificationGate, LegacyClaim, type AuthResult } from './AuthGate';
 import { CompanyTeamManagement, NoCompanyOnboarding } from './Onboarding';
-import { listingAmountDisplay } from './listingAmountDisplay';
+import { MarketAnalytics } from './MarketAnalytics';
+import { SandboxCenter } from './SandboxCenter';
+import { ProfilePage, SecurityPage } from './AccountSettings';
+import { useLocation, useNavigate } from 'react-router';
 
-type Listing = { codigo_externo:string; nombre:string|null; codigo_estado:number|null; fecha_cierre:string|null; fecha_publicacion?:string|null; organismo:string|null; monto_estimado:string|number|null; moneda:string|null; monto_estado?:string };
-type Health = { ok:boolean; apiConfigured:boolean; mysql:boolean };
-type Summary = { total:number; estados:{codigoEstado:number|null;total:number}[]; ultimaSincronizacion:any; ultimasLicitaciones:Listing[] };
-const statusNames:Record<number,string> = {5:'Publicada',6:'Cerrada',7:'Desierta',8:'Adjudicada',15:'Revocada',18:'Revocada',19:'Suspendida'};
-const navItems = [
-  {name:'Resumen', icon:LayoutDashboard}, {name:'Licitaciones',icon:FileSearch}, {name:'Buscador IA',icon:Sparkles}, {name:'Mi empresa',icon:Building2}, {name:'Seguimiento',icon:Activity}, {name:'Proveedores',icon:Users}, {name:'Configuración',icon:Settings},
-];
-const ALERT_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-let csrfToken = '';
-type AuthState=AuthResult;
-const money = (value: Listing['monto_estimado'], currency: string|null) => value == null || value === '' ? '—' : new Intl.NumberFormat('es-CL',{style:'currency',currency:currency || 'CLP',maximumFractionDigits:0}).format(Number(value));
-const listingMoney = (item:any) => listingAmountDisplay(item.monto_estimado,item.monto_estado,(value)=>money(value,item.moneda));
-const dateFmt = (value?:string|null) => {
- if(!value) return '—';
- const dateOnly=/^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
- const parsed=dateOnly?new Date(Number(dateOnly[1]),Number(dateOnly[2])-1,Number(dateOnly[3])):new Date(value);
- return Number.isNaN(parsed.getTime())?'—':new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short',year:'numeric'}).format(parsed);
+type Listing = {
+  codigo_externo: string;
+  nombre: string | null;
+  codigo_estado: number | null;
+  fecha_cierre: string | null;
+  fecha_publicacion?: string | null;
+  organismo: string | null;
+  monto_estimado: string | number | null;
+  moneda: string | null;
 };
-const dateTimeFmt = (value?:string|null) => value?new Intl.DateTimeFormat('es-CL',{timeZone:'America/Santiago',dateStyle:'medium',timeStyle:'short'}).format(new Date(value)):'—';
-async function api<T>(url:string, options?:RequestInit):Promise<T>{const headers=new Headers(options?.headers);const method=(options?.method??'GET').toUpperCase();if(!['GET','HEAD','OPTIONS'].includes(method)&&csrfToken)headers.set('X-CSRF-Token',csrfToken);const response=await fetch(url,{...options,headers,credentials:'same-origin'});const data=await response.json();if(!response.ok)throw new Error(data.error||'No fue posible completar la solicitud.');return data as T;}
-function Badge({state}:{state:number|null}){ return <span className={`badge status-${state ?? 'unknown'}`}><i />{state == null?'Sin estado':statusNames[state] ?? `Estado ${state}`}</span>; }
-function Empty({title,body,action}:{title:string;body:string;action?:React.ReactNode}){return <div className="empty"><div className="empty-icon"><FileSearch size={21}/></div><h3>{title}</h3><p>{body}</p>{action}</div>}
-function present(value:unknown):string|undefined{if(value===null||value===undefined||value==='')return undefined;if(typeof value==='boolean')return value?'Sí':'No';if(typeof value==='string'||typeof value==='number')return String(value);return undefined}
-function DetailField({label,value}:{label:string;value:unknown}){const text=present(value);return text?<div className="detail-field"><span>{label}</span><b>{text}</b></div>:null}
-function ListingAnalysis({analysis,loading}:{analysis:any;loading:boolean}){
- return <section className="detail-section listing-analysis"><div className="analysis-title"><div><h3>Análisis IA</h3><p>Solo se genera al pulsar el botón. Datos oficiales e interpretación se presentan por separado.</p></div>{analysis?.provider&&<span className="quiet-pill">{analysis.provider==='groq'?'Asistido por Groq':'Análisis convencional'}</span>}</div>
-  {loading?<div className="loading-box"><LoaderCircle className="spin" size={18}/>Analizando la ficha local…</div>:analysis?.error?<p className="detail-error">{analysis.error}</p>:!analysis?<p className="detail-empty-note">El análisis no se ejecuta al abrir la ficha. Pulsa “Analizar con IA” para comenzar.</p>:<>
-   <p className="analysis-source-note">{analysis.notice}</p><div className="analysis-metrics"><div><span>Relevancia comercial</span><b>{analysis.commercialRelevance?.score==null?'—':`${analysis.commercialRelevance.score}%`}</b><small>{analysis.commercialRelevance?.level==='unavailable'?'Catálogo no configurado':analysis.commercialRelevance?.level==='none'?'Sin coincidencia':analysis.commercialRelevance?.level==='excluded'?'Excluida':`Coincidencia ${analysis.commercialRelevance?.level??'no disponible'}`}</small></div><div><span>Cobertura de información</span><b>{analysis.coverage?.score??0}%</b><small>{analysis.coverage?.level??'Sin datos'} · {analysis.coverage?.present??0}/{analysis.coverage?.total??0} campos</small></div></div>
-   <div className="analysis-official"><h4>Datos oficiales disponibles</h4><p><b>{analysis.official?.title??'Título no disponible'}</b></p><div className="detail-field"><span>Organismo</span><b>{analysis.official?.buyer??'No informado'}</b></div><div className="detail-field"><span>Estado</span><b>{analysis.official?.availability?.label??'No verificado'}{analysis.official?.sourceStatus?` · ${analysis.official.sourceStatus}`:''}</b></div><div className="detail-field"><span>Cierre</span><b>{analysis.official?.closeAt?dateFmt(analysis.official.closeAt):'No informado'}</b></div><div className="detail-field"><span>Monto</span><b>{analysis.official?.amount!=null?money(analysis.official.amount,analysis.official.currency):analysis.official?.amountVisibility??'No informado'}</b></div>
-    <div className="analysis-section"><h4>Productos, cantidades y especificaciones</h4>{analysis.official?.items?.length?<ul>{analysis.official.items.map((item:any,index:number)=><li key={`${item.name}-${index}`}><b>{item.name??'Partida'}</b>{item.quantity!=null?` · ${item.quantity}${item.unit?` ${item.unit}`:''}`:''}{item.description?` — ${item.description}`:''}{item.category?` · Categoría: ${item.category}`:''}</li>)}</ul>:<p>La ficha local no tiene partidas indexadas.</p>}</div>
-    <div className="analysis-section"><h4>Campos administrativos estructurados</h4>{analysis.official?.requirements?.length?<ul>{analysis.official.requirements.map((item:any,index:number)=><li key={`${item.label}-${index}`}>{item.label}: {item.value}</li>)}</ul>:<p>No se encontraron requisitos administrativos estructurados en la ficha.</p>}</div><p className="analysis-source-note">{analysis.official?.documents?.present?'La ficha contiene campos de documentos; su contenido debe revisarse en la fuente oficial.':'La ficha local no contiene documentos adjuntos. Las bases administrativas y técnicas están pendientes de revisión.'}</p>
-   </div><div className="analysis-interpretation"><h4>{analysis.provider==='groq'?'Interpretación IA · no verificada en bases':'Lectura convencional · no verificada en bases'}</h4><p>{analysis.interpretation?.executiveSummary}</p>{[['Observaciones técnicas',analysis.interpretation?.technicalNotes],['Observaciones administrativas',analysis.interpretation?.administrativeNotes],['Riesgos',analysis.interpretation?.risks]].map(([title,items]:any)=><div className="analysis-section" key={title}><h4>{title}</h4>{items?.length?<ul>{items.map((item:string,index:number)=><li key={`${title}-${index}`}>{item}</li>)}</ul>:<p>Sin observaciones con la información disponible.</p>}</div>)}</div>
-   <div className="analysis-recommendation"><h4>Recomendación comercial</h4><b>{analysis.recommendation?.label}</b><p>{analysis.recommendation?.text}</p></div>{analysis.coverage?.missing?.length>0&&<p className="analysis-source-note">Información pendiente: {analysis.coverage.missing.join(', ')}.</p>}
-  </>}
- </section>;
+
+type Health = { ok: boolean; apiConfigured: boolean; mysql: boolean };
+type Summary = {
+  total: number;
+  estados: { codigoEstado: number | null; total: number }[];
+  ultimaSincronizacion: any;
+  ultimasLicitaciones: Listing[];
+};
+
+const statusNames: Record<number, string> = {
+  5: 'Publicada',
+  6: 'Cerrada',
+  7: 'Desierta',
+  8: 'Adjudicada',
+  15: 'Revocada',
+  18: 'Revocada',
+  19: 'Suspendida',
+};
+
+const ALERT_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+const SESSION_SEEN_KEY = 'oportuna.sessionSeen';
+const SECTION_PATHS: Record<string, string> = {
+  Resumen: '/',
+  'Buscar oportunidades': '/buscar',
+  'Inteligencia de mercado': '/inteligencia-mercado',
+  Seguimiento: '/seguimiento',
+  Alertas: '/alertas',
+  'Mi empresa': '/empresa',
+  'Equipo y accesos': '/equipo',
+  Configuración: '/configuracion',
+  'Mi perfil': '/perfil',
+  Seguridad: '/seguridad',
+  'Centro de Pruebas': '/centro-de-pruebas',
+};
+const PATH_SECTIONS = Object.fromEntries(
+  Object.entries(SECTION_PATHS).map(([name, path]) => [path, name])
+) as Record<string, string>;
+let csrfToken = '';
+
+function hasStoredSessionMarker() {
+  try { return window.localStorage.getItem(SESSION_SEEN_KEY) === 'true'; } catch { return false; }
 }
-function ListingDetail({listing,saved,saving,onAnalyze,onSave,analysis,analysisLoading,canRefreshOfficial,refreshingOfficial,onRefreshOfficial}:{listing:any;saved:boolean|null;saving:boolean;onAnalyze:()=>void;onSave:()=>void;analysis:any;analysisLoading:boolean;canRefreshOfficial:boolean;refreshingOfficial:boolean;onRefreshOfficial:()=>void}){
- const buyer=listing.Comprador??{};const dates=listing.Fechas??{};const listedItems=Array.isArray(listing.Items?.Listado)?listing.Items.Listado:[];
- const knownRequirements=[['Prohibición de contratación',listing.ProhibicionContratacion],['Subcontratación',listing.SubContratacion],['Toma de razón',listing.TomaRazon],['Renovable',listing.EsRenovable],['Duración del contrato',listing.TipoDuracionContrato]].filter(([,value])=>present(value)!==undefined);
- const documentKeys=['Documentos','Archivos','Anexos','Adjuntos'];const documents=documentKeys.flatMap(key=>Array.isArray(listing[key])?listing[key].map((item:any)=>({item,source:key})):[]);
- return <><div className="detail-content detail-sections">{listing._detailAvailable===false&&<div className="detail-empty-note local-detail-limited">La copia local contiene información básica; no hay detalle previamente almacenado. No se consultó Mercado Público.</div>}
-  <section className="detail-section"><h3>Información general</h3><DetailField label="Código" value={listing.CodigoExterno}/>{listing.Estado?.Nombre||typeof listing.Estado==='string'?<DetailField label="Estado" value={listing.Estado?.Nombre??listing.Estado}/>:listing.CodigoEstado!=null?<div className="detail-field"><span>Estado</span><Badge state={Number(listing.CodigoEstado)}/></div>:null}<DetailField label="Tipo de licitación" value={formatListingType(listing.Tipo)}/><DetailField label="Modalidad de pago" value={formatPaymentMode(listing.Modalidad)}/><DetailField label="Descripción" value={listing.Descripcion}/></section>
-  <section className="detail-section"><h3>Organismo comprador</h3><DetailField label="Organismo" value={buyer.NombreOrganismo}/><DetailField label="Unidad" value={buyer.NombreUnidad}/><DetailField label="Región" value={buyer.RegionUnidad}/><DetailField label="Comuna" value={buyer.ComunaUnidad}/><DetailField label="Dirección" value={buyer.DireccionUnidad}/></section>
-  <section className="detail-section"><h3>Presupuesto y fechas</h3>{listing.MontoEstimado!=null?<DetailField label="Monto estimado" value={money(listing.MontoEstimado,listing.Moneda||null)}/>:<><DetailField label="Monto estimado" value={Number(listing.VisibilidadMonto)===0?'No publicado por el organismo':Number(listing.VisibilidadMonto)===1?'La respuesta oficial no incluyó el monto':'Pendiente de consultar la ficha oficial'}/>{canRefreshOfficial&&<button className="button button-secondary detail-refresh-button" disabled={refreshingOfficial} onClick={onRefreshOfficial}>{refreshingOfficial?<LoaderCircle className="spin" size={14}/>:<RefreshCw size={14}/>} {refreshingOfficial?'Consultando…':'Consultar ficha oficial'}</button>}</>}<DetailField label="Moneda" value={listing.Moneda}/><DetailField label="Publicación" value={dates.FechaPublicacion?dateFmt(dates.FechaPublicacion):undefined}/><DetailField label="Inicio" value={dates.FechaInicio?dateFmt(dates.FechaInicio):undefined}/><DetailField label="Cierre" value={(dates.FechaCierre??listing.FechaCierre)?dateFmt(dates.FechaCierre??listing.FechaCierre):undefined}/><DetailField label="Adjudicación estimada" value={dates.FechaEstimadaAdjudicacion?dateFmt(dates.FechaEstimadaAdjudicacion):undefined}/></section>
-  <section className="detail-section"><h3>Productos y partidas solicitadas</h3>{listedItems.length?listedItems.map((item:any,index:number)=><article className="detail-item" key={`${item.Correlativo??index}-${item.CodigoProducto??''}`}><b>{item.NombreProducto||item.Nombre||'Producto o servicio'}</b><DetailField label="Descripción" value={item.Descripcion}/><DetailField label="Categoría" value={item.Categoria}/><DetailField label="Cantidad" value={item.Cantidad}/><DetailField label="Unidad" value={item.UnidadMedida}/></article>):<p className="detail-empty-note">La respuesta consultada no incluye partidas.</p>}</section>
-  <section className="detail-section"><h3>Requisitos y documentos disponibles</h3>{knownRequirements.length?knownRequirements.map(([label,value])=>{const coded=label==='Subcontratación'||label==='Toma de razón'||label==='Renovable'?formatBinaryFlag(value):undefined;return <DetailField key={String(label)} label={String(label)} value={coded??value}/>;}):<p className="detail-empty-note">La respuesta consultada no contiene requisitos estructurados.</p>}{documents.length?documents.map(({item,source}:any,index:number)=>{const name=item.Nombre??item.NombreArchivo??item.Descripcion??`${source} ${index+1}`;const url=item.Url??item.URL??item.Link??item.UrlDocumento;return <div className="detail-document" key={`${source}-${index}`}>{url?<a href={String(url)} target="_blank" rel="noreferrer">{String(name)}<ExternalLink size={14}/></a>:<span>{String(name)}</span>}</div>}):<p className="detail-empty-note">La respuesta consultada no incluye documentos adjuntos.</p>}</section>
-  <ListingAnalysis analysis={analysis} loading={analysisLoading}/>
-  </div><div className="detail-actions-fixed"><button className="button button-secondary" disabled={saved===true||saved===null||saving} onClick={onSave}>{saved?<Check size={15}/>:saving?<LoaderCircle className="spin" size={15}/>:<BookmarkPlus size={15} />}{saved?'Guardada':saving?'Guardando…':saved===null?'Comprobando…':'Guardar oportunidad'}</button><button className="button button-secondary" disabled={analysisLoading} onClick={onAnalyze}>{analysisLoading?<LoaderCircle className="spin" size={15}/>:<Sparkles size={15}/>} {analysisLoading?'Analizando…':'Analizar con IA'}</button><a className="button button-primary" href={`https://www.mercadopublico.cl/fichaLicitacion.html?idLicitacion=${encodeURIComponent(listing.CodigoExterno||'')}`} target="_blank" rel="noreferrer">Ver en Mercado Público <ExternalLink size={15}/></a></div></>;
+function setStoredSessionMarker(active: boolean) {
+  try {
+    if (active) window.localStorage.setItem(SESSION_SEEN_KEY, 'true');
+    else window.localStorage.removeItem(SESSION_SEEN_KEY);
+  } catch { /* Browser storage can be disabled; the server cookie remains authoritative. */ }
 }
-function App(){
- const [authState,setAuthState]=useState<'loading'|'anonymous'|'authenticated'>('loading');const [auth,setAuth]=useState<AuthState|null>(null);const [pendingLegacy,setPendingLegacy]=useState<{id:number;name:string}|null|undefined>(undefined);const [claimError,setClaimError]=useState('');const [claimBusy,setClaimBusy]=useState(false);
- const [section,setSection]=useState('Resumen'); const [mobileOpen,setMobileOpen]=useState(false); const [health,setHealth]=useState<Health|null>(null); const [summary,setSummary]=useState<Summary|null>(null); const [config,setConfig]=useState<any>(null); const [error,setError]=useState(''); const [job,setJob]=useState<any>(null); const [toast,setToast]=useState('');
- const [search,setSearch]=useState(''); const [stateFilter,setStateFilter]=useState(''); const [page,setPage]=useState(1); const [listingData,setListingData]=useState<{items:Listing[];total:number;page:number;pageSize:number}|null>(null); const [selected,setSelected]=useState<any>(null); const [detailLoading,setDetailLoading]=useState(false);const [selectedSaved,setSelectedSaved]=useState<boolean|null>(null);const [detailSaving,setDetailSaving]=useState(false);
- const [smartQuery,setSmartQuery]=useState('');const [smartResults,setSmartResults]=useState<any>(null);const [smartPage,setSmartPage]=useState(1);const [smartLoading,setSmartLoading]=useState(false);const [smartError,setSmartError]=useState('');const [smartStatus,setSmartStatus]=useState<any>(null);const [smartState,setSmartState]=useState('');const [smartMatchLevel,setSmartMatchLevel]=useState('');const [smartEnrichment,setSmartEnrichment]=useState<any>(null);const [smartEnriching,setSmartEnriching]=useState(false);const [pilotBusy,setPilotBusy]=useState(false);const [smartRegion,setSmartRegion]=useState('');const [smartBudgetMin,setSmartBudgetMin]=useState('');const [smartBudgetMax,setSmartBudgetMax]=useState('');const [smartCloseAfter,setSmartCloseAfter]=useState('');const [smartCloseBefore,setSmartCloseBefore]=useState('');const [smartAnalysis,setSmartAnalysis]=useState<any>(null);const [smartAnalysisCode,setSmartAnalysisCode]=useState<string|null>(null);const [smartAnalysisLoading,setSmartAnalysisLoading]=useState(false);const [refreshingOfficial,setRefreshingOfficial]=useState(false);
- const [alerts,setAlerts]=useState<AlertItem[]>([]);const [alertCounts,setAlertCounts]=useState({total:0,unread:0});const [alertsOpen,setAlertsOpen]=useState(false);const [alertsLoading,setAlertsLoading]=useState(false);const [alertsError,setAlertsError]=useState('');const [alertsFilter,setAlertsFilter]=useState('all');
- const isAdmin=auth?.platformRole==='admin'||auth?.role==='admin';
- useEffect(()=>{let mounted=true;void api<{authenticated:boolean;csrfToken?:string}&Partial<AuthState>>('/api/auth/session').then(session=>{if(!mounted)return;if(session.authenticated&&session.csrfToken){csrfToken=session.csrfToken;setAuth(session as AuthState);setAuthState('authenticated')}else setAuthState('anonymous')}).catch(()=>{if(mounted)setAuthState('anonymous')});return()=>{mounted=false}},[]);
- const acceptAuth=(session:AuthState)=>{csrfToken=session.csrfToken;setAuth(session);setAuthState('authenticated');setError('')};
- useEffect(()=>{if(authState!=='authenticated'||!auth?.emailVerified)return;const invitationToken=new URLSearchParams(window.location.search).get('invitation');if(!invitationToken)return;history.replaceState({},'',window.location.pathname);void api<AuthState>('/api/auth/invitations/accept',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({invitationToken})}).then(next=>{csrfToken=next.csrfToken;setAuth(next);setSection('Resumen');setToast('Invitación aceptada. Ya puedes acceder a esta empresa.');}).catch(e=>setToast(e instanceof Error?e.message:'No se pudo aceptar la invitación.'));},[authState,auth?.emailVerified,auth?.userId]);
- const signOut=async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{/* Expired sessions are cleared locally below. */}csrfToken='';setAuth(null);setAuthState('anonymous');setConfig(null);setSummary(null);setSection('Resumen')};
- const claimLegacy=async()=>{if(!pendingLegacy)return;setClaimBusy(true);setClaimError('');try{const result=await api<{csrfToken:string}>('/api/platform/legacy-company/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({companyId:pendingLegacy.id})});csrfToken=result.csrfToken;const session=await api<AuthState&{authenticated:boolean}>('/api/auth/session');acceptAuth(session)}catch(e){setClaimError(e instanceof Error?e.message:'No se pudo vincular la empresa local.')}finally{setClaimBusy(false)}};
- useEffect(()=>{if(authState!=='authenticated'||auth?.platformRole!=='admin'||auth.activeCompanyId)return;void api<{available:boolean;company:{id:number;name:string}|null}>('/api/platform/legacy-company/pending').then(result=>setPendingLegacy(result.available?result.company:null)).catch(e=>setClaimError(e instanceof Error?e.message:'No se pudo revisar la empresa pendiente.'))},[authState,auth?.platformRole,auth?.activeCompanyId]);
- const refresh=useCallback(async()=>{if(authState!=='authenticated')return;try{const [h,s]=await Promise.all([api<Health>('/api/health'),api<Summary>('/api/resumen')]);setHealth(h);setSummary(s);if(section==='Configuración'&&auth?.activeCompanyId&&(auth?.platformRole==='admin'||auth?.role==='admin'))setConfig(await api<any>('/api/configuracion'));else if(!auth?.activeCompanyId||!(auth?.platformRole==='admin'||auth?.role==='admin'))setConfig(null);setError('')}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar con el servidor.')}},[authState,auth?.platformRole,auth?.role,auth?.activeCompanyId,section]);
- useEffect(()=>{if(authState==='authenticated')void refresh()},[authState,refresh]);
- useEffect(()=>{if(authState==='authenticated'&&section==='Licitaciones'){void api<typeof listingData>(`/api/licitaciones?page=${page}&pageSize=10&search=${encodeURIComponent(search)}&estado=${encodeURIComponent(stateFilter)}`).then(x=>setListingData(x as any)).catch(e=>setError(e.message))}},[authState,section,page,search,stateFilter]);
- useEffect(()=>{if(authState==='authenticated'&&section==='Buscador IA'){void api<any>('/api/buscador/status').then(setSmartStatus).catch(()=>setSmartStatus({mode:'mysql',groqConfigured:false}));if(isAdmin)void api<any>('/api/buscador/enrichment/status').then(setSmartEnrichment).catch(()=>{})}},[authState,isAdmin,section]);
- const loadAlerts=useCallback(async(filter='all')=>{setAlertsLoading(true);setAlertsError('');try{await api('/api/alerts/evaluate',{method:'POST'});const result=await api<{items:AlertItem[];counts:{total:number;unread:number}}>(`/api/alerts?filter=${filter}`);setAlerts(result.items);setAlertCounts(result.counts)}catch(e){setAlertsError(e instanceof Error?e.message:'No se pudieron cargar las alertas.')}finally{setAlertsLoading(false)}},[]);
- const refreshAlertCounts=useCallback(async()=>{if(authState!=='authenticated'||!auth?.activeCompanyId)return;try{const counts=await api<{total:number;unread:number}>('/api/alerts/count');setAlertCounts(counts)}catch{/* migration may be pending during local setup */}},[authState,auth?.activeCompanyId]);
- useEffect(()=>{if(authState!=='authenticated'||!auth?.activeCompanyId)return;void refreshAlertCounts();const timer=window.setInterval(()=>{void api('/api/alerts/evaluate',{method:'POST'}).then(refreshAlertCounts).catch(()=>{})},ALERT_CHECK_INTERVAL_MS);return()=>window.clearInterval(timer)},[authState,auth?.activeCompanyId,refreshAlertCounts]);
- useEffect(()=>{if(authState==='authenticated'&&section==='Centro de alertas')void loadAlerts(alertsFilter)},[authState,section,alertsFilter,loadAlerts]);
- const toggleAlertPanel=()=>{const next=!alertsOpen;setAlertsOpen(next);if(next)void loadAlerts('all')};
- const markAlertRead=async(id:number)=>{try{const result=await api<{counts:{total:number;unread:number}}>(`/api/alerts/${id}/read`,{method:'POST'});setAlertCounts(result.counts);setAlerts(current=>current.map(item=>item.id===id?{...item,readAt:new Date().toISOString()}:item))}catch(e){setAlertsError(e instanceof Error?e.message:'No se pudo actualizar la alerta.')}};
- const dismissAlertItem=async(id:number)=>{try{const result=await api<{counts:{total:number;unread:number}}>(`/api/alerts/${id}/dismiss`,{method:'POST'});setAlertCounts(result.counts);setAlerts(current=>current.filter(item=>item.id!==id))}catch(e){setAlertsError(e instanceof Error?e.message:'No se pudo descartar la alerta.')}};
- const openAlertOpportunity=async(item:AlertItem)=>{if(!item.readAt)await markAlertRead(item.id);setAlertsOpen(false);void openDetail(item.code)};
- const jobAction=async(action:string)=>{if(!job?.id)return;try{await api(`/api/sync/jobs/${job.id}/${action}`,{method:'POST'});setJob(await api<any>(`/api/sync/jobs/${job.id}`));await refresh()}catch(e){setToast(e instanceof Error?e.message:'No se pudo actualizar el proceso.')}};
- useEffect(()=>{if(authState!=='authenticated'||section!=='Configuración'||!isAdmin||!auth?.activeCompanyId)return;let active=true;const load=async()=>{try{const current=await api<any>('/api/sync/jobs/current');if(active)setJob(current??null)}catch{}};void load();const timer=setInterval(()=>{if(job&&['queued','running'].includes(job.estado)){void api<any>(`/api/sync/jobs/${job.id}`).then(x=>{if(active){setJob(x);void refresh()}}).catch(()=>{})}},3000);return()=>{active=false;clearInterval(timer)}},[authState,section,isAdmin,auth?.activeCompanyId,job?.id,job?.estado,refresh]);
- const openDetail=async(code:string)=>{setSelected({loading:true});setSelectedSaved(null);setDetailSaving(false);setDetailLoading(true);try{const [data,tracking]=await Promise.all([api<{listing:any;detailAvailable:boolean}>(`/api/licitaciones/${encodeURIComponent(code)}/local`),api<{saved:boolean}>(`/api/company/tracking/lookup?codigo=${encodeURIComponent(code)}`).catch(()=>({saved:false}))]);setSelected({...data.listing,_detailAvailable:data.detailAvailable});setSelectedSaved(tracking.saved)}catch(e){setSelected({error:e instanceof Error?e.message:'No se encontró el detalle.'})}finally{setDetailLoading(false)}};
- const refreshOfficialDetail=async()=>{
-  const code=selected?.CodigoExterno;
-  if(!code)return;
-  setRefreshingOfficial(true);
-  try{
-   const detail=await api<any>(`/api/licitaciones/${encodeURIComponent(code)}/refresh`,{method:'POST'});
-   setSelected({...detail,_detailAvailable:true});
-   const explicitlyHidden=detail.MontoEstimado==null&&Number(detail.VisibilidadMonto)===0;
-   const retainedAmount=explicitlyHidden?null:(detail.MontoEstimado??selected?.MontoEstimado??null);
-   const amountStatus=retainedAmount!=null?'published':explicitlyHidden?'not_public':Number(detail.VisibilidadMonto)===1?'source_missing':'unverified';
-   const mergeAmount=(item:any)=>{
-    if(item.codigo_externo!==code)return item;
-    const amount=explicitlyHidden?null:(detail.MontoEstimado??item.monto_estimado??null);
-    const status=amount!=null?'published':explicitlyHidden?'not_public':Number(detail.VisibilidadMonto)===1?'source_missing':item.monto_estado??'unverified';
-    return {...item,monto_estimado:amount,moneda:detail.Moneda??item.moneda,monto_estado:status};
-   };
-   setSmartResults((current:any)=>current?{...current,items:current.items.map(mergeAmount)}:current);
-   setListingData((current:any)=>current?{...current,items:current.items.map(mergeAmount)}:current);
-   setToast(detail.MontoEstimado!=null?'Ficha oficial actualizada; monto estimado guardado.':amountStatus==='not_public'?'Ficha consultada: el organismo no publica el monto estimado.':amountStatus==='source_missing'?'La ficha oficial no devolvió el monto estimado.':retainedAmount!=null?'Se conserva el último monto estimado informado por la fuente.':'Ficha consultada; no se informó un monto nuevo.');
-  }catch(e){setToast(e instanceof Error?e.message:'No se pudo consultar la ficha oficial.');}
-  finally{setRefreshingOfficial(false);}
- };
- const runSmartSearch=async(query=smartQuery,nextPage=1)=>{setSmartLoading(true);setSmartError('');try{const result=await api<any>('/api/buscador/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,page:nextPage,pageSize:10,states:smartState?[Number(smartState)]:[],matchLevel:smartMatchLevel||undefined,region:smartRegion||null,budgetMin:smartBudgetMin?Number(smartBudgetMin):null,budgetMax:smartBudgetMax?Number(smartBudgetMax):null,closeAfter:smartCloseAfter||null,closeBefore:smartCloseBefore||null})});setSmartQuery(query);setSmartPage(nextPage);setSmartResults(result)}catch(e){setSmartError(e instanceof Error?e.message:'No se pudo realizar la búsqueda.')}finally{setSmartLoading(false)}};
- const enrichSmartResults=async()=>{const codes=(smartResults?.items??[]).slice(0,5).map((item:any)=>item.codigo_externo);if(!smartQuery.trim())return;setSmartEnriching(true);setSmartError('');try{const queued=await api<any>('/api/buscador/enrichment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:smartQuery,codes})});setToast(queued.accepted?`Enriquecimiento iniciado para hasta ${queued.accepted} licitaciones.`:queued.candidatesSelected?'Las licitaciones candidatas ya están enriquecidas o en proceso.':'No se encontraron títulos candidatos claros para consultar.');for(let i=0;i<60;i++){const status=await api<any>('/api/buscador/enrichment/status');setSmartEnrichment(status);if(Number(status?.active??0)===0)break;await new Promise(resolve=>setTimeout(resolve,2000))}await runSmartSearch(smartQuery,smartPage)}catch(e){setSmartError(e instanceof Error?e.message:'No fue posible enriquecer las partidas.')}finally{setSmartEnriching(false)}};
- const runPilotAction=async(action:'start'|'pause'|'resume'|'retry')=>{setPilotBusy(true);try{const initial=await api<any>(`/api/buscador/enrichment/pilot/${action}`,{method:'POST'});setConfig((current:any)=>({...current,enrichmentPilot:initial.pilot}));if(action!=='pause'&&initial.pilot?.status==='running'){for(let i=0;i<180;i++){await new Promise(resolve=>setTimeout(resolve,2000));const status=await api<any>('/api/buscador/enrichment/pilot');setConfig((current:any)=>({...current,enrichmentPilot:status, enrichment:status.coverage??current?.enrichment}));if(status.status!=='running')break}}await refresh()}catch(e){setToast(e instanceof Error?e.message:'No se pudo actualizar el lote de enriquecimiento.')}finally{setPilotBusy(false)}};
- const analyzeSmartListing=async(code:string)=>{setSmartAnalysisCode(code);setSmartAnalysisLoading(true);setSmartAnalysis(null);try{setSmartAnalysis(await api<any>(`/api/buscador/analysis/${encodeURIComponent(code)}`,{method:'POST'}))}catch(e){setSmartAnalysis({error:e instanceof Error?e.message:'No se pudo analizar esta licitación.'})}finally{setSmartAnalysisLoading(false)}};
- const saveOpportunity=async(code:string)=>{try{const result=await api<{estado:string;created:boolean}>(`/api/company/tracking`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:code})});setToast(result.created?`Licitación ${code} guardada en Seguimiento.`:`Licitación ${code} ya estaba en Seguimiento.`);void refreshAlertCounts();return true}catch(e){setToast(e instanceof Error?e.message:'No se pudo guardar en Seguimiento.');return false}};
- const changeCompany=async(companyId:number)=>{try{const next=await api<AuthState>('/api/auth/company',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({companyId})});csrfToken=next.csrfToken;setAuth(next);setAlerts([]);setAlertCounts({total:0,unread:0});setAlertsOpen(false);setSection('Resumen');setError('');void refreshAlertCounts();}catch(e){setToast(e instanceof Error?e.message:'No se pudo cambiar de empresa.')}};
- const acceptInvitation=async()=>{const invitationToken=window.prompt('Pega el token de invitación entregado por el administrador:');if(!invitationToken?.trim())return;try{const next=await api<AuthState>('/api/auth/invitations/accept',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({invitationToken:invitationToken.trim()})});csrfToken=next.csrfToken;setAuth(next);setSection('Resumen');setToast('Invitación aceptada. Ya puedes cambiar entre tus empresas desde el encabezado.')}catch(e){setToast(e instanceof Error?e.message:'No se pudo aceptar la invitación.')}};
- const latest=summary?.ultimasLicitaciones??[]; const latestStates=summary?.estados??[]; const availableStatusCodes=Array.from(new Set([...Object.keys(statusNames).map(Number),...latestStates.map(item=>item.codigoEstado).filter((code):code is number=>code!=null)])).sort((a,b)=>a-b);
- const todayLabel=useMemo(()=>new Intl.DateTimeFormat('es-CL',{weekday:'long',day:'numeric',month:'long'}).format(new Date()),[]);
- if(authState==='loading')return <main className="auth-page"><div className="auth-card auth-loading"><LoaderCircle className="spin" size={22}/>Verificando tu sesión…</div></main>;
- if(authState==='anonymous')return <AuthGate onAuthenticated={acceptAuth}/>;
- if(auth&&!auth.emailVerified)return <EmailVerificationGate session={auth} onAuthenticated={acceptAuth}/>;
- if(auth?.platformRole==='admin'&&!auth.activeCompanyId)return pendingLegacy===undefined?<main className="auth-page"><div className="auth-card auth-loading"><LoaderCircle className="spin" size={22}/>Revisando el espacio local…</div></main>:<LegacyClaim company={pendingLegacy} onClaim={()=>void claimLegacy()} busy={claimBusy} error={claimError}/>;
- if(!auth?.activeCompanyId)return <NoCompanyOnboarding session={auth!} onAuthenticated={acceptAuth}/>;
- const visibleNav=navItems.filter(item=>isAdmin||item.name!=='Configuración');
- return <div className="app-shell">
-  <aside className={`sidebar ${mobileOpen?'sidebar-open':''}`}><div className="brand"><div className="brand-mark"><span/></div><div><strong>oportuna</strong><small>Mercado Público</small></div><button className="icon-button mobile-close" aria-label="Cerrar navegación" onClick={()=>setMobileOpen(false)}><X size={18}/></button></div>
-   <button className="workspace"><span className="workspace-icon">O</span><span><b>Oportuna</b><small>Espacio personal</small></span><ChevronDown size={15}/></button>
-   <p className="nav-caption">PLATAFORMA</p><nav>{visibleNav.map(item=><button key={item.name} className={`nav-item ${section===item.name?'active':''}`} onClick={()=>{setSection(item.name);setMobileOpen(false)}}><item.icon size={17} strokeWidth={1.8}/><span>{item.name}</span>{item.name==='Configuración'&&<span className="nav-spacer"/>}</button>)}</nav>
-   <div className="sidebar-bottom"><div className="help-card"><div className="help-icon"><CircleHelp size={16}/></div><div><b>¿Necesitas ayuda?</b><span>Estamos para ayudarte</span></div><ArrowRight size={15}/></div><div className="profile"><div className="avatar">{auth.email.slice(0,1).toUpperCase()}</div><div><b>{auth.email}</b><span>{auth.role==='admin'?'Administrador':'Colaborador'}</span></div><MoreHorizontal size={18}/></div></div>
-  </aside><div className="mobile-shade" onClick={()=>setMobileOpen(false)} />
-  <main className="main"><header className="topbar"><button className="icon-button menu-button" aria-label="Abrir navegación" aria-expanded={mobileOpen} onClick={()=>setMobileOpen(true)}><Menu size={19}/></button><div className="breadcrumbs"><span>Oportuna</span><b>/</b><strong>{section}</strong></div><div className="top-actions"><span className="date-chip"><Clock3 size={14}/>{todayLabel}</span>{auth.memberships.length>1&&<select aria-label="Empresa activa" value={auth.activeCompanyId??''} onChange={e=>void changeCompany(Number(e.target.value))}>{auth.memberships.map(m=><option key={m.companyId} value={m.companyId}>{m.companyName}</option>)}</select>}<button className="button button-secondary mobile-action" aria-label="Aceptar invitación" title="Aceptar invitación" onClick={()=>void acceptInvitation()}><MailPlus className="mobile-action-icon" size={17}/><span className="header-action-label">Aceptar invitación</span></button><AlertNotificationPanel items={alerts} unread={alertCounts.unread} open={alertsOpen} loading={alertsLoading} error={alertsError} onToggle={toggleAlertPanel} onNavigate={()=>{setAlertsOpen(false);setAlertsFilter('all');setSection('Centro de alertas')}} onRead={id=>void markAlertRead(id)} onDismiss={id=>void dismissAlertItem(id)} onOpen={item=>void openAlertOpportunity(item)}/><span className="top-user-email">{auth.email}</span><button className="button button-secondary mobile-action" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={()=>void signOut()}><LogOut className="mobile-action-icon" size={17}/><span className="header-action-label">Cerrar sesión</span></button></div></header>
-   <div className="page-wrap">
-    {error&&<div className="alert"><div><b>Servicio no disponible</b><span>{error}</span></div><button onClick={()=>void refresh()}>Reintentar</button></div>}
-    {section==='Resumen'&&<>
-     <div className="page-heading"><div><div className="eyebrow">TU ESPACIO DE TRABAJO</div><h1>Resumen</h1><p>Una mirada clara a las oportunidades públicas.</p></div><button className="button button-primary" onClick={()=>setSection('Licitaciones')}><FileSearch size={16}/>Explorar licitaciones</button></div>
-     <section className="metric-grid"><article className="metric-card"><div className="metric-head"><span>Total registradas</span><span className="metric-icon blue"><Database size={17}/></span></div><strong>{summary?.total??'—'}</strong><div className="metric-foot"><span>En tu base de datos</span><span className="quiet-pill"><TrendingUp size={12}/>Acumulado</span></div></article><article className="metric-card"><div className="metric-head"><span>Publicadas</span><span className="metric-icon green"><Activity size={17}/></span></div><strong>{latestStates.find(x=>x.codigoEstado===5)?.total??0}</strong><div className="metric-foot"><span>Licitaciones abiertas</span><span className="status-dot"><i/>Activas</span></div></article><article className="metric-card"><div className="metric-head"><span>Última sincronización</span><span className="metric-icon violet"><Clock3 size={17}/></span></div><strong className="metric-date">{summary?.ultimaSincronizacion?dateFmt(summary.ultimaSincronizacion.startedAt):'—'}</strong><div className="metric-foot"><span>{summary?.ultimaSincronizacion?.estado==='completada'?'Proceso finalizado':'Sin actividad reciente'}</span><span className="quiet-pill">{summary?.ultimaSincronizacion?.estado==='completada'?'Completada':'Pendiente'}</span></div></article><article className="metric-card"><div className="metric-head"><span>Fecha consultada</span><span className="metric-icon amber"><ListFilter size={17}/></span></div><strong className="metric-date">{summary?.ultimaSincronizacion?dateFmt(summary.ultimaSincronizacion.fechaConsultada):'—'}</strong><div className="metric-foot"><span>Último período importado</span><span className="quiet-pill">Por día</span></div></article></section>
-     <CompanyOpportunities onConfigure={()=>setSection('Mi empresa')}/><section className="content-grid"><article className="panel latest-panel"><div className="panel-header"><div><h2>Últimas licitaciones</h2><p>Registros sincronizados recientemente</p></div><button className="text-button" onClick={()=>setSection('Licitaciones')}>Ver todas <ArrowRight size={15}/></button></div>{latest.length?<div className="table-wrap"><table><thead><tr><th>LICITACIÓN</th><th>ESTADO</th><th>CIERRE</th><th>MONTO ESTIMADO</th><th></th></tr></thead><tbody>{latest.map(item=><tr key={item.codigo_externo}><td><button className="listing-name" onClick={()=>void openDetail(item.codigo_externo)}><b>{item.nombre||'Nombre no disponible'}</b><small>{item.codigo_externo}{item.organismo?` · ${item.organismo}`:''}</small></button></td><td><Badge state={item.codigo_estado}/></td><td className="muted-cell">{dateFmt(item.fecha_cierre)}</td><td className="amount-cell">{money(item.monto_estimado,item.moneda)}</td><td><button className="row-arrow" onClick={()=>void openDetail(item.codigo_externo)} aria-label="Ver detalle"><ArrowRight size={15}/></button></td></tr>)}</tbody></table></div>:<Empty title="Tu espacio está listo" body="Sincroniza una fecha de Mercado Público para empezar a ver licitaciones reales." action={<button className="button button-primary" onClick={()=>setSection('Configuración')}><Plus size={16}/>Configurar integración</button>}/>}</article>
-      <article className="panel status-panel"><div className="panel-header"><div><h2>Estado de integración</h2><p>Conexiones de tu espacio</p></div><span className="live-indicator"><i/>En vivo</span></div><div className="integration-row"><div className="integration-icon"><span className="mp-mark">M</span></div><div className="integration-copy"><b>Mercado Público API</b><span>Fuente de licitaciones</span></div><span className={`connection-pill ${health?.apiConfigured?'connected':'disconnected'}`}><i/>{health?.apiConfigured?'Conectada':'Sin configurar'}</span></div><div className="integration-row"><div className="integration-icon db-icon"><Database size={17}/></div><div className="integration-copy"><b>Base de datos</b><span>MySQL · oportuna</span></div><span className={`connection-pill ${health?.mysql?'connected':'disconnected'}`}><i/>{health?.mysql?'Conectada':'Desconectada'}</span></div><div className="status-divider"/><div className="panel-meta"><span>Último resultado</span><b>{summary?.ultimaSincronizacion?.estado==='completada'?'Sincronización exitosa':'Sin ejecuciones'}</b></div><button className="settings-link" onClick={()=>setSection('Configuración')}>Ver configuración <ArrowRight size={14}/></button></article></section>
-     <section className="panel state-summary"><div className="panel-header"><div><h2>Licitaciones por estado</h2><p>Distribución de los registros guardados</p></div><span className="quiet-pill">{summary?.total??0} en total</span></div>{latestStates.length?<div className="state-list">{latestStates.map((item)=><div className="state-line" key={String(item.codigoEstado)}><span className="state-label"><i className={`state-swatch swatch-${item.codigoEstado??'unknown'}`}/>{item.codigoEstado==null?'Sin estado':statusNames[item.codigoEstado]??`Estado ${item.codigoEstado}`}</span><div className="state-track"><i style={{width:`${Math.max(2,Math.round(item.total/(summary?.total||1)*100))}%`}}/></div><b>{item.total}</b></div>)}</div>:<div className="state-empty">Los estados aparecerán al sincronizar licitaciones.</div>}</section>
-    </>}
-    {section==='Buscador IA'&&<><div className="page-heading smart-heading"><div><div className="eyebrow">OPORTUNIDADES PÚBLICAS</div><h1>Buscador inteligente</h1><p>Describe lo que ofrece tu empresa y encuentra licitaciones relacionadas.</p></div><span className={`connection-pill ${smartStatus?.groqConfigured?'connected':'disconnected'}`}><i/>{smartStatus?.groqConfigured?'Groq configurado':'Búsqueda MySQL'}</span></div><section className="smart-search-panel"><form className="smart-search-form" onSubmit={e=>{e.preventDefault();void runSmartSearch(smartQuery,1)}}><Search size={19}/><input aria-label="Describe oportunidades" placeholder="Describe qué oportunidades busca tu empresa..." value={smartQuery} onChange={e=>setSmartQuery(e.target.value)} maxLength={500}/><button className="button button-primary" type="submit" disabled={smartLoading||smartQuery.trim().length<2}>{smartLoading?<LoaderCircle className="spin" size={16}/>:<Search size={16}/>} Buscar</button></form><div className="smart-examples"><span>Prueba una búsqueda</span>{['Molinos industriales y maquinaria alimentaria','Equipamiento médico en Santiago','Servicios de mantención industrial','Equipos de laboratorio'].map(example=><button key={example} onClick={()=>void runSmartSearch(example,1)}>{example}</button>)}</div></section><section className="smart-filter-row"><label>Coincidencia<select value={smartMatchLevel} onChange={e=>{setSmartMatchLevel(e.target.value);setSmartPage(1)}}><option value="">Todos los niveles</option><option value="high">Alta</option><option value="medium">Media</option><option value="exploratory">Explorar relacionadas</option></select></label><label>Estado<select value={smartState} onChange={e=>setSmartState(e.target.value)}><option value="">Todos</option><option value="5">Publicada</option><option value="6">Cerrada</option><option value="8">Adjudicada</option><option value="7">Desierta</option></select></label><label>Región<input value={smartRegion} onChange={e=>setSmartRegion(e.target.value)} placeholder="Ej. Metropolitana"/></label><label>Presupuesto desde<input type="number" min="0" value={smartBudgetMin} onChange={e=>setSmartBudgetMin(e.target.value)} placeholder="$ mínimo"/></label><label>Presupuesto hasta<input type="number" min="0" value={smartBudgetMax} onChange={e=>setSmartBudgetMax(e.target.value)} placeholder="$ máximo"/></label><label>Cierre desde<input type="date" value={smartCloseAfter} onChange={e=>setSmartCloseAfter(e.target.value)}/></label><label>Cierre hasta<input type="date" value={smartCloseBefore} onChange={e=>setSmartCloseBefore(e.target.value)}/></label><button className="button button-secondary" onClick={()=>void runSmartSearch(smartQuery,1)} disabled={!smartQuery.trim()||smartLoading}><Filter size={14}/>Aplicar</button></section>{smartError&&<div className="alert smart-alert"><div><b>No se pudo completar</b><span>{smartError}</span></div><button onClick={()=>void runSmartSearch(smartQuery,smartPage)}>Reintentar</button></div>}{smartResults&&<><div className="smart-results-meta"><span><b>{smartResults.total.toLocaleString('es-CL')}</b> licitaciones reales encontradas</span><span>{smartResults.provider==='groq'?'Interpretación Groq':'Interpretación convencional MySQL'} · Relevancia estimada, no elegibilidad</span>{isAdmin&&<button className="button button-secondary" onClick={()=>void enrichSmartResults()} disabled={smartEnriching||!smartQuery.trim()}><Database size={14}/>{smartEnriching?'Consultando partidas…':'Buscar también en partidas'}</button>}</div>{smartResults.notices?.map((notice:string)=><div className="smart-search-notice" key={notice}>{notice}</div>)}{smartEnrichment&&<div className="smart-note">Partidas enriquecidas: {Number(smartEnrichment.items??0).toLocaleString('es-CL')} · Procesos pendientes: {Number(smartEnrichment.active??0)}</div>}{smartResults.criteria?.region&&<div className="smart-note">Región interpretada: {smartResults.criteria.region}. La región no está disponible en todos los registros y puede requerir confirmación.</div>}<div className="smart-results">{smartResults.items.map((item:any)=><article className="smart-result-card" key={item.codigo_externo}><div className="smart-card-top"><div><h2>{item.nombre||'Nombre no disponible'}</h2><div className="smart-org">{item.organismo||'Organismo no informado'} · {item.codigo_externo}</div></div><div className="compatibility"><b>{item.compatibility}%</b><span>relevancia estimada</span><small className={`smart-level smart-level-${item.matchLevel}`}>{item.matchLevel==='high'?'Coincidencia alta':item.matchLevel==='medium'?'Coincidencia media':'Exploratoria'}</small></div></div><div className="smart-card-facts"><Badge state={item.codigo_estado}/><span><Clock3 size={13}/>Cierre {dateFmt(item.fecha_cierre)}</span><span>{listingMoney(item)}</span></div><p className="smart-match-explanation">{item.matchReasons?.join(' · ')||'Coincide con términos identificados en la búsqueda.'}</p>{item.matchSources?.length>0&&<div className="smart-match-sources">Fuente de coincidencia: {item.matchSources.join(' y ')}.</div>}{item.matchedKeywords?.length>0&&<div className="smart-keywords">{item.matchedKeywords.map((word:string)=><span key={word}>{word}</span>)}</div>}<div className="smart-warning">La coincidencia no confirma que la empresa cumpla las bases o requisitos para participar.{item.verificationRequired?.length>0&&<span> Requiere verificar: {item.verificationRequired.join(' ')}</span>}</div><div className="smart-card-actions"><button className="button button-secondary" onClick={()=>void saveOpportunity(item.codigo_externo)}><Plus size={15}/>Guardar en seguimiento</button><button className="button button-secondary" onClick={()=>{void openDetail(item.codigo_externo);void analyzeSmartListing(item.codigo_externo)}}><Sparkles size={15}/>Analizar oportunidad</button><button className="button button-primary" onClick={()=>void openDetail(item.codigo_externo)}>Ver licitación <ArrowRight size={15}/></button></div></article>)}</div>{smartResults.items.length===0&&<div className="panel smart-empty"><FileSearch size={22}/><b>No hay resultados con estos criterios</b><span>No hay coincidencias verificables en las partidas indexadas; esto no confirma que no existan oportunidades. Cobertura actual de partidas activas: {smartEnrichment?.coveragePercent??0}%.</span></div>}<div className="pagination smart-pagination"><span>Página {smartResults.page} · {smartResults.total.toLocaleString('es-CL')} resultados</span><div><button className="page-arrow" disabled={smartPage<=1||smartLoading} onClick={()=>void runSmartSearch(smartQuery,smartPage-1)}><ArrowLeft size={15}/></button><span className="page-number">{smartPage}</span><button className="page-arrow" disabled={smartPage*smartResults.pageSize>=smartResults.total||smartLoading} onClick={()=>void runSmartSearch(smartQuery,smartPage+1)}><ArrowRight size={15}/></button></div></div></>}</>}
-    {section==='Licitaciones'&&<><div className="page-heading"><div><div className="eyebrow">MERCADO PÚBLICO</div><h1>Licitaciones</h1><p>Consulta y organiza las oportunidades registradas en tu espacio.</p></div><button className="button button-primary" onClick={()=>setSection('Configuración')}><Plus size={16}/>Sincronizar fecha</button></div><section className="panel listing-panel"><div className="listing-toolbar"><div className="search-field"><Search size={16}/><input placeholder="Buscar por nombre o código..." value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}}/><kbd>⌘ K</kbd></div><label className="filter-select"><Filter size={15}/><select value={stateFilter} onChange={e=>{setStateFilter(e.target.value);setPage(1)}}><option value="">Todos los estados</option>{availableStatusCodes.map(code=><option key={code} value={code}>{statusNames[code]??`Estado ${code}`}{statusNames[code]==='Revocada'?` (código ${code})`:''}</option>)}</select><ChevronDown size={14}/></label><button className="button button-secondary sort-button"><ArrowDownUp size={15}/>Cierre más próximo</button></div><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>NOMBRE DE LICITACIÓN</th><th>ORGANISMO</th><th>ESTADO</th><th>FECHA DE CIERRE</th><th>MONTO</th><th></th></tr></thead><tbody>{listingData?.items.map(item=><tr key={item.codigo_externo}><td className="code-cell">{item.codigo_externo}</td><td><b className="compact-name">{item.nombre||'Nombre no disponible'}</b></td><td className="muted-cell org-cell">{item.organismo||'—'}</td><td><Badge state={item.codigo_estado}/></td><td className="muted-cell">{dateFmt(item.fecha_cierre)}</td><td className="amount-cell">{listingMoney(item)}</td><td><button className="row-arrow" onClick={()=>void openDetail(item.codigo_externo)} title="Ver detalle"><ArrowRight size={15}/></button></td></tr>)}</tbody></table>{(!listingData||listingData.items.length===0)&&<Empty title="No hay licitaciones para mostrar" body={error?'Revisa que el servidor y la base estén disponibles.':'Sin resultados para esta búsqueda. Sincroniza una fecha para importar datos oficiales.'} action={<button className="button button-secondary" onClick={()=>setSection('Configuración')}>Ir a configuración <ArrowRight size={15}/></button>}/>}</div><div className="pagination"><span>{listingData?`${listingData.total} licitaciones`:'Cargando registros…'}</span><div><button className="page-arrow" disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}><ArrowLeft size={15}/></button><span className="page-number">{page}</span><button className="page-arrow" disabled={!listingData||page*listingData.pageSize>=listingData.total} onClick={()=>setPage(p=>p+1)}><ArrowRight size={15}/></button></div></div></section><article className="panel enrichment-pilot-panel"><div className="pilot-heading"><div><div className="eyebrow">PILOTO CONTROLADO</div><h2>Enriquecimiento de licitaciones</h2><p>Lotes manuales de 10 fichas, hasta un máximo acumulado de 100.</p></div><span className={`pilot-status pilot-${config?.enrichmentPilot?.status??'idle'}`}>{({idle:'Sin iniciar',ready:'Listo para otro lote',running:'En curso',paused:'En pausa',blocked_auth:'Revisar autenticación',complete:'Límite alcanzado'} as any)[config?.enrichmentPilot?.status??'idle']}</span></div><div className="pilot-progress-track"><span style={{width:`${Math.min(100,((config?.enrichmentPilot?.scheduledTotal??0)/(config?.enrichmentPilot?.maxTotal||100))*100)}%`}}/></div><div className="pilot-progress-caption"><span>{config?.enrichmentPilot?.scheduledTotal??0} / {config?.enrichmentPilot?.maxTotal??100} fichas programadas</span><span>{config?.enrichmentPilot?.remainingCapacity??100} disponibles</span></div><div className="pilot-controls">{['idle','ready'].includes(config?.enrichmentPilot?.status??'idle')&&<button className="button button-primary" disabled={pilotBusy||!config?.enrichmentPilot?.remainingCapacity} onClick={()=>void runPilotAction('start')}>{pilotBusy?'Procesando…':'Iniciar lote de 10'}</button>}{config?.enrichmentPilot?.status==='running'&&<button className="button button-secondary" disabled={config?.enrichmentPilot?.status!=='running'} onClick={()=>void runPilotAction('pause')}>Pausar lote</button>}{config?.enrichmentPilot?.status==='paused'&&<button className="button button-primary" disabled={pilotBusy} onClick={()=>void runPilotAction('resume')}>Continuar lote</button>}<button className="button button-secondary" disabled={pilotBusy||!config?.enrichmentPilot?.retryableErrors||['running','paused'].includes(config?.enrichmentPilot?.status)} onClick={()=>void runPilotAction('retry')}>Reintentar fallidos</button></div><div className="pilot-metrics-grid"><div><span>Fichas consultadas</span><b>{config?.enrichmentPilot?.fetched??0}</b></div><div><span>Con partidas / sin partidas</span><b>{config?.enrichmentPilot?.withItems??0} / {config?.enrichmentPilot?.withoutItems??0}</b></div><div><span>Partidas nuevas</span><b>{config?.enrichmentPilot?.newItems??0}</b></div><div><span>Errores reintentables / pendientes</span><b>{config?.enrichmentPilot?.retryableErrors??0} / {config?.enrichmentPilot?.pending??0}</b></div><div><span>Cobertura antes / después del lote</span><b>{config?.enrichmentPilot?.lastBatch?.coverageBefore??config?.enrichment?.coveragePercent??0}% / {config?.enrichmentPilot?.lastBatch?.coverageAfter??config?.enrichment?.coveragePercent??0}%</b></div><div><span>Solicitudes Mercado Público</span><b>{config?.enrichmentPilot?.effectiveRequests??0}</b></div><div><span>Duración último lote</span><b>{config?.enrichmentPilot?.lastBatch?.durationMs?`${Math.round(config.enrichmentPilot.lastBatch.durationMs/1000)} s`:'—'}</b></div><div><span>Estado último lote</span><b>{config?.enrichmentPilot?.lastBatch?.status??'—'}</b></div></div><p className="pilot-message">{config?.enrichmentPilot?.message??'El piloto no comienza hasta pulsar “Iniciar lote”. Pausar detiene la cola después de la solicitud que esté en curso.'}</p></article></>}
-    {section==='Mi empresa'&&<><CompanyWorkspace onSaved={()=>void refresh()} csrfToken={auth.csrfToken} canEdit={auth.role==='admin'} accessRole={auth.role}/><CompanyTeamManagement role={auth.role} csrfToken={auth.csrfToken}/></>}
-    {section==='Centro de alertas'&&<AlertsPage items={alerts} filter={alertsFilter} onFilter={value=>setAlertsFilter(value)} onRead={id=>void markAlertRead(id)} onDismiss={id=>void dismissAlertItem(id)} onOpen={item=>void openAlertOpportunity(item)} loading={alertsLoading} error={alertsError}/>}
-    {section==='Seguimiento'&&<TrackingWorkspace onOpen={code=>void openDetail(code)} onChanged={()=>void refreshAlertCounts()} csrfToken={auth.csrfToken}/>}
-    {section==='Configuración'&&<>
-      <div className="page-heading"><div><div className="eyebrow">OPERACIÓN LOCAL</div><h1>Configuración</h1><p>Estado y recuperación de la sincronización incremental.</p></div></div>
-      <section className="settings-layout">
-        <article className="panel settings-card">
-          <div className="settings-title"><span className="settings-title-icon"><Clock3 size={17}/></span><div><h2>Sincronización diaria</h2><p>Horario de Chile · America/Santiago</p></div><span className={`connection-pill ${config?.dailySync?.enabled?'connected':'disconnected'}`}><i/>{config?.dailySync?.enabled?'Programada':'Desactivada'}</span></div>
-          <div className="setting-description">La automatización permanece desactivada. Al habilitarse, se programará a las 08:00 y recuperará fechas pendientes en lotes máximos de {config?.dailySync?.maxDaysPerJob??14} días.</div>
-          <div className="setting-stats">
-            <div><span>Última sincronización exitosa</span><b>{config?.ultimaFechaExitosa?dateTimeFmt(config.ultimaFechaExitosa):config?.dailySync?.lastSuccessfulDate?dateFmt(config.dailySync.lastSuccessfulDate):'Sin fecha exitosa'}</b></div>
-            <div><span>Próxima ejecución</span><b>{config?.dailySync?.enabled&&config?.dailySync?.nextRunAt?dateTimeFmt(config.dailySync.nextRunAt):'No programada'}</b></div>
-            <div><span>Fechas pendientes</span><b>{config?.dailySync?.pendingDays??0}</b></div>
+type AuthState = AuthResult;
+
+const money = (value: Listing['monto_estimado'], currency: string | null) =>
+  value == null || value === ''
+    ? '—'
+    : new Intl.NumberFormat('es-CL', {
+        style: 'currency',
+        currency: currency || 'CLP',
+        maximumFractionDigits: 0,
+      }).format(Number(value));
+
+const dateFmt = (value?: string | null) => {
+  if (!value) return '—';
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? '—'
+    : new Intl.DateTimeFormat('es-CL', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      }).format(parsed);
+};
+
+const dateTimeFmt = (value?: string | null) =>
+  value
+    ? new Intl.DateTimeFormat('es-CL', {
+        timeZone: 'America/Santiago',
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(value))
+    : '—';
+
+async function api<T>(url: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers);
+  const method = (options?.method ?? 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
+    headers.set('X-CSRF-Token', csrfToken);
+  }
+  const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'No fue posible completar la solicitud.');
+  return data as T;
+}
+
+function StatusBadge({ state }: { state: number | null }) {
+  const name = state == null ? 'Sin estado' : statusNames[state] ?? `Estado ${state}`;
+  const style =
+    state === 5
+      ? 'bg-[#f0edff] text-[#5636D9]'
+      : state === 8
+      ? 'bg-gray-100 text-[#5D6472]'
+      : state === 7
+      ? 'bg-[#FFF8E1] text-[#A85B08]'
+      : state === 18 || state === 19 || state === 15
+      ? 'bg-[#FFEBEE] text-[#B42332]'
+      : 'bg-gray-100 text-[#5D6472]';
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${style}`}>
+      <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+      {name}
+    </span>
+  );
+}
+
+function ListingDetailModal({
+  listing,
+  loading = false,
+  saved,
+  saving,
+  onAnalyze,
+  onSave,
+  analysis,
+  analysisLoading,
+  onClose,
+}: {
+  listing: any;
+  loading?: boolean;
+  saved: boolean | null;
+  saving: boolean;
+  onAnalyze: () => void;
+  onSave: () => void;
+  analysis: any;
+  analysisLoading: boolean;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<'resumen' | 'items' | 'requisitos' | 'cronograma' | 'analisis'>('resumen');
+  const buyer = listing.Comprador ?? {};
+  const dates = listing.Fechas ?? {};
+  const listedItems = Array.isArray(listing.Items?.Listado) ? listing.Items.Listado : [];
+  const knownRequirements = [
+    ['Prohibición de contratación', listing.ProhibicionContratacion],
+    ['Subcontratación', listing.SubContratacion],
+    ['Toma de razón', listing.TomaRazon],
+    ['Renovable', listing.EsRenovable],
+    ['Duración del contrato', listing.TipoDuracionContrato],
+  ].filter(([, value]) => value !== null && value !== undefined && value !== '');
+
+  const documentKeys = ['Documentos', 'Archivos', 'Anexos', 'Adjuntos'];
+  const documents = documentKeys.flatMap((key) =>
+    Array.isArray(listing[key]) ? listing[key].map((item: any) => ({ item, source: key })) : []
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-[2px]" onClick={onClose}>
+      <div
+        className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="p-5 border-b border-[#E1E4EA] flex items-start justify-between gap-4 bg-white">
+          <div className="space-y-1 min-w-0">
+            <div className="text-[11px] font-bold text-[#5636D9] uppercase tracking-wider">
+              Buscar oportunidades / Ficha
+            </div>
+            <h2 className="font-bold text-lg text-[#171A24] leading-snug">
+              {listing.Nombre || listing.nombre || listing.CodigoExterno || 'Licitación'}
+            </h2>
+            <div className="flex items-center gap-2 flex-wrap text-xs text-[#5D6472]">
+              <span className="font-mono font-semibold text-[#171A24]">{listing.CodigoExterno}</span>
+              <span>•</span>
+              <span className="truncate max-w-xs">{buyer.NombreOrganismo || listing.organismo || 'Organismo no informado'}</span>
+              <span>•</span>
+              <StatusBadge state={listing.CodigoEstado != null ? Number(listing.CodigoEstado) : null} />
+            </div>
           </div>
-          {!!config?.dailySync?.pendingDates?.length&&<div className="sync-scheduler"><b>Primeras fechas por procesar:</b> {config.dailySync.pendingDates.map((date:string)=>dateFmt(date)).join(' · ')}{config.dailySync.additionalCatchupRequired&&<span> · El resto se recuperará en los siguientes lotes.</span>}</div>}
-          {!!config?.dailySync?.additionalCatchupRequired&&<p className="form-note">La recuperación supera el límite de un lote; continuará con nuevos lotes al completarse cada uno.</p>}
-        </article>
-        <article className="panel settings-card">
-          <div className="settings-title"><span className="settings-title-icon"><Database size={17}/></span><div><h2>Último trabajo</h2><p>Progreso registrado por fecha</p></div><span className="quiet-pill">{job?.estado??'Sin trabajos'}</span></div>
-          {job?<><div className="setting-stats sync-job-stats">
-            <div><span>Fechas completadas</span><b>{job.dias_completados??0} / {job.total_dias??0}</b></div>
-            <div><span>Nuevas / actualizadas</span><b>{job.total_insertados??0} / {job.total_actualizados??0}</b></div>
-            <div><span>Errores</span><b>{job.dias_fallidos??0}</b></div>
-            <div><span>Refresco de activas</span><b>{job.active_refresh_status==='not_required'?'No requerido':job.active_refresh_status??'Pendiente'}</b></div>
-          </div>
-          {job.mensaje_error&&<p className="form-note">Último error: {job.mensaje_error}</p>}
-          {job.days?.filter((day:any)=>day.estado==='failed').map((day:any)=><small className="sync-day-error" key={day.fecha}>{dateFmt(day.fecha)} · {day.intentos} intentos: {day.mensajeError||'Error sin detalle'}</small>)}
-          <div className="sync-actions">{job.estado==='paused'&&<button className="button button-secondary" onClick={()=>void jobAction('resume')}>Continuar</button>}{['queued','running'].includes(job.estado)&&<button className="button button-secondary" onClick={()=>void jobAction('pause')}>Pausar</button>}{['failed','completed_with_errors'].includes(job.estado)&&<button className="button button-secondary" onClick={()=>void jobAction('retry')}>Reintentar pendientes</button>}</div></>:<p className="setting-description">Todavía no hay trabajos registrados.</p>}
-        </article>
-      </section>
-    </>}
-    {!['Resumen','Licitaciones','Buscador IA','Mi empresa','Seguimiento','Centro de alertas','Configuración'].includes(section)&&<div className="coming-wrap"><div className="coming-orbit"><div><Sparkles size={28}/></div><span className="orbit-dot dot-a"/><span className="orbit-dot dot-b"/><span className="orbit-dot dot-c"/></div><span className="coming-label">EN CAMINO</span><h1>{section}</h1><p>Estamos preparando esta sección para ayudarte a encontrar más oportunidades.<br/>Pronto podrás explorarla desde aquí.</p><button className="button button-secondary" onClick={()=>setSection('Resumen')}><ArrowLeft size={15}/>Volver al resumen</button></div>}
-    <footer className="page-footer"><span>Oportuna <span className="footer-dot">·</span> Información pública de ChileCompra</span><span>Hecho para descubrir oportunidades</span></footer>
-   </div>
-  </main>
-  {toast&&<div className="toast"><span>{toast}</span><button onClick={()=>setToast('')}><X size={16}/></button></div>}
-  {selected&&<div className="modal-backdrop" onClick={()=>{setSelected(null);setSelectedSaved(null)}}><section className="detail-modal" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">DETALLE DE LICITACIÓN</span><h2>{selected.Nombre||selected.nombre||selected.CodigoExterno||'Licitación'}</h2><p>{selected.CodigoExterno||''}</p></div><button className="icon-button" onClick={()=>{setSelected(null);setSelectedSaved(null)}} aria-label="Cerrar detalle"><X size={18}/></button></header>{detailLoading?<div className="loading-box"><LoaderCircle className="spin" size={21}/>Cargando información local…</div>:selected.error?<div className="detail-error">{selected.error}</div>:<ListingDetail listing={selected} saved={selectedSaved} saving={detailSaving} onAnalyze={()=>void analyzeSmartListing(selected.CodigoExterno)} analysis={smartAnalysisCode===selected.CodigoExterno?smartAnalysis:null} analysisLoading={smartAnalysisCode===selected.CodigoExterno&&smartAnalysisLoading} canRefreshOfficial={auth.role==='admin'} refreshingOfficial={refreshingOfficial} onRefreshOfficial={()=>void refreshOfficialDetail()} onSave={()=>{setDetailSaving(true);void saveOpportunity(selected.CodigoExterno).then(ok=>{if(ok)setSelectedSaved(true)}).finally(()=>setDetailSaving(false))}}/>}</section></div>}
- </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg text-[#5D6472] hover:bg-gray-100 flex items-center justify-center shrink-0"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Modal Navigation Tabs */}
+        <div className="flex items-center gap-1 px-5 border-b border-[#E1E4EA] bg-[#F8F9FA] overflow-x-auto">
+          {[
+            { id: 'resumen', label: 'Resumen' },
+            { id: 'items', label: `Partidas (${listedItems.length})` },
+            { id: 'requisitos', label: 'Requisitos & Docs' },
+            { id: 'cronograma', label: 'Cronograma' },
+            { id: 'analisis', label: 'Compatibilidad IA' },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id as any)}
+              className={`py-3 px-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${
+                tab === t.id
+                  ? 'border-[#5636D9] text-[#5636D9]'
+                  : 'border-transparent text-[#5D6472] hover:text-[#171A24]'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Modal Scrollable Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {loading ? (
+            <div className="py-20 text-center text-sm text-[#5D6472]">
+              <LoaderCircle size={24} className="spin mx-auto text-[#5636D9] mb-2" />
+              Cargando información oficial…
+            </div>
+          ) : (
+            <>
+              {tab === 'resumen' && (
+            <div className="space-y-5 text-xs">
+              <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA] space-y-2">
+                <span className="font-bold text-[#5D6472] uppercase text-[10px] tracking-wider">
+                  Descripción Oficial
+                </span>
+                <p className="text-[#171A24] leading-relaxed text-xs">
+                  {listing.Descripcion || 'Sin descripción detallada informada en la ficha local.'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3.5 rounded-xl border border-[#E1E4EA] space-y-1">
+                  <span className="text-[#8A92A6]">Monto Estimado</span>
+                  <div className="font-bold text-sm text-[#171A24]">
+                    {listing.MontoEstimado != null ? money(listing.MontoEstimado, listing.Moneda || null) : 'No informado'}
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl border border-[#E1E4EA] space-y-1">
+                  <span className="text-[#8A92A6]">Fecha de Cierre</span>
+                  <div className="font-bold text-sm text-[#171A24]">
+                    {dateFmt(dates.FechaCierre ?? listing.FechaCierre)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl border border-[#E1E4EA] space-y-3">
+                <h4 className="font-bold text-[#171A24]">Organismo Comprador</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[#8A92A6] block">Organismo</span>
+                    <b className="text-[#171A24]">{buyer.NombreOrganismo || 'No informado'}</b>
+                  </div>
+                  <div>
+                    <span className="text-[#8A92A6] block">Unidad de Compra</span>
+                    <b className="text-[#171A24]">{buyer.NombreUnidad || 'No informado'}</b>
+                  </div>
+                  <div>
+                    <span className="text-[#8A92A6] block">Región</span>
+                    <b className="text-[#171A24]">{buyer.RegionUnidad || 'No informada'}</b>
+                  </div>
+                  <div>
+                    <span className="text-[#8A92A6] block">Comuna</span>
+                    <b className="text-[#171A24]">{buyer.ComunaUnidad || 'No informada'}</b>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tab === 'items' && (
+            <div className="space-y-3 text-xs">
+              <span className="font-bold text-[#5D6472] uppercase text-[10px] tracking-wider block">
+                Partidas Solicitadas ({listedItems.length})
+              </span>
+              {listedItems.length ? (
+                listedItems.map((item: any, idx: number) => (
+                  <div key={idx} className="p-3.5 rounded-xl border border-[#E1E4EA] bg-white space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <b className="text-[#171A24] font-bold">{item.NombreProducto || item.Nombre || 'Partida'}</b>
+                      <span className="px-2 py-0.5 rounded-md bg-[#F5F6F8] font-semibold text-[#5D6472]">
+                        {item.Cantidad} {item.UnidadMedida || 'unidades'}
+                      </span>
+                    </div>
+                    {item.Descripcion && <p className="text-[#5D6472]">{item.Descripcion}</p>}
+                    {item.Categoria && <span className="text-[10px] text-[#8A92A6] block">Categoría: {item.Categoria}</span>}
+                  </div>
+                ))
+              ) : (
+                <div className="p-8 text-center text-[#8A92A6] border border-dashed border-[#E1E4EA] rounded-xl">
+                  Esta ficha no tiene partidas indexadas en la copia local.
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'requisitos' && (
+            <div className="space-y-4 text-xs">
+              <div className="p-4 rounded-xl border border-[#E1E4EA] space-y-2">
+                <h4 className="font-bold text-[#171A24]">Requisitos Administrativos Estructurados</h4>
+                {knownRequirements.length ? (
+                  <div className="space-y-1.5 divide-y divide-[#E1E4EA]">
+                    {knownRequirements.map(([label, val]) => (
+                      <div key={label} className="pt-1.5 flex justify-between">
+                        <span className="text-[#5D6472]">{label}</span>
+                        <b className="text-[#171A24]">{String(val)}</b>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[#8A92A6]">No se detectaron requisitos administrativos estructurados.</p>
+                )}
+              </div>
+
+              <div className="p-4 rounded-xl border border-[#E1E4EA] space-y-2">
+                <h4 className="font-bold text-[#171A24]">Documentos y Bases Adjuntas</h4>
+                {documents.length ? (
+                  <div className="space-y-1.5">
+                    {documents.map(({ item, source }: any, idx: number) => {
+                      const name = item.Nombre ?? item.NombreArchivo ?? item.Descripcion ?? `${source} ${idx + 1}`;
+                      const url = item.Url ?? item.URL ?? item.Link ?? item.UrlDocumento;
+                      return (
+                        <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-[#F8F9FA]">
+                          <span className="truncate max-w-sm font-medium">{String(name)}</span>
+                          {url && (
+                            <a href={String(url)} target="_blank" rel="noreferrer" className="text-[#5636D9] font-semibold hover:underline flex items-center gap-1">
+                              Abrir <ExternalLink size={12} />
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[#8A92A6]">Las bases y anexos deben consultarse directamente en Mercado Público.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {tab === 'cronograma' && (
+            <div className="space-y-4 text-xs">
+              <h4 className="font-bold text-[#171A24]">Hitos Críticos del Proceso</h4>
+              <div className="space-y-3 relative pl-4 border-l-2 border-[#5636D9]/30">
+                {[
+                  { label: 'Fecha de Publicación', val: dates.FechaPublicacion },
+                  { label: 'Fecha de Inicio', val: dates.FechaInicio },
+                  { label: 'Fecha de Cierre (Límite de Ofertas)', val: dates.FechaCierre ?? listing.FechaCierre, urgent: true },
+                  { label: 'Fecha Estimada de Adjudicación', val: dates.FechaEstimadaAdjudicacion },
+                ].map((item, idx) => (
+                  <div key={idx} className="relative space-y-0.5">
+                    <span className={`w-2.5 h-2.5 rounded-full absolute -left-[21px] top-1 ${item.urgent ? 'bg-[#5636D9]' : 'bg-gray-300'}`} />
+                    <span className="font-semibold text-[#171A24]">{item.label}</span>
+                    <p className="text-[#5D6472]">{item.val ? dateTimeFmt(item.val) : 'No informada'}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tab === 'analisis' && (
+            <div className="space-y-4 text-xs">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-[#171A24] flex items-center gap-2">
+                    <Sparkles size={16} className="text-[#5636D9]" /> Análisis de Compatibilidad Comercial
+                  </h4>
+                  <p className="text-[#5D6472]">Evaluación contra el catálogo de productos de tu empresa.</p>
+                </div>
+                <button
+                  onClick={onAnalyze}
+                  disabled={analysisLoading}
+                  className="h-8 px-3 bg-[#5636D9] hover:bg-[#4b2ec7] text-white font-semibold rounded-lg flex items-center gap-1.5"
+                >
+                  {analysisLoading ? <LoaderCircle size={13} className="spin" /> : <Sparkles size={13} />}
+                  {analysisLoading ? 'Analizando…' : 'Ejecutar Análisis IA'}
+                </button>
+              </div>
+
+              {analysisLoading ? (
+                <div className="p-8 text-center text-[#5D6472] bg-[#F8F9FA] rounded-xl border border-[#E1E4EA]">
+                  <LoaderCircle size={20} className="spin mx-auto text-[#5636D9] mb-2" />
+                  Analizando requisitos y compatibilidad con Groq/IA…
+                </div>
+              ) : analysis ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 rounded-xl bg-[#f0edff]/30 border border-[#5636D9]/20">
+                      <span className="text-[#5D6472] block">Relevancia Comercial</span>
+                      <b className="text-xl text-[#5636D9] font-bold">
+                        {analysis.commercialRelevance?.score ?? '—'}%
+                      </b>
+                      <small className="text-[#5D6472] block mt-0.5">
+                        {analysis.commercialRelevance?.level ?? 'No evaluado'}
+                      </small>
+                    </div>
+                    <div className="p-3 rounded-xl bg-gray-50 border border-[#E1E4EA]">
+                      <span className="text-[#5D6472] block">Cobertura de Datos</span>
+                      <b className="text-xl text-[#171A24] font-bold">
+                        {analysis.coverage?.score ?? 0}%
+                      </b>
+                      <small className="text-[#5D6472] block mt-0.5">
+                        {analysis.coverage?.present ?? 0} de {analysis.coverage?.total ?? 0} campos
+                      </small>
+                    </div>
+                  </div>
+
+                  {analysis.interpretation?.executiveSummary && (
+                    <div className="p-3.5 rounded-xl bg-white border border-[#E1E4EA] space-y-1">
+                      <span className="font-bold text-[#171A24]">Resumen Ejecutivo</span>
+                      <p className="text-[#5D6472] leading-relaxed">{analysis.interpretation.executiveSummary}</p>
+                    </div>
+                  )}
+
+                  {analysis.interpretation?.risks?.length > 0 && (
+                    <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 space-y-1">
+                      <span className="font-bold text-amber-900">Riesgos y Consideraciones</span>
+                      <ul className="list-disc pl-4 text-amber-800 space-y-0.5">
+                        {analysis.interpretation.risks.map((r: string, idx: number) => (
+                          <li key={idx}>{r}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-8 text-center text-[#8A92A6] bg-[#F8F9FA] rounded-xl border border-[#E1E4EA]">
+                  Presiona "Ejecutar Análisis IA" para obtener una lectura técnica de las bases.
+                </div>
+              )}
+            </div>
+          )}
+            </>
+          )}
+        </div>
+
+        {/* Modal Bottom Actions Fixed (Stitch 3) */}
+        <div className="p-4 border-t border-[#E1E4EA] bg-white flex items-center justify-between gap-3">
+          <button
+            onClick={onSave}
+            disabled={saved === true || saving}
+            className={`h-10 px-4 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              saved
+                ? 'bg-[#f0edff] text-[#5636D9] border border-[#5636D9]/30'
+                : 'bg-white border border-[#E1E4EA] text-[#171A24] hover:bg-gray-50'
+            }`}
+          >
+            {/* Green star ONLY for favorites/saved as explicitly requested by prompt */}
+            <Star
+              size={15}
+              className={saved ? 'text-[#16845B] fill-[#16845B]' : 'text-[#8A92A6]'}
+            />
+            {saved ? 'Guardada en Seguimiento' : saving ? 'Guardando…' : 'Guardar en Seguimiento'}
+          </button>
+
+          <a
+            href={`https://www.mercadopublico.cl/fichaLicitacion.html?idLicitacion=${encodeURIComponent(listing.CodigoExterno || '')}`}
+            target="_blank"
+            rel="noreferrer"
+            className="h-10 px-4 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"
+          >
+            Ver en Mercado Público <ExternalLink size={14} />
+          </a>
+        </div>
+      </div>
+    </div>
+  );
 }
+
+function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [authState, setAuthState] = useState<'loading' | 'anonymous' | 'authenticated' | 'unavailable'>('loading');
+  const [sessionNotice, setSessionNotice] = useState('');
+  const [sessionCheck, setSessionCheck] = useState(0);
+  const [auth, setAuth] = useState<AuthState | null>(null);
+  const [pendingLegacy, setPendingLegacy] = useState<{ id: number; name: string } | null | undefined>(undefined);
+  const [claimError, setClaimError] = useState('');
+  const [claimBusy, setClaimBusy] = useState(false);
+
+  const [section, setSection] = useState(() => PATH_SECTIONS[location.pathname] ?? 'Resumen');
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [health, setHealth] = useState<Health | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [config, setConfig] = useState<any>(null);
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState('');
+
+  // Search State
+  const [search, setSearch] = useState('');
+  const [stateFilter, setStateFilter] = useState('');
+  const [matchLevelFilter, setMatchLevelFilter] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
+  const [searchView, setSearchView] = useState<'table' | 'cards'>('table');
+  const [page, setPage] = useState(1);
+  const [searchResults, setSearchResults] = useState<any>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  // Selected Detail Modal
+  const [selected, setSelected] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [selectedSaved, setSelectedSaved] = useState<boolean | null>(null);
+  const [detailSaving, setDetailSaving] = useState(false);
+  const [analysis, setAnalysis] = useState<any>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+
+  // Alerts State
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [alertCounts, setAlertCounts] = useState({ total: 0, unread: 0 });
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState('');
+  const [alertsFilter, setAlertsFilter] = useState('all');
+
+  const isAdmin = auth?.platformRole === 'admin' || auth?.role === 'admin';
+  const isCompanySetup = authState === 'authenticated' && Boolean(auth?.emailVerified) && !auth?.activeCompanyId;
+  const detailRouteMatch = location.pathname.match(/^\/oportunidades\/([^/]+)$/);
+  const detailRouteCode = detailRouteMatch ? decodeURIComponent(detailRouteMatch[1]) : '';
+
+  const goToSection = (name: string) => {
+    const path = SECTION_PATHS[name];
+    if (!path) return;
+    setSection(name);
+    setMobileOpen(false);
+    setUserMenuOpen(false);
+    setAlertsOpen(false);
+    if (location.pathname !== path) navigate(path, { state: null });
+  };
+
+  useEffect(() => {
+    if (authState === 'loading' || authState === 'unavailable') return;
+    if (isCompanySetup) {
+      if (location.pathname !== '/onboarding') navigate('/onboarding', { replace: true });
+      return;
+    }
+    if (location.pathname === '/onboarding') {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (detailRouteCode) return;
+    const routeSection = PATH_SECTIONS[location.pathname];
+    if (!routeSection || ((routeSection === 'Equipo y accesos' || routeSection === 'Configuración') && !isAdmin)) {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (section !== routeSection) setSection(routeSection);
+  }, [authState, detailRouteCode, isAdmin, isCompanySetup, location.pathname, navigate, section]);
+
+  // Restore server-backed sessions after reloads. A temporary backend restart must not
+  // be mistaken for an anonymous session or turn a valid cookie into a blank login.
+  useEffect(() => {
+    let mounted = true;
+    const retryDelays = [0, 400, 900, 1800, 3200];
+    const restoreSession = async () => {
+      setAuthState('loading');
+      setSessionNotice('');
+      for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+        if (retryDelays[attempt]) {
+          await new Promise((resolve) => window.setTimeout(resolve, retryDelays[attempt]));
+        }
+        if (!mounted) return;
+        try {
+          const session = await api<{ authenticated: boolean; csrfToken?: string; sessionExpired?: boolean } & Partial<AuthState>>(
+            '/api/auth/session',
+            { cache: 'no-store' }
+          );
+          if (!mounted) return;
+          if (session.authenticated && session.csrfToken) {
+            csrfToken = session.csrfToken;
+            setStoredSessionMarker(true);
+            setAuth(session as AuthState);
+            setAuthState('authenticated');
+          } else {
+            setSessionNotice(session.sessionExpired || hasStoredSessionMarker() ? 'Tu sesión expiró o dejó de ser válida. Inicia sesión nuevamente.' : '');
+            setAuthState('anonymous');
+          }
+          return;
+        } catch {
+          if (attempt === retryDelays.length - 1) {
+            setAuthState('unavailable');
+            return;
+          }
+        }
+      }
+    };
+    void restoreSession();
+    return () => {
+      mounted = false;
+    };
+  }, [sessionCheck]);
+
+  const acceptAuth = (session: AuthState) => {
+    csrfToken = session.csrfToken;
+    setStoredSessionMarker(true);
+    setAuth(session);
+    setAuthState('authenticated');
+    setError('');
+    setSessionNotice('');
+  };
+
+  const signOut = async () => {
+    try {
+      await api('/api/auth/logout', { method: 'POST' });
+    } catch {
+      setToast('No se pudo confirmar el cierre de sesión. Comprueba la conexión e inténtalo de nuevo.');
+      return;
+    }
+    csrfToken = '';
+    setStoredSessionMarker(false);
+    setAuth(null);
+    setAuthState('anonymous');
+    setConfig(null);
+    setSummary(null);
+    goToSection('Resumen');
+  };
+
+  const claimLegacy = async () => {
+    if (!pendingLegacy) return;
+    setClaimBusy(true);
+    setClaimError('');
+    try {
+      const result = await api<{ csrfToken: string }>('/api/platform/legacy-company/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: pendingLegacy.id }),
+      });
+      csrfToken = result.csrfToken;
+      const session = await api<AuthState & { authenticated: boolean }>('/api/auth/session');
+      acceptAuth(session);
+    } catch (e) {
+      setClaimError(e instanceof Error ? e.message : 'No se pudo vincular la empresa local.');
+    } finally {
+      setClaimBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authState !== 'authenticated' || auth?.platformRole !== 'admin' || auth.activeCompanyId) return;
+    void api<{ available: boolean; company: { id: number; name: string } | null }>(
+      '/api/platform/legacy-company/pending'
+    )
+      .then((res) => setPendingLegacy(res.available ? res.company : null))
+      .catch((e) => setClaimError(e instanceof Error ? e.message : 'No se pudo revisar empresa pendiente.'));
+  }, [authState, auth?.platformRole, auth?.activeCompanyId]);
+
+  const refresh = useCallback(async () => {
+    if (authState !== 'authenticated') return;
+    try {
+      const [h, s] = await Promise.all([api<Health>('/api/health'), api<Summary>('/api/resumen')]);
+      setHealth(h);
+      setSummary(s);
+      if (section === 'Configuración' && auth?.activeCompanyId && isAdmin) {
+        setConfig(await api<any>('/api/configuracion'));
+      }
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo conectar con el servidor.');
+    }
+  }, [authState, auth?.activeCompanyId, isAdmin, section]);
+
+  useEffect(() => {
+    if (authState === 'authenticated') void refresh();
+  }, [authState, refresh]);
+
+  // Load Alerts
+  const loadAlerts = useCallback(async (f = 'all') => {
+    setAlertsLoading(true);
+    setAlertsError('');
+    try {
+      await api('/api/alerts/evaluate', { method: 'POST' });
+      const res = await api<{ items: AlertItem[]; counts: { total: number; unread: number } }>(
+        `/api/alerts?filter=${f}`
+      );
+      setAlerts(res.items);
+      setAlertCounts(res.counts);
+    } catch (e) {
+      setAlertsError(e instanceof Error ? e.message : 'No se pudieron cargar las alertas.');
+    } finally {
+      setAlertsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (section === 'Alertas' && authState === 'authenticated' && auth?.activeCompanyId) {
+      void loadAlerts(alertsFilter);
+    }
+  }, [section, authState, auth?.activeCompanyId, alertsFilter, loadAlerts]);
+
+  const refreshAlertCounts = useCallback(async () => {
+    if (authState !== 'authenticated' || !auth?.activeCompanyId) return;
+    try {
+      const counts = await api<{ total: number; unread: number }>('/api/alerts/count');
+      setAlertCounts(counts);
+    } catch {
+      /* ignore */
+    }
+  }, [authState, auth?.activeCompanyId]);
+
+  useEffect(() => {
+    if (authState !== 'authenticated' || !auth?.activeCompanyId) return;
+    void refreshAlertCounts();
+    const timer = window.setInterval(() => {
+      void api('/api/alerts/evaluate', { method: 'POST' }).then(refreshAlertCounts).catch(() => {});
+    }, ALERT_CHECK_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [authState, auth?.activeCompanyId, refreshAlertCounts]);
+
+  const openDetail = async (code: string, updateRoute = true) => {
+    const targetPath = `/oportunidades/${encodeURIComponent(code)}`;
+    const returnTo = detailRouteCode
+      ? (location.state as { returnTo?: string } | null)?.returnTo ?? '/buscar'
+      : location.pathname;
+    if (updateRoute && location.pathname !== targetPath) {
+      navigate(targetPath, { state: { returnTo } });
+    }
+    setSelected({ loading: true, _requestedCode: code });
+    setSelectedSaved(null);
+    setDetailSaving(false);
+    setDetailLoading(true);
+    setAnalysis(null);
+    try {
+      const [data, tracking] = await Promise.all([
+        api<{ listing: any; detailAvailable: boolean }>(`/api/licitaciones/${encodeURIComponent(code)}/local`),
+        api<{ saved: boolean }>(`/api/company/tracking/lookup?codigo=${encodeURIComponent(code)}`).catch(() => ({
+          saved: false,
+        })),
+      ]);
+      setSelected({ ...data.listing, _detailAvailable: data.detailAvailable });
+      setSelectedSaved(tracking.saved);
+    } catch (e) {
+      setSelected({ error: e instanceof Error ? e.message : 'No se encontró el detalle local.' });
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authState !== 'authenticated' || !auth?.activeCompanyId || !detailRouteCode) return;
+    if (
+      selected?._requestedCode === detailRouteCode ||
+      selected?.CodigoExterno === detailRouteCode ||
+      selected?.codigo_externo === detailRouteCode
+    ) return;
+    void openDetail(detailRouteCode, false);
+  }, [authState, auth?.activeCompanyId, detailRouteCode]);
+
+  useEffect(() => {
+    if (!detailRouteCode && selected) {
+      setSelected(null);
+      setSelectedSaved(null);
+      setAnalysis(null);
+    }
+  }, [detailRouteCode]);
+
+  const closeDetail = () => {
+    setSelected(null);
+    setSelectedSaved(null);
+    setAnalysis(null);
+    if (detailRouteCode) {
+      const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
+      navigate(returnTo && PATH_SECTIONS[returnTo] ? returnTo : '/buscar');
+    }
+  };
+
+  const analyzeListing = async (code: string) => {
+    setAnalysisLoading(true);
+    try {
+      const res = await api<any>(`/api/buscador/analysis/${encodeURIComponent(code)}`, { method: 'POST' });
+      setAnalysis(res);
+    } catch (e) {
+      setAnalysis({ error: e instanceof Error ? e.message : 'No se pudo analizar esta licitación.' });
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
+  const saveOpportunity = async (code: string) => {
+    try {
+      const res = await api<{ estado: string; created: boolean }>(`/api/company/tracking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: code }),
+      });
+      setToast(
+        res.created ? `Licitación ${code} guardada en Seguimiento.` : `Licitación ${code} ya estaba en Seguimiento.`
+      );
+      void refreshAlertCounts();
+      setSelectedSaved(true);
+      return true;
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'No se pudo guardar.');
+      return false;
+    }
+  };
+
+  const runSearch = async (q = search, p = 1) => {
+    if (q.trim().length < 2) {
+      setToast('Escribe al menos 2 caracteres para buscar oportunidades.');
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      const res = await api<any>('/api/buscador/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: q,
+          page: p,
+          pageSize: 10,
+          states: stateFilter ? [Number(stateFilter)] : [],
+          matchLevel: matchLevelFilter || undefined,
+          region: regionFilter || null,
+        }),
+      });
+      setSearch(q);
+      setPage(p);
+      setSearchResults(res);
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Error al buscar.');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const beginSummarySearch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const query = search.trim();
+    if (query.length < 2) {
+      setToast('Escribe al menos 2 caracteres para buscar oportunidades.');
+      return;
+    }
+    setSearch(query);
+    setSearchResults(null);
+    goToSection('Buscar oportunidades');
+  };
+
+  useEffect(() => {
+    if (authState === 'authenticated' && section === 'Buscar oportunidades' && !searchResults && search.trim().length >= 2) {
+      void runSearch(search, 1);
+    }
+  }, [authState, section, searchResults]);
+
+  const changeCompany = async (companyId: number) => {
+    try {
+      const next = await api<AuthState>('/api/auth/company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      });
+      csrfToken = next.csrfToken;
+      setAuth(next);
+      setAlerts([]);
+      setAlertCounts({ total: 0, unread: 0 });
+      setAlertsOpen(false);
+      goToSection('Resumen');
+      void refreshAlertCounts();
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'No se pudo cambiar de empresa.');
+    }
+  };
+
+  const acceptInvitationPrompt = async () => {
+    const token = window.prompt('Pega el token de invitación recibido por el Administrador:');
+    if (!token?.trim()) return;
+    try {
+      const next = await api<AuthState>('/api/auth/invitations/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invitationToken: token.trim() }),
+      });
+      csrfToken = next.csrfToken;
+      setAuth(next);
+      goToSection('Resumen');
+      setToast('Invitación aceptada. Ya puedes acceder a la nueva empresa.');
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'No se pudo aceptar la invitación.');
+    }
+  };
+
+  const todayLabel = useMemo(
+    () => new Intl.DateTimeFormat('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()),
+    []
+  );
+  const greetingName = auth?.firstName?.trim()
+    || auth?.email.split('@')[0].split(/[._-]/)[0].replace(/^./, (letter) => letter.toLocaleUpperCase('es-CL'))
+    || 'Hola';
+
+  if (authState === 'loading') {
+    return (
+      <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
+        <div className="bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm flex items-center gap-3 text-sm text-[#171A24]">
+          <LoaderCircle className="spin text-[#5636D9]" size={20} />
+          Verificando tu sesión en Oportuna…
+        </div>
+      </main>
+    );
+  }
+
+  if (authState === 'unavailable') {
+    return (
+      <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
+        <section className="w-full max-w-md bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm text-center space-y-4" aria-live="polite">
+          <h1 className="text-lg font-bold text-[#171A24]">No pudimos comprobar tu sesión</h1>
+          <p className="text-sm text-[#5D6472]">El servidor de Oportuna no respondió. Tu sesión no se ha cerrado. Comprueba que la aplicación esté iniciada y vuelve a intentarlo.</p>
+          <button type="button" onClick={() => setSessionCheck((value) => value + 1)} className="w-full h-11 bg-[#5636D9] hover:bg-[#4b2ec7] text-white font-semibold rounded-xl text-sm">Volver a comprobar</button>
+        </section>
+      </main>
+    );
+  }
+
+  if (authState === 'anonymous') {
+    return <AuthGate onAuthenticated={acceptAuth} initialError={sessionNotice} />;
+  }
+
+  if (auth && !auth.emailVerified) {
+    return <EmailVerificationGate session={auth} onAuthenticated={acceptAuth} />;
+  }
+
+  if (auth?.platformRole === 'admin' && !auth.activeCompanyId) {
+    return pendingLegacy === undefined ? (
+      <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
+        <div className="bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm flex items-center gap-3 text-sm text-[#171A24]">
+          <LoaderCircle className="spin text-[#5636D9]" size={20} />
+          Revisando espacio local…
+        </div>
+      </main>
+    ) : (
+      <LegacyClaim company={pendingLegacy} onClaim={() => void claimLegacy()} busy={claimBusy} error={claimError} />
+    );
+  }
+
+  if (!auth?.activeCompanyId) {
+    return <NoCompanyOnboarding session={auth!} onAuthenticated={acceptAuth} />;
+  }
+
+  const navGroups = [
+    {
+      label: 'Explorar',
+      items: [
+        { name: 'Resumen', icon: LayoutDashboard },
+        { name: 'Buscar oportunidades', icon: Search },
+        { name: 'Inteligencia de mercado', icon: BarChart3 },
+      ],
+    },
+    {
+      label: 'Gestionar',
+      items: [
+        { name: 'Seguimiento', icon: Activity },
+        { name: 'Alertas', icon: Bell },
+      ],
+    },
+    {
+      label: 'Espacio de trabajo',
+      items: [
+        { name: 'Mi empresa', icon: Building2 },
+        ...(isAdmin ? [{ name: 'Equipo y accesos', icon: Users }] : []),
+        ...(isAdmin ? [{ name: 'Configuración', icon: Settings }] : []),
+      ],
+    },
+    {
+      label: 'Herramientas internas',
+      items: [{ name: 'Centro de Pruebas', icon: FlaskConical, isSandbox: true }],
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#F5F6F8] text-[#171A24] antialiased flex flex-col lg:flex-row">
+      {/* SIDEBAR NAVIGATION (Desktop fixed / Mobile drawer conforming to Stitch) */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E1E4EA] p-5 flex flex-col justify-between transition-transform duration-200 lg:translate-x-0 ${
+          mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
+        }`}
+      >
+        <div className="space-y-6">
+          {/* Brand header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#5636D9] text-white flex items-center justify-center font-black text-sm tracking-tight shadow-sm">
+                O
+              </div>
+              <div>
+                <strong className="font-bold text-base text-[#171A24] tracking-tight block">Oportuna</strong>
+                <span className="text-[10px] text-[#8A92A6] block leading-none">Mercado Público</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setMobileOpen(false)}
+              className="lg:hidden p-1 text-[#5D6472] hover:bg-gray-100 rounded-lg"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Active Company Selector Pill */}
+          <div className="p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA] flex flex-col items-stretch">
+            <div className="flex items-center gap-2 min-w-0">
+              <Building2 size={16} className="text-[#5636D9] shrink-0" />
+              <div className="min-w-0">
+                <span className="text-[10px] uppercase font-bold text-[#8A92A6] block">Empresa activa</span>
+                <span className="font-semibold text-xs text-[#171A24] truncate block">
+                  {auth.memberships.find((m) => m.companyId === auth.activeCompanyId)?.companyName || 'Mi Empresa'}
+                </span>
+              </div>
+            </div>
+            {auth.memberships.length > 1 && (
+              <select
+                aria-label="Empresa activa"
+                value={auth.activeCompanyId ?? ''}
+                onChange={(e) => void changeCompany(Number(e.target.value))}
+                className="lg:hidden mt-2 h-8 w-full min-w-0 px-2 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24] bg-white"
+              >
+                {auth.memberships.map((membership) => (
+                  <option key={membership.companyId} value={membership.companyId}>{membership.companyName}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Primary navigation, grouped by the work each section supports */}
+          <nav aria-label="Navegación principal" className="space-y-4">
+            {navGroups.map((group) => (
+              <div key={group.label} className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-[#8A92A6] px-3 tracking-wider block mb-1">
+                  {group.label}
+                </span>
+                {group.items.map((item) => {
+                  const active = section === item.name;
+                  return (
+                    <button
+                      key={item.name}
+                      onClick={() => goToSection(item.name)}
+                      aria-current={active ? 'page' : undefined}
+                      className={`w-full h-10 px-3 rounded-xl flex items-center justify-between text-xs font-semibold transition-colors ${
+                        active
+                          ? 'bg-[#f0edff] text-[#5636D9]'
+                          : 'text-[#5D6472] hover:bg-[#F8F9FA] hover:text-[#171A24]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <item.icon size={17} className={active ? 'text-[#5636D9]' : 'text-[#8A92A6]'} />
+                        <span>{item.name}</span>
+                      </div>
+                      {'isSandbox' in item && item.isSandbox && (
+                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                          Aislado
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </nav>
+        </div>
+
+        {/* Sidebar Bottom Profile */}
+        <div className="pt-4 border-t border-[#E1E4EA] space-y-3">
+          <div className="grid grid-cols-2 gap-2 lg:hidden">
+            <button type="button" onClick={() => goToSection('Mi perfil')} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#E1E4EA] bg-white text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]">
+              <UserRound size={14} /> Mi perfil
+            </button>
+            <button type="button" onClick={() => goToSection('Seguridad')} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#E1E4EA] bg-white text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]">
+              <Shield size={14} /> Seguridad
+            </button>
+          </div>
+          <div className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-[#f0edff] text-[#5636D9] font-bold text-xs flex items-center justify-center shrink-0">
+                {auth.firstName ? auth.firstName[0].toUpperCase() : auth.email[0].toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <span className="font-semibold text-xs text-[#171A24] truncate block">
+                  {auth.firstName ? `${auth.firstName} ${auth.lastName}` : auth.email}
+                </span>
+                <span className="text-[10px] text-[#8A92A6] block truncate">
+                  {auth.role === 'admin' ? 'Administrador' : 'Colaborador'}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => void signOut()}
+              title="Cerrar sesión"
+              className="p-1.5 text-[#8A92A6] hover:text-red-600 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/20 lg:hidden backdrop-blur-sm"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
+        {/* TOPBAR */}
+        <header className={`summary-topbar h-14 bg-white border-b border-[#E1E4EA] px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30 shadow-sm ${section === 'Resumen' ? 'summary-topbar-home' : ''}`}>
+          <div className="summary-topbar-identity flex items-center gap-3">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="lg:hidden p-2 text-[#5D6472] hover:bg-gray-100 rounded-lg"
+              aria-label="Abrir navegación"
+            >
+              <Menu size={18} />
+            </button>
+            <div className="flex items-center gap-2 text-xs text-[#5D6472]">
+              <span className="font-bold text-[#171A24]">Oportuna</span>
+              <span>/</span>
+              <span className="font-semibold text-[#5636D9]">{section}</span>
+            </div>
+          </div>
+
+          <form className="summary-topbar-search" onSubmit={beginSummarySearch} role="search">
+            <Search size={17} aria-hidden="true" />
+            <input
+              id="global-opportunity-search"
+              name="globalSearch"
+              aria-label="Búsqueda global de oportunidades"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar licitaciones, compras ágiles o palabras clave…"
+            />
+          </form>
+
+          <div className="summary-topbar-actions flex items-center gap-3 text-xs">
+            <button
+              type="button"
+              onClick={() => goToSection('Buscar oportunidades')}
+              aria-label="Buscar oportunidades"
+              className="summary-mobile-search lg:hidden h-8 w-8 rounded-lg border border-[#E1E4EA] text-[#5D6472] hover:bg-[#F8F9FA] flex items-center justify-center"
+            >
+              <Search size={16} />
+            </button>
+            <span className={`summary-health-pill hidden 2xl:flex items-center gap-1.5 px-3 py-1 rounded-full border ${health?.mysql ? 'text-[#16845B] bg-[#E8F5E9] border-[#d6eadb]' : 'text-amber-800 bg-amber-50 border-amber-200'}`}>
+              <span className="summary-health-dot" />
+              {health?.mysql ? 'Índice local conectado' : 'Índice local no disponible'}
+            </span>
+            <span className="hidden 2xl:flex items-center gap-1.5 text-[#5D6472] bg-[#F8F9FA] px-3 py-1 rounded-full border border-[#E1E4EA]">
+              <Clock3 size={13} className="text-[#8A92A6]" />
+              {todayLabel}
+            </span>
+
+            {auth.memberships.length > 1 && (
+              <select
+                aria-label="Empresa activa"
+                value={auth.activeCompanyId ?? ''}
+                onChange={(e) => void changeCompany(Number(e.target.value))}
+                className="hidden sm:block h-8 w-16 min-w-0 px-1 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24] bg-white sm:w-auto sm:max-w-[160px]"
+              >
+                {auth.memberships.map((m) => (
+                  <option key={m.companyId} value={m.companyId}>
+                    {m.companyName}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <button
+              onClick={() => void acceptInvitationPrompt()}
+              type="button"
+              aria-label="Aceptar invitación"
+              title="Aceptar invitación"
+              className="hidden md:flex w-8 items-center justify-center gap-1.5 h-8 px-0 rounded-lg border border-[#E1E4EA] text-[#5D6472] hover:bg-[#F8F9FA] transition-colors 2xl:w-auto 2xl:px-3"
+            >
+              <MailPlus size={14} />
+              <span className="hidden 2xl:inline">Aceptar invitación</span>
+            </button>
+
+            {/* Notification Bell */}
+            <AlertNotificationPanel
+              items={alerts}
+              unread={alertCounts.unread}
+              open={alertsOpen}
+              loading={alertsLoading}
+              error={alertsError}
+              onToggle={() => {
+                const next = !alertsOpen;
+                setAlertsOpen(next);
+                if (next) void loadAlerts('all');
+              }}
+              onNavigate={() => {
+                setAlertsOpen(false);
+                setAlertsFilter('all');
+                goToSection('Alertas');
+              }}
+              onRead={(id) => {
+                void api(`/api/alerts/${id}/read`, { method: 'POST' }).then(() => {
+                  setAlerts((curr) => alertsFilter === 'unread'
+                    ? curr.filter((item) => item.id !== id)
+                    : curr.map((item) => (item.id === id ? { ...item, readAt: new Date().toISOString() } : item)));
+                  void refreshAlertCounts();
+                });
+              }}
+              onDismiss={(id) => {
+                void api(`/api/alerts/${id}/dismiss`, { method: 'POST' }).then(() => {
+                  setAlerts((curr) => curr.filter((it) => it.id !== id));
+                  void refreshAlertCounts();
+                });
+              }}
+              onOpen={(item) => {
+                setAlertsOpen(false);
+                void openDetail(item.code);
+              }}
+            />
+            <div className="relative hidden lg:block">
+              <button
+                type="button"
+                className="summary-topbar-profile flex items-center gap-2 rounded-xl px-2 py-1 hover:bg-[#F8F9FA]"
+                aria-haspopup="menu"
+                aria-expanded={userMenuOpen}
+                onClick={() => setUserMenuOpen((open) => !open)}
+              >
+                <span className="summary-topbar-avatar">
+                  {auth.firstName ? auth.firstName[0].toUpperCase() : auth.email[0].toUpperCase()}
+                </span>
+                <span className="min-w-0">
+                  <b>{greetingName}</b>
+                  <small>{auth.role === 'admin' ? 'Administrador' : 'Colaborador'}</small>
+                </span>
+              </button>
+              {userMenuOpen && (
+                <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-60 rounded-xl border border-[#E1E4EA] bg-white p-2 shadow-lg">
+                  <div className="px-3 py-2">
+                    <b className="block truncate text-xs text-[#171A24]">{greetingName}</b>
+                    <span className="block truncate text-xs text-[#8A92A6]">{auth.email}</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => goToSection('Mi perfil')}
+                    className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]"
+                  >
+                    <UserRound size={15} /> Mi perfil
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => goToSection('Seguridad')}
+                    className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]"
+                  >
+                    <Shield size={15} /> Seguridad
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setUserMenuOpen(false); void signOut(); }}
+                    className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]"
+                  >
+                    <LogOut size={15} /> Cerrar sesión
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* BODY CONTAINER */}
+        <main className="flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto space-y-6">
+          {/* SECTION: RESUMEN (Stitch screen 1) */}
+          {section === 'Mi perfil' && (
+            <ProfilePage
+              session={auth}
+              onProfileUpdated={(fields) => setAuth((current) => current ? { ...current, ...fields } : current)}
+              onNavigateSecurity={() => goToSection('Seguridad')}
+            />
+          )}
+          {section === 'Seguridad' && <SecurityPage session={auth} />}
+
+          {section === 'Resumen' && (
+            <div className="summary-page space-y-6">
+              <section className="summary-welcome flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="summary-context flex flex-wrap items-center gap-2 mb-2">
+                    <span className="summary-company-chip">
+                      <Building2 size={14} />
+                      {auth.memberships.find((membership) => membership.companyId === auth.activeCompanyId)?.companyName || 'Empresa activa'}
+                    </span>
+                    <span className="summary-date-chip"><Clock3 size={13} /> {todayLabel}</span>
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight flex items-center gap-2">
+                    Buenos días, {greetingName}
+                    <span role="img" aria-label="saludo" className="text-2xl select-none">👋</span>
+                  </h1>
+                  <p className="text-sm text-[#5D6472] mt-1">
+                    Aquí tienes el estado de las licitaciones indexadas y las coincidencias para tu empresa.
+                  </p>
+                </div>
+                {isAdmin && (
+                  <button
+                    onClick={() => goToSection('Configuración')}
+                    className="summary-config-link shrink-0"
+                  >
+                    <Settings size={15} /> Gestionar integraciones
+                  </button>
+                )}
+              </section>
+
+              <section className="summary-metric-grid grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Métricas del índice">
+                <article className="summary-metric-card">
+                  <div className="summary-metric-top"><span className="summary-metric-icon"><Database size={18} /></span><span className="summary-metric-tag">Índice local</span></div>
+                  <strong>{summary ? summary.total.toLocaleString('es-CL') : '—'}</strong>
+                  <span>Licitaciones registradas</span>
+                </article>
+                <article className="summary-metric-card">
+                  <div className="summary-metric-top"><span className="summary-metric-icon"><Activity size={18} /></span><span className="summary-metric-tag">Publicada</span></div>
+                  <strong>{summary?.estados?.find((state) => state.codigoEstado === 5)?.total.toLocaleString('es-CL') ?? '—'}</strong>
+                  <span>En el índice local</span>
+                </article>
+                <article className="summary-metric-card">
+                  <div className="summary-metric-top"><span className="summary-metric-icon"><Sparkles size={18} /></span><span className="summary-metric-tag">Última ejecución</span></div>
+                  <strong>{summary?.ultimaSincronizacion?.totalInsertados?.toLocaleString('es-CL') ?? '—'}</strong>
+                  <span>Registros incorporados</span>
+                </article>
+                <article className="summary-metric-card">
+                  <div className="summary-metric-top"><span className="summary-metric-icon"><Clock3 size={18} /></span><span className="summary-metric-tag">ChileCompra</span></div>
+                  <strong className="summary-metric-date">{summary?.ultimaSincronizacion?.fechaConsultada ? dateFmt(summary.ultimaSincronizacion.fechaConsultada) : '—'}</strong>
+                  <span>Último período consultado</span>
+                </article>
+              </section>
+
+              <section className="summary-search-feature">
+                <div className="summary-search-copy">
+                  <span className="summary-search-eyebrow"><Sparkles size={14} /> Búsqueda en Mercado Público</span>
+                  <h2>Encuentra oportunidades para tu negocio</h2>
+                  <p>Busca licitaciones y compras ágiles con los filtros y criterios disponibles en Oportuna.</p>
+                </div>
+                <form className="summary-feature-search" onSubmit={beginSummarySearch} role="search">
+                  <Search size={18} aria-hidden="true" />
+                  <input
+                    aria-label="Buscar licitaciones"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Describe qué ofrece tu empresa…"
+                  />
+                  <button type="submit"><Search size={15} /> Buscar licitaciones</button>
+                </form>
+              </section>
+
+              <section className="summary-insight-grid grid grid-cols-1 xl:grid-cols-12 gap-5">
+                <article className="summary-activity-panel xl:col-span-5">
+                  <div className="summary-section-heading">
+                    <div>
+                      <h2>Actividad reciente</h2>
+                      <p>Sincronizaciones y registros más recientes del índice local</p>
+                    </div>
+                    <button onClick={() => goToSection('Buscar oportunidades')} className="summary-text-link">Ver licitaciones <ArrowRight size={14} /></button>
+                  </div>
+                  {summary?.ultimaSincronizacion ? (
+                    <div className="summary-sync-card">
+                      <div className="summary-sync-icon"><Database size={17} /></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="summary-sync-title-row">
+                          <strong>Última sincronización</strong>
+                          <span className={`summary-run-status ${summary.ultimaSincronizacion.estado === 'completada' ? 'is-complete' : 'is-pending'}`}>
+                            {summary.ultimaSincronizacion.estado || 'Sin estado'}
+                          </span>
+                        </div>
+                        <span>{summary.ultimaSincronizacion.startedAt ? dateTimeFmt(summary.ultimaSincronizacion.startedAt) : 'Fecha no disponible'}</span>
+                        <div className="summary-sync-stats">
+                          <span><b>{summary.ultimaSincronizacion.totalRecibidos ?? '—'}</b> recibidos</span>
+                          <span><b>{summary.ultimaSincronizacion.totalInsertados ?? '—'}</b> incorporados</span>
+                          <span><b>{summary.ultimaSincronizacion.totalActualizados ?? '—'}</b> actualizados</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="summary-empty-state">Aún no hay sincronizaciones registradas para mostrar.</div>
+                  )}
+                  <div className="summary-recent-list">
+                    {(summary?.ultimasLicitaciones ?? []).slice(0, 3).map((item) => (
+                      <button key={item.codigo_externo} onClick={() => void openDetail(item.codigo_externo)} className="summary-recent-item">
+                        <span className="summary-recent-marker"><FileSearch size={15} /></span>
+                        <span className="summary-recent-copy">
+                          <b>{item.nombre || 'Nombre no disponible'}</b>
+                          <small>{item.codigo_externo} · {item.organismo || 'Organismo no informado'}</small>
+                        </span>
+                        <ArrowRight size={14} className="summary-recent-arrow" />
+                      </button>
+                    ))}
+                    {!summary?.ultimasLicitaciones?.length && <div className="summary-empty-state">No hay licitaciones recientes en el índice.</div>}
+                  </div>
+                </article>
+
+                <article className="summary-evolution-panel xl:col-span-7">
+                  <div className="summary-section-heading">
+                    <div>
+                      <h2>Evolución de oportunidades</h2>
+                      <p>Distribución actual por estado en el índice local</p>
+                    </div>
+                    <button onClick={() => goToSection('Inteligencia de mercado')} className="summary-text-link">Ver analítica <ArrowRight size={14} /></button>
+                  </div>
+                  {summary?.estados?.length ? (
+                    <div className="summary-state-chart" aria-label="Licitaciones actuales por estado">
+                      {summary.estados.map((state) => {
+                        const denominator = summary.estados.reduce((sum, entry) => sum + Number(entry.total || 0), 0);
+                        const share = denominator ? Math.round((Number(state.total || 0) / denominator) * 100) : 0;
+                        const label = state.codigoEstado == null ? 'Sin estado' : statusNames[state.codigoEstado] || `Estado ${state.codigoEstado}`;
+                        return (
+                          <div className="summary-state-row" key={state.codigoEstado ?? 'unknown'}>
+                            <div className="summary-state-label"><span>{label}</span><b>{Number(state.total || 0).toLocaleString('es-CL')}</b></div>
+                            <div className="summary-state-track" role="img" aria-label={`${label}: ${share}%`}><span style={{ width: `${share}%` }} /></div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="summary-empty-state">No hay distribución por estado disponible.</div>
+                  )}
+                  <p className="summary-chart-note">Esta vista muestra el estado actual. El endpoint de Resumen todavía no entrega una serie histórica por mes.</p>
+                </article>
+              </section>
+
+              <CompanyOpportunities
+                onConfigure={() => goToSection('Mi empresa')}
+                onOpenListing={(code) => void openDetail(code)}
+                onViewAll={() => goToSection('Buscar oportunidades')}
+              />
+            </div>
+          )}
+
+          {/* SECTION: BUSCAR OPORTUNIDADES (Stitch 2 screen) */}
+          {section === 'Buscar oportunidades' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+                <div>
+                  <div className="text-[11px] font-bold text-[#5636D9] uppercase tracking-wider mb-1">
+                    Mercado Público
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">
+                    Buscar Oportunidades
+                  </h1>
+                  <p className="text-sm text-[#5D6472] mt-1">
+                    Encuentra licitaciones y compras ágiles mediante búsqueda semántica asistida y filtros combinables.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-[#E1E4EA] shadow-sm">
+                  <button
+                    onClick={() => setSearchView('table')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                      searchView === 'table' ? 'bg-[#5636D9] text-white shadow-sm' : 'text-[#5D6472] hover:bg-gray-100'
+                    }`}
+                  >
+                    Tabla
+                  </button>
+                  <button
+                    onClick={() => setSearchView('cards')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                      searchView === 'cards' ? 'bg-[#5636D9] text-white shadow-sm' : 'text-[#5D6472] hover:bg-gray-100'
+                    }`}
+                  >
+                    Tarjetas
+                  </button>
+                </div>
+              </div>
+
+              {/* Natural Query Search Bar */}
+              <div className="bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-4">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void runSearch(search, 1);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <div className="relative flex-1">
+                    <Search size={18} className="absolute left-3.5 top-3 text-[#8A92A6]" />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Describe qué ofrece tu empresa... Ej: Insumos de laboratorio en Santiago o Mantención de transformadores"
+                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={searchLoading}
+                    className="h-11 px-5 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-xl flex items-center gap-2 transition-colors shadow-sm shrink-0"
+                  >
+                    {searchLoading ? <LoaderCircle size={16} className="spin" /> : <Search size={16} />}
+                    Buscar
+                  </button>
+                </form>
+
+                {/* Example query chips */}
+                <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                  <span className="text-[#8A92A6]">Prueba buscar:</span>
+                  {[
+                    'Equipamiento médico y quirúrgico',
+                    'Servicios de aseo en hospitales',
+                    'Molinos y maquinaria industrial',
+                    'Obras civiles y edificación',
+                  ].map((ex) => (
+                    <button
+                      key={ex}
+                      type="button"
+                      onClick={() => {
+                        setSearch(ex);
+                        void runSearch(ex, 1);
+                      }}
+                      className="px-2.5 py-1 rounded-full bg-[#F5F6F8] hover:bg-[#f0edff] text-[#5D6472] hover:text-[#5636D9] border border-[#E1E4EA] transition-colors"
+                    >
+                      {ex}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Filters Row */}
+                <div className="pt-3 border-t border-[#E1E4EA] grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div>
+                    <label className="block text-[#8A92A6] font-semibold mb-1">Coincidencia</label>
+                    <select
+                      value={matchLevelFilter}
+                      onChange={(e) => setMatchLevelFilter(e.target.value)}
+                      className="w-full h-8 px-2 rounded-lg border border-[#E1E4EA] text-xs bg-white text-[#171A24]"
+                    >
+                      <option value="">Todos los niveles</option>
+                      <option value="high">Alta</option>
+                      <option value="medium">Media</option>
+                      <option value="exploratory">Exploratoria</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[#8A92A6] font-semibold mb-1">Estado</label>
+                    <select
+                      value={stateFilter}
+                      onChange={(e) => setStateFilter(e.target.value)}
+                      className="w-full h-8 px-2 rounded-lg border border-[#E1E4EA] text-xs bg-white text-[#171A24]"
+                    >
+                      <option value="">Todos los estados</option>
+                      <option value="5">Publicada</option>
+                      <option value="6">Cerrada</option>
+                      <option value="8">Adjudicada</option>
+                      <option value="7">Desierta</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[#8A92A6] font-semibold mb-1">Región</label>
+                    <input
+                      value={regionFilter}
+                      onChange={(e) => setRegionFilter(e.target.value)}
+                      placeholder="Ej. Metropolitana"
+                      className="w-full h-8 px-2 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24]"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={() => void runSearch(search, 1)}
+                      className="w-full h-8 bg-white border border-[#E1E4EA] hover:bg-gray-50 text-[#5D6472] font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5"
+                    >
+                      <Filter size={13} /> Aplicar filtros
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Search Results Summary */}
+              {searchResults && (
+                <div className="flex items-center justify-between text-xs text-[#5D6472]">
+                  <span>
+                    Encontradas <b>{searchResults.total.toLocaleString('es-CL')}</b> licitaciones reales (Página {page})
+                  </span>
+                  <span className="text-[11px] text-[#8A92A6]">
+                    Relevancia calculada con base en catálogo e inferencia contextual
+                  </span>
+                </div>
+              )}
+
+              {/* Search Results View */}
+              {searchLoading ? (
+                <div className="p-12 text-center text-sm text-[#5D6472] bg-white rounded-xl border border-[#E1E4EA]">
+                  <LoaderCircle size={24} className="spin mx-auto text-[#5636D9] mb-2" />
+                  Buscando oportunidades en Mercado Público…
+                </div>
+              ) : !searchResults?.items?.length ? (
+                <div className="p-12 text-center bg-white rounded-2xl border border-[#E1E4EA] space-y-3">
+                  <FileSearch size={24} className="mx-auto text-[#8A92A6]" />
+                  <h3 className="font-bold text-base text-[#171A24]">
+                    {search.trim().length < 2 ? 'Describe qué oportunidad buscas' : 'No se encontraron licitaciones'}
+                  </h3>
+                  <p className="text-xs text-[#5D6472]">
+                    {search.trim().length < 2
+                      ? 'Escribe al menos 2 caracteres o elige uno de los ejemplos para iniciar la búsqueda.'
+                      : 'Prueba ajustando los términos o limpiando los filtros aplicados.'}
+                  </p>
+                </div>
+              ) : searchView === 'table' ? (
+                <div className="bg-white rounded-xl border border-[#E1E4EA] shadow-sm overflow-hidden">
+                  <div className="search-results-table-wrap" role="region" aria-label="Resultados de búsqueda" tabIndex={0}>
+                    <table className="search-results-table text-left text-xs">
+                      <colgroup>
+                        <col style={{ width: '270px' }} />
+                        <col style={{ width: '190px' }} />
+                        <col style={{ width: '140px' }} />
+                        <col style={{ width: '120px' }} />
+                        <col style={{ width: '110px' }} />
+                        <col style={{ width: '90px' }} />
+                        <col style={{ width: '160px' }} />
+                      </colgroup>
+                      <thead className="bg-[#F8F9FA] border-b border-[#E1E4EA] text-[#5D6472] font-semibold">
+                        <tr>
+                          <th className="py-3 px-4">OPORTUNIDAD</th>
+                          <th className="py-3 px-4">ORGANISMO</th>
+                          <th className="py-3 px-4">MONTO ESTIMADO</th>
+                          <th className="py-3 px-4">CIERRE</th>
+                          <th className="py-3 px-4">ESTADO</th>
+                          <th className="py-3 px-4">MATCH</th>
+                          <th className="py-3 px-4 text-right">ACCIONES</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#E1E4EA]">
+                        {searchResults.items.map((item: any) => (
+                          <tr key={item.codigo_externo} className="hover:bg-gray-50 transition-colors">
+                            <td className="search-col-opportunity py-3 px-4">
+                              <button
+                                onClick={() => void openDetail(item.codigo_externo)}
+                                className="search-opportunity-title font-bold text-[#171A24] hover:text-[#5636D9] text-left"
+                                title={item.nombre || 'Nombre no disponible'}
+                                aria-label={`Abrir ficha: ${item.nombre || 'Nombre no disponible'}`}
+                              >
+                                {item.nombre || 'Nombre no disponible'}
+                              </button>
+                              <span className="font-mono text-[11px] text-[#8A92A6]">{item.codigo_externo}</span>
+                            </td>
+                            <td className="search-col-organism py-3 px-4 text-[#5D6472]">
+                              <span title={item.organismo || 'Organismo no informado'}>{item.organismo || '—'}</span>
+                            </td>
+                            <td className="search-col-amount py-3 px-4 font-semibold text-[#171A24]" title={money(item.monto_estimado, item.moneda)}>{money(item.monto_estimado, item.moneda)}</td>
+                            <td className="search-col-close py-3 px-4 text-[#5D6472]">{dateFmt(item.fecha_cierre)}</td>
+                            <td className="search-col-status py-3 px-4">
+                              <StatusBadge state={item.codigo_estado} />
+                            </td>
+                            <td className="search-col-match py-3 px-4">
+                              <span className="font-bold text-xs text-[#5636D9] bg-[#f0edff] px-2 py-0.5 rounded-full">
+                                {item.compatibility ?? 50}%
+                              </span>
+                            </td>
+                            <td className="search-col-actions py-3 px-4">
+                              <div>
+                                <button
+                                  onClick={() => void saveOpportunity(item.codigo_externo)}
+                                  className="text-xs text-[#5D6472] hover:text-[#5636D9] font-medium"
+                                  title="Guardar en seguimiento"
+                                >
+                                  Guardar
+                                </button>
+                                <button
+                                  onClick={() => void openDetail(item.codigo_externo)}
+                                  className="text-xs text-[#5636D9] font-semibold hover:underline"
+                                >
+                                  Ver ficha
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {searchResults.items.map((item: any) => (
+                    <div
+                      key={item.codigo_externo}
+                      className="bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-3 flex flex-col justify-between"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <button
+                            onClick={() => void openDetail(item.codigo_externo)}
+                            className="font-bold text-sm text-[#171A24] hover:text-[#5636D9] text-left line-clamp-2"
+                          >
+                            {item.nombre || 'Nombre no disponible'}
+                          </button>
+                          <span className="text-xs font-bold text-[#5636D9] bg-[#f0edff] px-2.5 py-1 rounded-lg shrink-0">
+                            {item.compatibility ?? 50}% match
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#5D6472] truncate">{item.organismo || 'Organismo no informado'}</p>
+                        <div className="flex items-center gap-2 flex-wrap text-xs">
+                          <StatusBadge state={item.codigo_estado} />
+                          <span className="text-[#8A92A6]">Cierre: {dateFmt(item.fecha_cierre)}</span>
+                          <span className="font-semibold text-[#171A24]">{money(item.monto_estimado, item.moneda)}</span>
+                        </div>
+                        {item.matchReasons?.length > 0 && (
+                          <p className="text-[11px] text-[#5636D9] bg-[#f0edff]/40 p-2 rounded-lg">
+                            {item.matchReasons.join(' · ')}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="pt-3 border-t border-[#E1E4EA] flex items-center justify-between">
+                        <button
+                          onClick={() => void saveOpportunity(item.codigo_externo)}
+                          className="text-xs text-[#5D6472] hover:text-[#5636D9] font-medium"
+                        >
+                          + Guardar en seguimiento
+                        </button>
+                        <button
+                          onClick={() => void openDetail(item.codigo_externo)}
+                          className="h-8 px-3 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-lg flex items-center gap-1"
+                        >
+                          Ver ficha <ArrowRight size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Pagination */}
+              {searchResults?.pages > 1 && (
+                <div className="flex items-center justify-between text-xs text-[#5D6472] pt-3">
+                  <span>Página {page} de {searchResults.pages}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={page <= 1 || searchLoading}
+                      onClick={() => void runSearch(search, page - 1)}
+                      className="px-3 py-1.5 rounded-lg border border-[#E1E4EA] bg-white hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      type="button"
+                      disabled={page >= searchResults.pages || searchLoading}
+                      onClick={() => void runSearch(search, page + 1)}
+                      className="px-3 py-1.5 rounded-lg border border-[#E1E4EA] bg-white hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SECTION: INTELIGENCIA DE MERCADO (Stitch 4) */}
+          {section === 'Inteligencia de mercado' && (
+            <MarketAnalytics
+              summary={summary}
+              health={health}
+              error={error}
+              onOpenListing={(code) => void openDetail(code)}
+              onViewListings={() => goToSection('Buscar oportunidades')}
+              onRetry={() => void refresh()}
+            />
+          )}
+
+          {/* SECTION: SEGUIMIENTO (Stitch 5) */}
+          {section === 'Seguimiento' && (
+            <TrackingWorkspace
+              onOpen={(code) => void openDetail(code)}
+              onChanged={() => void refreshAlertCounts()}
+              csrfToken={auth.csrfToken}
+            />
+          )}
+
+          {/* SECTION: ALERTAS & BUSQUEDAS GUARDADAS (Stitch 6) */}
+          {section === 'Alertas' && (
+            <AlertsPage
+              items={alerts}
+              filter={alertsFilter}
+              onFilter={(val) => setAlertsFilter(val)}
+              onRead={(id) => {
+                void api(`/api/alerts/${id}/read`, { method: 'POST' }).then(() => {
+                  setAlerts((curr) => alertsFilter === 'unread'
+                    ? curr.filter((item) => item.id !== id)
+                    : curr.map((item) => (item.id === id ? { ...item, readAt: new Date().toISOString() } : item)));
+                  void refreshAlertCounts();
+                });
+              }}
+              onDismiss={(id) => {
+                void api(`/api/alerts/${id}/dismiss`, { method: 'POST' }).then(() => {
+                  setAlerts((curr) => curr.filter((it) => it.id !== id));
+                  void refreshAlertCounts();
+                });
+              }}
+              onOpen={(item) => void openDetail(item.code)}
+              loading={alertsLoading}
+              error={alertsError}
+            />
+          )}
+
+          {/* SECTION: MI EMPRESA (Stitch 7 & 8) */}
+          {section === 'Mi empresa' && (
+            <CompanyWorkspace
+              onSaved={() => void refresh()}
+              csrfToken={auth.csrfToken}
+              canEdit={auth.role === 'admin'}
+              accessRole={auth.role}
+            />
+          )}
+
+          {/* SECTION: EQUIPO Y ACCESOS (Stitch 7 RBAC) */}
+          {section === 'Equipo y accesos' && (
+            <CompanyTeamManagement role={auth.role} csrfToken={auth.csrfToken} />
+          )}
+
+          {/* SECTION: CONFIGURACION GENERAL */}
+          {section === 'Configuración' && (
+            <div className="space-y-6">
+              <div className="border-b border-[#E1E4EA] pb-3">
+                <div className="text-[11px] font-bold text-[#5636D9] uppercase tracking-wider mb-1">
+                  Operación del Servidor
+                </div>
+                <h1 className="text-2xl font-bold text-[#171A24]">Configuración de Sincronización</h1>
+                <p className="text-xs text-[#5D6472] mt-0.5">
+                  Gestión del recolector diario y conexión oficial a ChileCompra.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-3">
+                  <h3 className="font-bold text-sm text-[#171A24] flex items-center gap-2">
+                    <Clock3 size={17} className="text-[#5636D9]" /> Sincronizador Diario
+                  </h3>
+                  <div className="space-y-2 text-xs text-[#5D6472]">
+                    <p>Horario de Chile: America/Santiago. Procesa las licitaciones por fecha.</p>
+                    <div className="p-3 rounded-lg bg-[#F8F9FA] border border-[#E1E4EA] space-y-1">
+                      <div className="flex justify-between">
+                        <span>Última sincronización exitosa:</span>
+                        <b className="text-[#171A24]">
+                          {config?.ultimaFechaExitosa ? dateTimeFmt(config.ultimaFechaExitosa) : 'Sin fecha registrada'}
+                        </b>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Fechas pendientes:</span>
+                        <b className="text-[#171A24]">{config?.dailySync?.pendingDays ?? 0}</b>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-3">
+                  <h3 className="font-bold text-sm text-[#171A24] flex items-center gap-2">
+                    <Database size={17} className="text-[#5636D9]" /> Base de Datos y API
+                  </h3>
+                  <div className="space-y-2 text-xs text-[#5D6472]">
+                    <p>Las credenciales del ticket API de Mercado Público residen en el archivo .env del servidor.</p>
+                    <div className="p-3 rounded-lg bg-[#F8F9FA] border border-[#E1E4EA] space-y-1">
+                      <div className="flex justify-between">
+                        <span>Conexión MySQL:</span>
+                        <b className="text-[#5636D9]">Conectada</b>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Ticket API Mercado Público:</span>
+                        <b className={health?.apiConfigured ? 'text-[#5636D9]' : 'text-amber-700'}>
+                          {health?.apiConfigured ? 'Válido' : 'Requiere ticket en .env'}
+                        </b>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SECTION: CENTRO DE PRUEBAS (Isolated Sandbox, Stitch screen) */}
+          {section === 'Centro de Pruebas' && (
+            <SandboxCenter onBackToApp={() => goToSection('Resumen')} />
+          )}
+        </main>
+      </div>
+
+      {/* Fixed Toast Banner */}
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-50 bg-[#171A24] text-white text-xs px-4 py-3 rounded-xl shadow-xl flex items-center gap-3">
+          <span>{toast}</span>
+          <button onClick={() => setToast('')} className="text-gray-400 hover:text-white">
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {/* Listing Detail Drawer/Modal */}
+      {selected && (
+        <ListingDetailModal
+          listing={selected}
+          loading={detailLoading}
+          saved={selectedSaved}
+          saving={detailSaving}
+          onAnalyze={() => void analyzeListing(selected.CodigoExterno)}
+          onSave={() => {
+            setDetailSaving(true);
+            void saveOpportunity(selected.CodigoExterno).finally(() => setDetailSaving(false));
+          }}
+          analysis={analysis}
+          analysisLoading={analysisLoading}
+          onClose={closeDetail}
+        />
+      )}
+    </div>
+  );
+}
+
 export default App;
