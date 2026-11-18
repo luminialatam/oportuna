@@ -77,10 +77,16 @@ function requireDb(_req: express.Request, _res: express.Response, next: express.
     next(new MercadoPublicoError('MySQL no está disponible o la migración aún no se ha ejecutado.', 503));
   });
 }
-app.get('/api/health', async (_req, res) => {
+app.get('/api/health', async (req, res) => {
   let mysqlOk = false;
-  try { await pool.query('SELECT 1'); mysqlOk = true; } catch (error) { logMysqlFailure('health_check', error); }
-  res.json({ ok: true, apiConfigured: Boolean(process.env.MERCADOPUBLICO_TICKET?.trim()), mysql: mysqlOk });
+  let mysqlFailureCode: ReturnType<typeof logMysqlFailure> | undefined;
+  try { await pool.query('SELECT 1'); mysqlOk = true; } catch (error) { mysqlFailureCode = logMysqlFailure('health_check', error); }
+  const payload = { ok: true, apiConfigured: Boolean(process.env.MERCADOPUBLICO_TICKET?.trim()), mysql: mysqlOk };
+  if (req.query.diagnostics === '1') {
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ...payload, mysqlCode: mysqlFailureCode ?? null });
+  }
+  return res.json(payload);
 });
 app.get('/api/auth/email-mode',(_req,res)=>res.set('Cache-Control','no-store').json({localPreview:localMailPreviewEnabled(),mode:emailMode()}));
 app.post('/api/platform/email/smtp-check',requireDb,requireAuth,requireCsrf,requirePlatformAdmin,requestLimit(3,60*60_000,'smtp-check'),async(_req,res)=>{

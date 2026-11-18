@@ -108,6 +108,15 @@ try {
   assert.equal(health.ok, true);
   assert.equal(health.apiConfigured, true);
   assert.equal(health.mysql, false, 'isolated smoke test must not connect to a real database');
+  assert.deepEqual(Object.keys(health).sort(), ['apiConfigured', 'mysql', 'ok'], 'default public health response must remain unchanged');
+
+  const diagnosticResponse = await fetchReady(`${base}/api/health?diagnostics=1`, { headers: secureHeaders });
+  assert.equal(diagnosticResponse.status, 200);
+  const diagnosticBody = await diagnosticResponse.text();
+  const diagnosticHealth = JSON.parse(diagnosticBody);
+  assert.equal(diagnosticHealth.mysql, false);
+  assert.equal(diagnosticHealth.mysqlCode, 'DB_CONNECTION_REFUSED', 'opt-in health diagnostics must expose only the sanitized MySQL code');
+  assert.deepEqual(Object.keys(diagnosticHealth).sort(), ['apiConfigured', 'mysql', 'mysqlCode', 'ok']);
   for (let attempt = 0; attempt < 20 && !output.includes('[db] health_check_failed code='); attempt += 1) {
     await delay(25);
   }
@@ -115,8 +124,8 @@ try {
   for (const privateValue of [childEnv.DB_PASSWORD, childEnv.MERCADOPUBLICO_TICKET, childEnv.SYNC_API_TOKEN]) {
     assert.equal(output.includes(privateValue), false, 'database diagnostics must not log secrets');
     assert.equal(healthBody.includes(privateValue), false, 'health response must not expose secrets');
+    assert.equal(diagnosticBody.includes(privateValue), false, 'health diagnostic response must not expose secrets');
   }
-  assert.deepEqual(Object.keys(health).sort(), ['apiConfigured', 'mysql', 'ok'], 'health response remains limited to its public status fields');
   assert.match(output, /API Oportuna escuchando en 0\.0\.0\.0:/, 'production Railpack must bind all interfaces');
   console.log('PASS Railpack runtime: npm start, Linux-compatible Argon2id, 0.0.0.0/PORT, SPA assets and API health (isolated DB unavailable as expected).');
 } finally {
