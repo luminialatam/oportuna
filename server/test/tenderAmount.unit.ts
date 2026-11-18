@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import { officialAmountWrite, parseTenderAmount, tenderAmountStatus } from '../src/tenderAmount.js';
 import { listingAmountDisplay } from '../../src/listingAmountDisplay.js';
 

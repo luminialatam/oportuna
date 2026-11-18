@@ -51,8 +51,29 @@ jobs:
       - name: Check server types
         run: npm run typecheck
 
-      - name: Run deterministic tests
-        run: npm run test:ci
+      - name: Run deterministic tests with per-test timeout
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test_name in \
+            test:script-targets \
+            test:runtime \
+            test:mysql-diagnostics \
+            test:sharkasp-runtime-config \
+            test:matching \
+            test:search-relevance \
+            test:chilean-rut \
+            test:listing-status \
+            test:email-service \
+            test:enrichment-evidence \
+            test:mp-transport \
+            test:tender-amounts \
+            test:sharkasp-smoke
+          do
+            echo "::group::npm run $test_name"
+            timeout --signal=TERM --kill-after=10s 45s npm run "$test_name"
+            echo "::endgroup::"
+          done
 
       - name: Prepare isolated email integration schema
         env:

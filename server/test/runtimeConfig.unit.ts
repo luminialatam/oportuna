@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { loadRuntimeConfig } from '../src/runtimeConfig.js';
-import { MemoryRateLimitStore } from '../src/rateLimitStore.js';
+import { MemoryRateLimitStore } from '../src/memoryRateLimitStore.js';
 
 const local = loadRuntimeConfig({ APP_ENV: 'development', PORT: '4000' } as NodeJS.ProcessEnv);
 assert.equal(local.host, '127.0.0.1');
