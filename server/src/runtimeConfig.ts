@@ -39,8 +39,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   // must bind all interfaces. IIS httpPlatformHandler connects through loopback.
   const host = env.HOST?.trim() || (appEnv === 'development' || env.HTTP_PLATFORM_PORT ? '127.0.0.1' : '0.0.0.0');
   const dbSslMode = (env.DB_SSL_MODE?.trim().toUpperCase() || 'VERIFY_IDENTITY');
-  if (dbSslMode !== 'VERIFY_IDENTITY' && dbSslMode !== 'VERIFY_CA' && dbSslMode !== 'SHARKASP_STAGING_COMPAT') {
-    throw new Error('DB_SSL_MODE debe ser VERIFY_IDENTITY, VERIFY_CA o SHARKASP_STAGING_COMPAT.');
+  if (dbSslMode !== 'VERIFY_IDENTITY' && dbSslMode !== 'VERIFY_CA' && dbSslMode !== 'SHARKASP_STAGING_COMPAT' && dbSslMode !== 'SHARKASP_INTERNAL_TRUST') {
+    throw new Error('DB_SSL_MODE debe ser VERIFY_IDENTITY, VERIFY_CA, SHARKASP_STAGING_COMPAT o SHARKASP_INTERNAL_TRUST.');
   }
   if (Boolean(env.DB_SSL_CA?.trim()) !== Boolean(env.DB_SSL_CA_SHA256?.trim())) {
     throw new Error('DB_SSL_CA y DB_SSL_CA_SHA256 deben configurarse juntos.');
@@ -48,8 +48,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   if (dbSslMode === 'VERIFY_CA' && (!env.DB_SSL_CA?.trim() || !env.DB_SSL_CA_SHA256?.trim())) {
     throw new Error('VERIFY_CA requiere el PEM de confianza y su huella SHA-256 confirmada por el proveedor.');
   }
-  if (dbSslMode === 'SHARKASP_STAGING_COMPAT') {
-    const targetIsLocked = appEnv === 'staging'
+  if (dbSslMode === 'SHARKASP_STAGING_COMPAT' || dbSslMode === 'SHARKASP_INTERNAL_TRUST') {
+    const isStaging = dbSslMode === 'SHARKASP_STAGING_COMPAT';
+    const expectedEnvironment = isStaging ? 'staging' : 'production';
+    const targetIsLocked = appEnv === expectedEnvironment
       && env.NODE_ENV === 'production'
       && processRole === 'web'
       && env.DB_HOST?.trim().toLowerCase() === 'mysql1002.site4now.net'
@@ -57,10 +59,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
       && env.DB_NAME === 'db_ac9392_licitapp'
       && env.DB_USER === 'ac9392_licitapp';
     if (!targetIsLocked || env.DB_SSL !== 'true' || env.DB_SSL_SHARKASP_COMPAT !== 'true' || env.DB_SSL_CA || env.DB_SSL_CA_SHA256) {
-      throw new Error('SHARKASP_STAGING_COMPAT solo se permite con TLS y opt-in para Liciapp staging.');
+      throw new Error(`${dbSslMode} requiere TLS y opt-in; queda limitado al servidor MySQL y rol web de Liciapp en ${expectedEnvironment}.`);
     }
   } else if (env.DB_SSL_SHARKASP_COMPAT === 'true') {
-    throw new Error('DB_SSL_SHARKASP_COMPAT solo se admite con DB_SSL_MODE=SHARKASP_STAGING_COMPAT.');
+    throw new Error('DB_SSL_SHARKASP_COMPAT requiere DB_SSL_MODE de SharkASP correspondiente.');
   }
   if (appEnv !== 'development') {
     const required = ['CLIENT_ORIGIN', 'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'MERCADOPUBLICO_TICKET', 'SYNC_API_TOKEN'];

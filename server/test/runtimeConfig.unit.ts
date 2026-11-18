@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { loadRuntimeConfig } from '../src/runtimeConfig.js';
+import { createMysqlTlsOptions } from '../src/mysqlTlsConfig.js';
 import { MemoryRateLimitStore } from '../src/memoryRateLimitStore.js';
 
 const local = loadRuntimeConfig({ APP_ENV: 'development', PORT: '4000' } as NodeJS.ProcessEnv);
@@ -14,6 +15,23 @@ const iisHost = loadRuntimeConfig({ APP_ENV: 'production', NODE_ENV: 'production
   DB_NAME: 'qa', DB_SSL: 'true', MERCADOPUBLICO_TICKET: 'qa-only', SYNC_API_TOKEN: 'x'.repeat(32),
 } as NodeJS.ProcessEnv);
 assert.equal(iisHost.host, '127.0.0.1');
+
+const sharkAspProductionTls = {
+  APP_ENV: 'production', NODE_ENV: 'production', PROCESS_ROLE: 'web', PORT: '4000',
+  CLIENT_ORIGIN: 'https://tailflow.pro', TRUST_PROXY_HOPS: '1',
+  DB_HOST: 'mysql1002.site4now.net', DB_PORT: '3306', DB_USER: 'ac9392_licitapp',
+  DB_PASSWORD: 'qa-only', DB_NAME: 'db_ac9392_licitapp', DB_SSL: 'true',
+  DB_SSL_MODE: 'SHARKASP_INTERNAL_TRUST', DB_SSL_SHARKASP_COMPAT: 'true',
+  MERCADOPUBLICO_TICKET: 'qa-only', SYNC_API_TOKEN: 'x'.repeat(32),
+} as NodeJS.ProcessEnv;
+assert.equal(loadRuntimeConfig(sharkAspProductionTls).appEnv, 'production');
+assert.deepEqual(createMysqlTlsOptions(sharkAspProductionTls), { rejectUnauthorized: false, verifyIdentity: false });
+assert.throws(() => loadRuntimeConfig({
+  ...sharkAspProductionTls, DB_HOST: 'other.example',
+} as NodeJS.ProcessEnv), /limitado al servidor MySQL/);
+assert.throws(() => createMysqlTlsOptions({
+  ...sharkAspProductionTls, DB_NAME: 'other',
+} as NodeJS.ProcessEnv), /limitado al host, esquema, usuario/);
 
 assert.throws(() => loadRuntimeConfig({ APP_ENV: 'production' } as NodeJS.ProcessEnv), /Faltan variables obligatorias/);
 assert.throws(() => loadRuntimeConfig({ APP_ENV: 'development', CLIENT_ORIGIN: '*' } as NodeJS.ProcessEnv), /no se admite/);
