@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 
-console.log('tender amount test: starting');
-const { officialAmountWrite, parseTenderAmount, tenderAmountStatus } = await import('../src/tenderAmount.js');
-console.log('tender amount test: source helpers loaded');
-const { listingAmountDisplay } = await import('../../src/listingAmountDisplay.js');
-console.log('tender amount test: display helper loaded');
+import { officialAmountWrite, parseTenderAmount, tenderAmountStatus } from '../src/tenderAmount.js';
+import { listingAmountDisplay } from '../../src/listingAmountDisplay.js';
 
 const published = { MontoEstimado: '19000000', VisibilidadMonto: 1 };
 assert.equal(parseTenderAmount(published.MontoEstimado), 19_000_000);
