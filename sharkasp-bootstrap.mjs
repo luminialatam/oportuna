@@ -15,7 +15,6 @@ const privateVariableNames = [
   'SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_FROM',
   'SMTP_HELO_NAME', 'SMTP_TIMEOUT_MS',
 ];
-const requiredPrivateVariables = ['DB_PASSWORD', 'MERCADOPUBLICO_TICKET', 'SYNC_API_TOKEN'];
 const allowedPrivateVariables = new Set(privateVariableNames);
 
 function isInside(candidate, parent) {
@@ -86,7 +85,7 @@ process.env.HOST = '127.0.0.1';
 process.env.DOTENV_CONFIG_PATH = join(appRoot, '.oportuna-dotenv-disabled');
 const privateSecrets = loadPrivateSecrets();
 if (privateSecrets.error) diagnostic('PRIVATE_CONFIG_INVALID', privateSecrets.error);
-process.stdout.write(`[oportuna-iis-startup] phase=secrets source=${privateSecrets.source}.\\n`);
+process.stdout.write(`[oportuna-iis-startup] phase=secrets source=${privateSecrets.source}.\n`);
 process.stdout.write(`[oportuna-iis-startup] phase=preflight node=${process.versions.node}; host=win32/x64; port_source=${portSource}; port=valid; bind=loopback; build=present.\n`);
 
 try {
