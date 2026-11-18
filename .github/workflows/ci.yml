@@ -60,6 +60,7 @@ jobs:
             test:runtime \
             test:mysql-diagnostics \
             test:sharkasp-runtime-config \
+            test:sharkasp-artifact \
             test:matching \
             test:search-relevance \
             test:chilean-rut \
@@ -142,8 +143,8 @@ jobs:
         run: |
           site="$RUNNER_TEMP/oportuna-iis-linux-artifact"
           mkdir -p "$site"
-          cp -R dist dist-server node_modules package.json sharkasp-bootstrap.mjs "$site/"
-          cp web.config "$site/web.config"
+          cp -R dist dist-server node_modules package.json package-lock.json sharkasp-bootstrap.mjs web.config index.html "$site/"
+          node scripts/prepareSharkaspDeployRoot.mjs "$site"
           cmp web.config deploy/sharkasp/web.config.production.template
           python3 scripts/validateSharkaspWebConfig.py "$site/web.config"
           python3 server/test/sharkaspWebConfig.unit.py
@@ -200,6 +201,12 @@ jobs:
           if ($port.value -ne '%HTTP_PLATFORM_PORT%' -or $hostVariable.value -ne '127.0.0.1' -or $nodeEnv.value -ne 'production') { throw 'web.config does not pass the dynamic port, loopback bind, and production environment expected by IIS.' }
           if ($null -ne $config.configuration.'system.webServer'.rewrite) { throw 'web.config contains rewrite rules that could bypass Node routing.' }
           if (-not (Test-Path -LiteralPath (Join-Path $site 'sharkasp-bootstrap.mjs') -PathType Leaf)) { throw 'Configured bootstrap is absent from the downloaded artifact.' }
+          $index = Get-Content -Raw (Join-Path $site 'index.html')
+          if ($index -match '/src/main\.tsx|@vite/client') { throw 'Root index.html is Vite source, not the compiled dist artifact.' }
+          $assets = [regex]::Matches($index, '(?:src|href)="(/assets/[^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+          if (-not ($assets | Where-Object { $_ -match '^/assets/index-[A-Za-z0-9_-]+\.js$' })) { throw 'Root index.html is missing the hashed JavaScript bundle.' }
+          if (-not ($assets | Where-Object { $_ -match '^/assets/index-[A-Za-z0-9_-]+\.css$' })) { throw 'Root index.html is missing the hashed CSS bundle.' }
+          foreach ($asset in $assets) { if (-not (Test-Path -LiteralPath (Join-Path $site $asset.TrimStart('/')) -PathType Leaf)) { throw "Root index.html references a missing asset: $asset" } }
           "APPLICATION_ROOT=$site" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Output 'PASS downloaded artifact web.config and HttpPlatformHandler contract.'
 

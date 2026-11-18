@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <system.webServer>
+        <!-- Route API and frontend requests through the Node bootstrap; do not add SPA rewrite rules here. -->
         <handlers>
             <add name="httpPlatformHandler" path="*" verb="*" modules="httpPlatformHandler" />
         </handlers>
