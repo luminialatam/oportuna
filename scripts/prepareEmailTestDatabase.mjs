@@ -20,6 +20,7 @@ try {
     '001_initial.sql',
     '009_company_profile_catalog.sql',
     '012_authentication.sql',
+    '014_company_product_commercial_types.sql',
     '015_saas_onboarding.sql',
     '016_email_verification.sql',
   ]) {
