@@ -3,7 +3,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { SslOptions } from 'mysql2';
 
-export type MysqlTlsMode = 'VERIFY_IDENTITY' | 'VERIFY_CA' | 'SHARKASP_STAGING_COMPAT';
+export type MysqlTlsMode = 'VERIFY_IDENTITY' | 'VERIFY_CA' | 'SHARKASP_STAGING_COMPAT' | 'SHARKASP_INTERNAL_TRUST';
 
 function insideDirectory(candidate: string, directory: string): boolean {
   const pathFromRoot = relative(directory, candidate);
@@ -22,12 +22,14 @@ export function createMysqlTlsOptions(env: NodeJS.ProcessEnv = process.env): Ssl
   }
 
   const mode = (env.DB_SSL_MODE?.trim().toUpperCase() || 'VERIFY_IDENTITY') as MysqlTlsMode;
-  if (!['VERIFY_IDENTITY', 'VERIFY_CA', 'SHARKASP_STAGING_COMPAT'].includes(mode)) {
-    throw new Error('DB_SSL_MODE debe ser VERIFY_IDENTITY, VERIFY_CA o SHARKASP_STAGING_COMPAT.');
+  if (!['VERIFY_IDENTITY', 'VERIFY_CA', 'SHARKASP_STAGING_COMPAT', 'SHARKASP_INTERNAL_TRUST'].includes(mode)) {
+    throw new Error('DB_SSL_MODE debe ser VERIFY_IDENTITY, VERIFY_CA, SHARKASP_STAGING_COMPAT o SHARKASP_INTERNAL_TRUST.');
   }
 
-  if (mode === 'SHARKASP_STAGING_COMPAT') {
-    const targetIsLocked = env.APP_ENV === 'staging'
+  if (mode === 'SHARKASP_STAGING_COMPAT' || mode === 'SHARKASP_INTERNAL_TRUST') {
+    const isStaging = mode === 'SHARKASP_STAGING_COMPAT';
+    const expectedEnvironment = isStaging ? 'staging' : 'production';
+    const targetIsLocked = env.APP_ENV === expectedEnvironment
       && env.NODE_ENV === 'production'
       && env.PROCESS_ROLE === 'web'
       && env.DB_HOST?.trim().toLowerCase() === 'mysql1002.site4now.net'
@@ -35,7 +37,7 @@ export function createMysqlTlsOptions(env: NodeJS.ProcessEnv = process.env): Ssl
       && env.DB_NAME === 'db_ac9392_licitapp'
       && env.DB_USER === 'ac9392_licitapp';
     if (!targetIsLocked || env.DB_SSL_SHARKASP_COMPAT !== 'true' || env.DB_SSL_CA || env.DB_SSL_CA_SHA256) {
-      throw new Error('SHARKASP_STAGING_COMPAT requiere opt-in y queda limitado al host, esquema, usuario y rol web de staging de Liciapp.');
+      throw new Error(`${mode} requiere opt-in y queda limitado al host, esquema, usuario, entorno y rol web de Liciapp.`);
     }
     return { rejectUnauthorized: false, verifyIdentity: false };
   }
