@@ -12,7 +12,7 @@ import {
   Shield,
   User,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 
 export type AuthResult = {
   authenticated: true;

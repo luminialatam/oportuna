@@ -34,7 +34,7 @@ import { CompanyTeamManagement, NoCompanyOnboarding } from './Onboarding';
 import { MarketAnalytics } from './MarketAnalytics';
 import { SandboxCenter } from './SandboxCenter';
 import { ProfilePage, SecurityPage } from './AccountSettings';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 
 type Listing = {
   codigo_externo: string;
