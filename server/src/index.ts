@@ -24,6 +24,7 @@ import { appBaseUrl, emailMode, getLocalMail, localMailPreviewEnabled, logSmtpFa
 import { listCompanyAccessRequests, registerCompanyForCurrentUser, requestCompanyAccess, reviewCompanyAccessRequest } from './onboardingService.js';
 import { normalizeChileanRut } from './chileanRut.js';
 import { logMysqlFailure } from './mysqlDiagnostics.js';
+import { runSmtpStartupProbeOnce } from './smtpStartupProbe.js';
 
 const app = express();
 const runtime = loadRuntimeConfig();
@@ -326,6 +327,7 @@ if (runtime.processRole.endsWith('-worker')) {
 } else {
   const server = app.listen(runtime.port, runtime.host, () => {
     console.log(`API Oportuna escuchando en ${runtime.host}:${runtime.port} (${runtime.appEnv}, rol=${runtime.processRole})`);
+    runSmtpStartupProbeOnce();
     if (runtime.processRole === 'all') {
       void initializeWorker().catch((error) => console.error(`[worker] inicio fallido; tipo=${error instanceof Error ? error.name : 'error'}`));
     }
