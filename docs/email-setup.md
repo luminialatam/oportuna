@@ -26,6 +26,14 @@ El modo simulado solo está disponible en `APP_ENV=development`. Un entorno `pro
 
 El endpoint administrativo `POST /api/platform/email/smtp-check` requiere sesión, CSRF y rol administrador de plataforma. Abre una conexión TLS, ejecuta EHLO y autenticación SMTP y cierra la sesión sin enviar un correo. Devuelve solo `SMTP_AUTHENTICATED` o un código de fallo sanitizado; no devuelve ni registra configuración, credenciales, direcciones ni tokens. Una comprobación exitosa valida la conexión/autenticación, pero no prueba que un mensaje llegue a la bandeja del usuario. No ejecutar este chequeo desde una ruta pública.
 
+### Comprobación puntual al iniciar en producción
+
+Para una comprobación única cuando ninguna persona administradora puede iniciar sesión, configura temporalmente `SMTP_STARTUP_PROBE_ONCE=true` en las variables de entorno del proceso Node de este sitio (no en `secrets.json`: el bootstrap solo permite allí las claves privadas enumeradas). Al iniciar, después de que el servidor HTTP ya está escuchando, Oportuna llama una vez a `probeSmtp()` con la misma configuración que usa el envío normal. La comprobación se ejecuta en segundo plano, autentica y cierra la conexión sin enviar correo; un fallo no impide que la aplicación arranque.
+
+Busca exactamente uno de estos registros: `[email] startup_smtp_probe result=success` o `[email] startup_smtp_probe result=failed code=SMTP_…`. No incluyen host, puerto, usuario, remitente, respuesta SMTP cruda ni secretos. Después de obtener el resultado, quita `SMTP_STARTUP_PROBE_ONCE` o configúralo como `false` en el entorno del proceso para que un reinicio futuro no vuelva a ejecutar la comprobación. Si el panel requiere reiniciar el proceso para aplicar el cambio, reinicia solo la aplicación Node de este sitio, nunca el pool compartido.
+
+Esta comprobación confirma únicamente conexión y autenticación SMTP. No envía un mensaje y no prueba la aceptación de un mensaje por el relay ni su llegada al buzón. No la confundas con la prueba de reenvío de verificación.
+
 Si falla SMTP durante el registro, Oportuna conserva la cuenta pendiente, inicia una sesión y muestra que no se confirmó el envío. La persona puede entrar con la contraseña que eligió y usar **Reenviar enlace**; el reenvío rota el token anterior incluso si el nuevo envío falla. Repetir el registro no crea duplicados y ofrece iniciar sesión si ya se había comenzado.
 
 Un fallo al enviar invitación no acepta la invitación ni crea la membresía. Recuperación de contraseña conserva una respuesta pública neutral para cuentas existentes y no existentes. La interfaz informa que recibió la solicitud y condiciona la llegada del enlace a que la cuenta exista y el correo funcione; el servidor registra el código SMTP solo si intentó el envío. Los tokens siguen limitados por sus vencimientos y uso único existentes.
