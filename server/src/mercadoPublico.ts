@@ -9,14 +9,18 @@ export class MercadoPublicoError extends Error {
 function extractListings(data: unknown): ApiListing[] {
   if (!data || typeof data !== 'object') throw new MercadoPublicoError('La API devolvió una respuesta inválida.');
   const response = data as Record<string, any>;
-  if (response.Codigo === 1 || response.Codigo === '1') {
+  if (response.Codigo != null && String(response.Codigo) !== '0') {
     const message = String(response.Mensaje ?? 'Mercado Público informó un error.');
     const auth = /ticket|autentic|credencial|permiso/i.test(message);
     throw new MercadoPublicoError(auth ? 'Mercado Público rechazó la autenticación; revisa la configuración del servidor.' : 'Mercado Público informó un error en la consulta.', auth ? 401 : 502, auth);
   }
   const container = response.Licitaciones && typeof response.Licitaciones === 'object' ? response.Licitaciones : response;
   const list = container.Listado;
-  if (list == null) return [];
+  if (list == null) {
+    const count = Number(container.Cantidad);
+    if (Number.isFinite(count) && count === 0) return [];
+    throw new MercadoPublicoError('Mercado Público devolvió una respuesta sin el listado esperado.', 502, true);
+  }
   if (Array.isArray(list)) return list;
   if (typeof list === 'object') return [list as ApiListing];
   throw new MercadoPublicoError('El listado recibido no tiene el formato esperado.');
@@ -67,7 +71,21 @@ async function execute(params: Record<string, string>): Promise<ApiListing[]> {
     if (response?.ok) {
       let data: unknown;
       try { data = await response.json(); } catch { throw new MercadoPublicoError('Mercado Público devolvió contenido que no es JSON.'); }
-      return extractListings(data);
+      const listings = extractListings(data);
+      if (listings.length === 0) {
+        const envelope = data as Record<string, any>;
+        const container = envelope.Licitaciones && typeof envelope.Licitaciones === 'object' ? envelope.Licitaciones : envelope;
+        const queryType = params.fecha ? 'date' : params.estado === 'activas' ? 'active' : 'code';
+        const fields = Object.keys(container).filter((key) => /^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(key)).slice(0, 12);
+        const count = Number(container.Cantidad);
+        console.info(`[mercado-publico] empty_result ${JSON.stringify({
+          queryType, fecha: params.fecha ?? null, codigo: envelope.Codigo ?? null,
+          cantidad: Number.isFinite(count) ? count : null,
+          version: typeof container.Version === 'string' ? container.Version.slice(0, 24) : null,
+          fields,
+        })}`);
+      }
+      return listings;
     }
     const status = response?.status;
     if (status === 401 || status === 403 || (status != null && status >= 400 && status < 500 && status !== 408 && status !== 429)) {
