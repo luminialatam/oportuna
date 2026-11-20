@@ -26,11 +26,14 @@ async function main() {
   const rootAssets = join(siteRoot, 'assets');
   const webConfigPath = join(siteRoot, 'web.config');
   const bootstrapPath = join(siteRoot, 'sharkasp-bootstrap.mjs');
+  const runtimeConfigSource = join(siteRoot, 'deploy', 'sharkasp', 'sharkasp-runtime-config.mjs');
+  const runtimeConfigTarget = join(siteRoot, 'sharkasp-runtime-config.mjs');
 
   await requireFile(distIndex, 'dist/index.html compilado');
   await requireFile(join(siteRoot, 'dist-server', 'server', 'src', 'index.js'), 'servidor Node compilado');
   await requireFile(join(siteRoot, 'package.json'), 'package.json');
   await requireFile(bootstrapPath, 'sharkasp-bootstrap.mjs en la raíz');
+  await requireFile(runtimeConfigSource, 'configuración de runtime SharkASP');
   await requireFile(webConfigPath, 'web.config en la raíz');
 
   const webConfig = await readFile(webConfigPath, 'utf8');
@@ -43,6 +46,7 @@ async function main() {
   assert.doesNotMatch(webConfig, /<rewrite\b/i, 'web.config no debe interceptar API ni SPA mediante reglas rewrite.');
 
   await mkdir(rootAssets, { recursive: true });
+  await cp(runtimeConfigSource, runtimeConfigTarget);
   await cp(distIndex, rootIndex);
   await cp(distAssets, rootAssets, { recursive: true, force: true });
 
