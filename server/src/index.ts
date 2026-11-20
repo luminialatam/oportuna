@@ -18,7 +18,7 @@ import { addTrackedDate, deleteTrackedDate, deleteTrackedOpportunity, getTracked
 import { alertCounts, dismissAlert, evaluateAlerts, listAlerts, markAlertRead } from './alertService.js';
 import { startAlertScheduler } from './alertScheduler.js';
 import type { ApiListing } from './types.js';
-import { acceptInvitationForUser, changePasswordForSession, createInvitation, createPasswordReset, createSession, registerPendingUser, issueEmailVerification, issueEmailVerificationForAddress, completeEmailVerification, consumePasswordReset, getSession, login, normalizeEmail, revokeSession, rotateCsrf, setActiveCompany, updatePersonalProfile } from './authService.js';
+import { acceptInvitationForUser, changePasswordForSession, createInvitation, createPasswordReset, createSession, createUser, registerPendingUser, issueEmailVerification, issueEmailVerificationForAddress, completeEmailVerification, consumePasswordReset, getSession, login, normalizeEmail, revokeSession, rotateCsrf, setActiveCompany, updatePersonalProfile } from './authService.js';
 import { clearSessionCookies, csrfCookieName, getRequestCsrfToken, getRequestSessionToken, requireActiveCompany, requireAdministrator, requireAuth, requireCompanyRole, requireCsrf, requirePlatformAdmin, requireRequestOrigin, requireSecureTransport, requireServiceOrAdmin, requireVerifiedEmail, setSessionCookies } from './authMiddleware.js';
 import { appBaseUrl, emailMode, getLocalMail, localMailPreviewEnabled, logSmtpFailure, probeSmtp, sanitizedSmtpFailureCode, sendEmail, type MailPurpose } from './emailService.js';
 import { listCompanyAccessRequests, registerCompanyForCurrentUser, requestCompanyAccess, reviewCompanyAccessRequest } from './onboardingService.js';
@@ -100,6 +100,31 @@ app.post('/api/platform/email/smtp-check',requireDb,requireAuth,requireCsrf,requ
     const code=sanitizedSmtpFailureCode(error);
     console.error(`[email] smtp_probe_failed code=${code}`);
     return res.status(503).json({ok:false,code});
+  }
+});
+app.get('/api/platform/users',requireDb,requireAuth,requirePlatformAdmin,async(req,res,next)=>{
+  try {
+    const query=String(req.query.q??'').trim().slice(0,160);
+    const limit=Math.min(100,Math.max(1,Number(req.query.limit)||50));
+    const offset=Math.max(0,Number(req.query.offset)||0);
+    const term=`%${query}%`;
+    const where=query?`WHERE email_normalized LIKE ? OR first_name LIKE ? OR last_name LIKE ?`:'';
+    const values=query?[term,term,term]:[];
+    const [[rows],[counts]]=await Promise.all([
+      pool.query<any[]>(`SELECT id,email_normalized email,first_name firstName,last_name lastName,platform_role platformRole,status,email_verified_at emailVerifiedAt,created_at createdAt FROM app_users ${where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`,[...values,limit,offset]),
+      pool.query<any[]>(`SELECT COUNT(*) total FROM app_users ${where}`,values),
+    ]);
+    res.set('Cache-Control','no-store').json({users:rows,total:Number(counts[0]?.total??0),limit,offset});
+  } catch(error) { next(error); }
+});
+app.post('/api/platform/users',requireDb,requireAuth,requireCsrf,requirePlatformAdmin,requestLimit(10,60*60_000,'platform-user-create'),async(req,res,next)=>{
+  try {
+    const body=z.object({firstName:z.string().trim().min(1).max(100),lastName:z.string().trim().min(1).max(100),email:z.string().trim().min(3).max(320),password:z.string().min(12).max(1024),platformRole:z.enum(['user','admin']).default('user')}).strict().parse(req.body);
+    const userId=await createUser(body.email,body.password,body.platformRole,body.firstName,body.lastName);
+    res.set('Cache-Control','no-store').status(201).json({ok:true,user:{id:userId,email:normalizeEmail(body.email),firstName:body.firstName,lastName:body.lastName,platformRole:body.platformRole,status:'active',emailVerified:true}});
+  } catch(error) {
+    if((error as any)?.code==='ER_DUP_ENTRY')return res.status(409).json({error:'Ya existe una cuenta con ese correo.'});
+    next(error);
   }
 });
 app.get('/api/licitaciones', requireDb, async (req, res, next) => {

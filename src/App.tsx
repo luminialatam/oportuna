@@ -34,6 +34,7 @@ import { CompanyTeamManagement, NoCompanyOnboarding } from './Onboarding';
 import { MarketAnalytics } from './MarketAnalytics';
 import { SandboxCenter } from './SandboxCenter';
 import { ProfilePage, SecurityPage } from './AccountSettings';
+import { PlatformUsers } from './PlatformUsers';
 import { useLocation, useNavigate } from 'react-router';
 
 type Listing = {
@@ -75,6 +76,7 @@ const SECTION_PATHS: Record<string, string> = {
   Alertas: '/alertas',
   'Mi empresa': '/empresa',
   'Equipo y accesos': '/equipo',
+  'Cuentas de usuario': '/usuarios',
   Configuración: '/configuracion',
   'Mi perfil': '/perfil',
   Seguridad: '/seguridad',
@@ -559,7 +561,8 @@ function App() {
   const [alertsFilter, setAlertsFilter] = useState('all');
 
   const isAdmin = auth?.platformRole === 'admin' || auth?.role === 'admin';
-  const isCompanySetup = authState === 'authenticated' && Boolean(auth?.emailVerified) && !auth?.activeCompanyId;
+  const isPlatformAdmin = auth?.platformRole === 'admin';
+  const isCompanySetup = authState === 'authenticated' && Boolean(auth?.emailVerified) && !auth?.activeCompanyId && auth?.platformRole !== 'admin';
   const detailRouteMatch = location.pathname.match(/^\/oportunidades\/([^/]+)$/);
   const detailRouteCode = detailRouteMatch ? decodeURIComponent(detailRouteMatch[1]) : '';
 
@@ -579,18 +582,22 @@ function App() {
       if (location.pathname !== '/onboarding') navigate('/onboarding', { replace: true });
       return;
     }
+    if (auth?.platformRole === 'admin' && !auth.activeCompanyId && pendingLegacy === null) {
+      if (location.pathname !== '/usuarios') navigate('/usuarios', { replace: true });
+      return;
+    }
     if (location.pathname === '/onboarding') {
       navigate('/', { replace: true });
       return;
     }
     if (detailRouteCode) return;
     const routeSection = PATH_SECTIONS[location.pathname];
-    if (!routeSection || ((routeSection === 'Equipo y accesos' || routeSection === 'Configuración') && !isAdmin)) {
+    if (!routeSection || ((routeSection === 'Equipo y accesos' || routeSection === 'Configuración') && !isAdmin) || (routeSection === 'Cuentas de usuario' && !isPlatformAdmin)) {
       navigate('/', { replace: true });
       return;
     }
     if (section !== routeSection) setSection(routeSection);
-  }, [authState, detailRouteCode, isAdmin, isCompanySetup, location.pathname, navigate, section]);
+  }, [authState, auth?.activeCompanyId, auth?.platformRole, detailRouteCode, isAdmin, isPlatformAdmin, isCompanySetup, location.pathname, navigate, pendingLegacy, section]);
 
   // Restore server-backed sessions after reloads. A temporary backend restart must not
   // be mistaken for an anonymous session or turn a valid cookie into a blank login.
@@ -962,7 +969,7 @@ function App() {
     return <EmailVerificationGate session={auth} onAuthenticated={acceptAuth} />;
   }
 
-  if (auth?.platformRole === 'admin' && !auth.activeCompanyId) {
+  if (auth?.platformRole === 'admin' && !auth.activeCompanyId && pendingLegacy !== null) {
     return pendingLegacy === undefined ? (
       <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
         <div className="bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm flex items-center gap-3 text-sm text-[#171A24]">
@@ -975,7 +982,7 @@ function App() {
     );
   }
 
-  if (!auth?.activeCompanyId) {
+  if (!auth?.activeCompanyId && auth?.platformRole !== 'admin') {
     return <NoCompanyOnboarding session={auth!} onAuthenticated={acceptAuth} />;
   }
 
@@ -1000,6 +1007,7 @@ function App() {
       items: [
         { name: 'Mi empresa', icon: Building2 },
         ...(isAdmin ? [{ name: 'Equipo y accesos', icon: Users }] : []),
+        ...(isPlatformAdmin ? [{ name: 'Cuentas de usuario', icon: Users }] : []),
         ...(isAdmin ? [{ name: 'Configuración', icon: Settings }] : []),
       ],
     },
@@ -1849,6 +1857,10 @@ function App() {
           {/* SECTION: EQUIPO Y ACCESOS (Stitch 7 RBAC) */}
           {section === 'Equipo y accesos' && (
             <CompanyTeamManagement role={auth.role} csrfToken={auth.csrfToken} />
+          )}
+
+          {section === 'Cuentas de usuario' && isPlatformAdmin && (
+            <PlatformUsers csrfToken={auth.csrfToken} />
           )}
 
           {/* SECTION: CONFIGURACION GENERAL */}

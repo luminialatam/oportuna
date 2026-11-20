@@ -144,6 +144,8 @@ jobs:
           site="$RUNNER_TEMP/oportuna-iis-linux-artifact"
           mkdir -p "$site"
           cp -R dist dist-server node_modules package.json package-lock.json sharkasp-bootstrap.mjs web.config index.html "$site/"
+          mkdir -p "$site/deploy/sharkasp"
+          cp deploy/sharkasp/sharkasp-runtime-config.mjs "$site/deploy/sharkasp/"
           node scripts/prepareSharkaspDeployRoot.mjs "$site"
           cmp web.config deploy/sharkasp/web.config.production.template
           python3 scripts/validateSharkaspWebConfig.py "$site/web.config"

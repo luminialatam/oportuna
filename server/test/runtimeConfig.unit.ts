@@ -25,6 +25,9 @@ const sharkAspProductionTls = {
   MERCADOPUBLICO_TICKET: 'qa-only', SYNC_API_TOKEN: 'x'.repeat(32),
 } as NodeJS.ProcessEnv;
 assert.equal(loadRuntimeConfig(sharkAspProductionTls).appEnv, 'production');
+const sharkAspStagingAll = { ...sharkAspProductionTls, APP_ENV: 'staging', PROCESS_ROLE: 'all', DB_SSL_MODE: 'SHARKASP_STAGING_COMPAT', SYNC_SCHEDULER_ENABLED: 'true' } as NodeJS.ProcessEnv;
+assert.equal(loadRuntimeConfig(sharkAspStagingAll).processRole, 'all');
+assert.throws(() => loadRuntimeConfig({ ...sharkAspProductionTls, PROCESS_ROLE: 'all', DB_SSL_MODE: 'VERIFY_IDENTITY', DB_SSL_SHARKASP_COMPAT: 'false' } as NodeJS.ProcessEnv), /PROCESS_ROLE=all solo se permite en staging/);
 assert.deepEqual(createMysqlTlsOptions(sharkAspProductionTls), { rejectUnauthorized: false, verifyIdentity: false });
 assert.throws(() => loadRuntimeConfig({
   ...sharkAspProductionTls, DB_HOST: 'other.example',

@@ -69,7 +69,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     const required = ['CLIENT_ORIGIN', 'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'MERCADOPUBLICO_TICKET', 'SYNC_API_TOKEN'];
     const missing = required.filter((name) => !env[name]?.trim());
     if (missing.length) throw new Error(`Faltan variables obligatorias para ${appEnv}: ${missing.join(', ')}.`);
-    if (!env.PROCESS_ROLE || !['web', 'sync-worker', 'enrichment-worker', 'alert-worker'].includes(env.PROCESS_ROLE)) throw new Error('PROCESS_ROLE debe identificar web, sync-worker, enrichment-worker o alert-worker fuera de development.');
+    if (!env.PROCESS_ROLE || (!['web', 'sync-worker', 'enrichment-worker', 'alert-worker'].includes(env.PROCESS_ROLE) && !(appEnv === 'staging' && env.PROCESS_ROLE === 'all'))) throw new Error('PROCESS_ROLE=all solo se permite en staging; fuera de development use web, sync-worker, enrichment-worker o alert-worker.');
     if (env.NODE_ENV !== 'production') throw new Error('NODE_ENV=production es obligatorio fuera de development.');
     if (!env.CLIENT_ORIGIN!.split(',').every((origin) => origin.trim().startsWith('https://'))) {
       throw new Error('CLIENT_ORIGIN debe usar HTTPS en staging y producción.');
