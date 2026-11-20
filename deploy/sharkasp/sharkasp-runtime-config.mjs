@@ -2,7 +2,8 @@
 export const fixedEnvironment = Object.freeze({
   APP_ENV: 'staging',
   NODE_ENV: 'production',
-  PROCESS_ROLE: 'web',
+  // SharkASP runs one Node process per site; combine web and sync roles here.
+  PROCESS_ROLE: 'all',
   HOST: '127.0.0.1',
   // Canonical origin is first because emailService uses the first configured origin.
   // The provider hostname remains available for the existing staging smoke/access path.
@@ -17,7 +18,7 @@ export const fixedEnvironment = Object.freeze({
   DB_SSL_CA: '',
   DB_SSL_CA_SHA256: '',
   TRUST_PROXY_HOPS: '1',
-  SYNC_SCHEDULER_ENABLED: 'false',
+  SYNC_SCHEDULER_ENABLED: 'true',
   ENRICHMENT_WORKER_ENABLED: 'false',
   ALERT_SCHEDULER_ENABLED: 'false',
   RATE_LIMIT_SHARED: 'true',

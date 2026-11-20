@@ -171,7 +171,9 @@ async function schedulerTick(now=new Date(),startupRecovery=false){
   if(process.env.SYNC_SCHEDULER_ENABLED!=='true')return;
   const parts=santiagoParts(now);const today=santiagoDate(now);const minuteOfDay=Number(parts.hour)*60+Number(parts.minute);
   if(!startupRecovery&&!isDailySchedulerDue(now))return;
-  const targetDate=startupRecovery&&minuteOfDay<480?addDays(today,-1):today;
+  // Recover the current date at startup so a fresh/empty production database
+  // receives active listings immediately instead of waiting for the next 08:00 tick.
+  const targetDate=today;
   const connection=await pool.getConnection();let locked=false;
   try{
     const [locks]=await connection.query<any[]>("SELECT GET_LOCK('oportuna_sync_scheduler',0) acquired");locked=Number(locks[0]?.acquired)===1;if(!locked)return;
@@ -184,7 +186,7 @@ async function schedulerTick(now=new Date(),startupRecovery=false){
     if(active.length||failedToday.length)return;
     const lastDate=latest[0]?.lastDate?String(latest[0].lastDate):null;
     let plan=dailySyncPlan(now,lastDate,DAILY_CATCHUP_MAX_DAYS,targetDate);
-    let includeDates=true;let refreshActive=Boolean(plan?.refreshActive)&&!(startupRecovery&&minuteOfDay<480);
+    let includeDates=true;let refreshActive=Boolean(plan?.refreshActive);
     if(!plan&&targetDate===today&&lastDate&&lastDate>=today&&activeRefresh[0]?.lastDate!==today){plan={dateFrom:today,dateTo:today,totalPendingDays:0,refreshActive:true};includeDates=false;refreshActive=true;}
     if(!plan)return;
     const id=await startJob(plan.dateFrom,plan.dateTo,'diaria',false,refreshActive,includeDates);
