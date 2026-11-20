@@ -12,6 +12,8 @@ try {
   await cp(join(root, 'dist-server'), join(site, 'dist-server'), { recursive: true });
   await cp(join(root, 'web.config'), join(site, 'web.config'));
   await cp(join(root, 'sharkasp-bootstrap.mjs'), join(site, 'sharkasp-bootstrap.mjs'));
+  await mkdir(join(site, 'deploy', 'sharkasp'), { recursive: true });
+  await cp(join(root, 'deploy', 'sharkasp', 'sharkasp-runtime-config.mjs'), join(site, 'deploy', 'sharkasp', 'sharkasp-runtime-config.mjs'));
   await cp(join(root, 'package.json'), join(site, 'package.json'));
   await writeFile(join(site, 'index.html'), '<script type="module" src="/src/main.tsx"></script>\n');
   await mkdir(join(site, 'assets'));
@@ -30,6 +32,7 @@ try {
   assert.match(config, /arguments="sharkasp-bootstrap\.mjs"/);
   assert.match(config, /value="%HTTP_PLATFORM_PORT%"/);
   assert.doesNotMatch(config, /<rewrite\b/i);
+  assert.match(await readFile(join(site, 'sharkasp-runtime-config.mjs'), 'utf8'), /PROCESS_ROLE:\s*'all'/);
   console.log('PASS SharkASP deploy artifact: root index is the hashed dist build; referenced assets exist; IIS routes all requests to the dynamic-port Node bootstrap.');
 } finally {
   await rm(site, { recursive: true, force: true });
