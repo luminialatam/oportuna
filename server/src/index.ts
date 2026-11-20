@@ -39,7 +39,7 @@ const frontendDirectory = [
   join(backendDirectory, '../../dist'),
   join(backendDirectory, '../../../dist'),
 ].find((candidate) => existsSync(join(candidate, 'index.html'))) ?? join(process.cwd(), 'dist');
-if (runtime.appEnv !== 'development' && runtime.processRole === 'web') {
+if (runtime.appEnv !== 'development' && ['web', 'all'].includes(runtime.processRole)) {
   if (!existsSync(join(frontendDirectory, 'index.html'))) {
     throw new Error('No existe el frontend compilado en dist/index.html; ejecuta el build antes de iniciar el rol web.');
   }
@@ -289,7 +289,7 @@ app.get('/api/configuracion', requireDb, async (_req, res, next) => {
     res.json({ apiConfigurada: Boolean(process.env.MERCADOPUBLICO_TICKET?.trim()), ultimoResultado: lastRun[0] ?? null, totalImportado: Number(count[0].total), ultimaFechaExitosa:latestSuccess[0]?.ultimaFechaExitosa??null,fechaMasReciente:latestSuccess[0]?.fechaMasReciente??null, schedulerEnabled:dailySync.enabled,schedulerTime:'08:00',schedulerTimezone:'America/Santiago',dailySync,procesoActivo:activeJob[0]??null,enrichment,enrichmentPilot });
   } catch (error) { next(error); }
 });
-if (runtime.appEnv !== 'development' && runtime.processRole === 'web') {
+if (runtime.appEnv !== 'development' && ['web', 'all'].includes(runtime.processRole)) {
   app.get('*', (req, res, next) => {
     if (req.path === '/api' || req.path.startsWith('/api/')) return next();
     res.sendFile(join(frontendDirectory, 'index.html'));

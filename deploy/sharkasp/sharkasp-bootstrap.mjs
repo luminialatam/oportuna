@@ -90,7 +90,7 @@ function summarize() {
 
   process.stdout.write(`[sharkasp-bootstrap] node=${process.versions.node}; host=${process.platform}/${process.arch}${hostPlatformOk || simulateIis ? '' : ' (no es Windows x64)'}\n`);
   process.stdout.write(`[sharkasp-bootstrap] entrypoint=${existsSync(entrypoint) ? 'present' : 'MISSING'}; port_source=${portSource}; port=${portValue ? 'valid' : 'MISSING'}\n`);
-  process.stdout.write('[sharkasp-bootstrap] config: APP_ENV=staging; NODE_ENV=production; PROCESS_ROLE=web; DB_SSL=true; DB_SSL_MODE=SHARKASP_STAGING_COMPAT; DB_TARGET=locked; TRUST_PROXY_HOPS=1\n');
+  process.stdout.write(`[sharkasp-bootstrap] config: APP_ENV=${process.env.APP_ENV}; NODE_ENV=${process.env.NODE_ENV}; PROCESS_ROLE=${process.env.PROCESS_ROLE}; DB_SSL=true; DB_SSL_MODE=SHARKASP_STAGING_COMPAT; DB_TARGET=locked; TRUST_PROXY_HOPS=1\n`);
   process.stdout.write(`[sharkasp-bootstrap] workers: sync=${process.env.SYNC_SCHEDULER_ENABLED}; enrichment=${process.env.ENRICHMENT_WORKER_ENABLED}; alerts=${process.env.ALERT_SCHEDULER_ENABLED}\n`);
   process.stdout.write(`[sharkasp-bootstrap] private vars: ${requiredPrivateVariables.map((name) => `${name}=${process.env[name]?.trim() ? 'present' : 'MISSING'}`).join('; ')}; GROQ_API_KEY=${process.env.GROQ_API_KEY?.trim() ? 'present (optional)' : 'missing (optional)'}\n`);
   process.stdout.write(`[sharkasp-bootstrap] secrets_file=readable; outside_web_root=true; ACL=not-verifiable-by-Node\n`);

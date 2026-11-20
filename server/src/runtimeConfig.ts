@@ -51,9 +51,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   if (dbSslMode === 'SHARKASP_STAGING_COMPAT' || dbSslMode === 'SHARKASP_INTERNAL_TRUST') {
     const isStaging = dbSslMode === 'SHARKASP_STAGING_COMPAT';
     const expectedEnvironment = isStaging ? 'staging' : 'production';
+    const allowedProcessRole = isStaging ? ['web', 'all'].includes(processRole) : processRole === 'web';
     const targetIsLocked = appEnv === expectedEnvironment
       && env.NODE_ENV === 'production'
-      && processRole === 'web'
+      && allowedProcessRole
       && env.DB_HOST?.trim().toLowerCase() === 'mysql1002.site4now.net'
       && Number(env.DB_PORT || 3306) === 3306
       && env.DB_NAME === 'db_ac9392_licitapp'
@@ -78,7 +79,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     }
     if (!truthy(env.DB_SSL)) throw new Error('DB_SSL=true es obligatorio en staging y producción.');
     if (env.SYNC_API_TOKEN!.trim().length < 32) throw new Error('SYNC_API_TOKEN debe tener al menos 32 caracteres.');
-    if (truthy(env.SYNC_SCHEDULER_ENABLED) && processRole !== 'sync-worker') throw new Error('SYNC_SCHEDULER_ENABLED solo puede activarse en PROCESS_ROLE=sync-worker.');
+    if (truthy(env.SYNC_SCHEDULER_ENABLED) && !['sync-worker', 'all'].includes(processRole)) throw new Error('SYNC_SCHEDULER_ENABLED solo puede activarse en PROCESS_ROLE=sync-worker o all.');
     if (truthy(env.ENRICHMENT_WORKER_ENABLED) && processRole !== 'enrichment-worker') throw new Error('ENRICHMENT_WORKER_ENABLED solo puede activarse en PROCESS_ROLE=enrichment-worker.');
     if (truthy(env.ALERT_SCHEDULER_ENABLED) && processRole !== 'alert-worker') throw new Error('ALERT_SCHEDULER_ENABLED solo puede activarse en PROCESS_ROLE=alert-worker.');
   }

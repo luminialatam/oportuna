@@ -31,13 +31,13 @@ export function createMysqlTlsOptions(env: NodeJS.ProcessEnv = process.env): Ssl
     const expectedEnvironment = isStaging ? 'staging' : 'production';
     const targetIsLocked = env.APP_ENV === expectedEnvironment
       && env.NODE_ENV === 'production'
-      && env.PROCESS_ROLE === 'web'
+      && (isStaging ? ['web', 'all'].includes(env.PROCESS_ROLE ?? '') : env.PROCESS_ROLE === 'web')
       && env.DB_HOST?.trim().toLowerCase() === 'mysql1002.site4now.net'
       && Number(env.DB_PORT || 3306) === 3306
       && env.DB_NAME === 'db_ac9392_licitapp'
       && env.DB_USER === 'ac9392_licitapp';
     if (!targetIsLocked || env.DB_SSL_SHARKASP_COMPAT !== 'true' || env.DB_SSL_CA || env.DB_SSL_CA_SHA256) {
-      throw new Error(`${mode} requiere opt-in y queda limitado al host, esquema, usuario, entorno y rol web de Liciapp.`);
+      throw new Error(`${mode} requiere opt-in y queda limitado al host, esquema, usuario y entorno asignados a Liciapp.`);
     }
     return { rejectUnauthorized: false, verifyIdentity: false };
   }
