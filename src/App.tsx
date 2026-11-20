@@ -795,6 +795,7 @@ function App() {
           saved: false,
         })),
       ]);
+      setSelected({ ...data.listing, _source: data.source, _detailError: (data as any).detailError });
       setSelectedSaved(tracking.saved);
     } catch (e) {
       setSelected({ error: e instanceof Error ? e.message : 'No se encontró el detalle local.' });
