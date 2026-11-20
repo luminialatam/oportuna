@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fixedEnvironment } from './deploy/sharkasp/sharkasp-runtime-config.mjs';
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const entrypoint = join(appRoot, 'dist-server', 'server', 'src', 'index.js');
@@ -16,31 +17,6 @@ const privateVariableNames = [
   'SMTP_HELO_NAME', 'SMTP_TIMEOUT_MS',
 ];
 const allowedPrivateVariables = new Set(privateVariableNames);
-
-// Public deployment settings for the dedicated Oportuna site. Credentials stay
-// in the private sibling file or the site's process environment.
-const fixedEnvironment = Object.freeze({
-  APP_ENV: 'production',
-  NODE_ENV: 'production',
-  PROCESS_ROLE: 'web',
-  HOST: '127.0.0.1',
-  CLIENT_ORIGIN: 'https://tailflow.pro',
-  TRUST_PROXY_HOPS: '1',
-  DB_HOST: 'mysql1002.site4now.net',
-  DB_PORT: '3306',
-  DB_NAME: 'db_ac9392_licitapp',
-  DB_USER: 'ac9392_licitapp',
-  DB_SSL: 'true',
-  DB_SSL_MODE: 'SHARKASP_INTERNAL_TRUST',
-  DB_SSL_SHARKASP_COMPAT: 'true',
-  DB_SSL_CA: '',
-  DB_SSL_CA_SHA256: '',
-  EMAIL_TRANSPORT: 'smtp',
-  SYNC_SCHEDULER_ENABLED: 'false',
-  ENRICHMENT_WORKER_ENABLED: 'false',
-  ALERT_SCHEDULER_ENABLED: 'false',
-  RATE_LIMIT_SHARED: 'true',
-});
 
 function isInside(candidate, parent) {
   const rel = relative(parent, candidate);
