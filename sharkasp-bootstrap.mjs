@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { fixedEnvironment } from './deploy/sharkasp/sharkasp-runtime-config.mjs';
+import { fixedEnvironment } from './sharkasp-runtime-config.mjs';
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const entrypoint = join(appRoot, 'dist-server', 'server', 'src', 'index.js');
