@@ -166,6 +166,14 @@ app.get('/api/licitaciones/:codigo/local',requireDb,requestLimit(120,60_000),asy
     res.json({source:'local',detailAvailable,listing});
   }catch(error){next(error);}
 });
+// Las búsquedas y sincronizaciones guardan un resumen; la ficha debe obtener el registro completo directamente de MP.
+app.get('/api/licitaciones/:codigo/oficial',requireDb,requestLimit(30,60_000,'tender-detail'),async(req,res,next)=>{
+  try{
+    const codigo=z.string().trim().min(1).max(100).parse(req.params.codigo);
+    const listing=await getByCode(codigo);
+    res.set('Cache-Control','private, max-age=60').json({source:'mercadopublico',listing});
+  }catch(error){next(error);}
+});
 app.post('/api/licitaciones/:codigo/refresh',requireDb,requireAuth,requireCsrf,requireActiveCompany,requireCompanyRole('admin'),requestLimit(12,60_000),async (req, res, next) => {
   try {
     const codigo = z.string().min(1).max(100).parse(req.params.codigo);

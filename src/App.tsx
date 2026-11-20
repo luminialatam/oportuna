@@ -265,6 +265,12 @@ function ListingDetailModal({
             </div>
           ) : (
             <>
+              {listing._source !== 'mercadopublico' && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                  No se pudo cargar el detalle oficial desde Mercado Público. Se muestran los datos resumidos guardados en Oportuna.
+                  {listing._detailError ? <span className="block mt-1 text-amber-800">{listing._detailError}</span> : null}
+                </div>
+              )}
               {tab === 'resumen' && (
             <div className="space-y-5 text-xs">
               <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA] space-y-2">
@@ -272,7 +278,7 @@ function ListingDetailModal({
                   Descripción Oficial
                 </span>
                 <p className="text-[#171A24] leading-relaxed text-xs">
-                  {listing.Descripcion || 'Sin descripción detallada informada en la ficha local.'}
+                  {listing.Descripcion || 'Mercado Público no informó una descripción para esta licitación.'}
                 </p>
               </div>
 
@@ -335,7 +341,7 @@ function ListingDetailModal({
                 ))
               ) : (
                 <div className="p-8 text-center text-[#8A92A6] border border-dashed border-[#E1E4EA] rounded-xl">
-                  Esta ficha no tiene partidas indexadas en la copia local.
+                  Mercado Público no informó partidas para esta licitación.
                 </div>
               )}
             </div>
@@ -773,12 +779,23 @@ function App() {
     setAnalysis(null);
     try {
       const [data, tracking] = await Promise.all([
-        api<{ listing: any; detailAvailable: boolean }>(`/api/licitaciones/${encodeURIComponent(code)}/local`),
+        (async () => {
+          try {
+            return await api<{ listing: any; source: string }>(`/api/licitaciones/${encodeURIComponent(code)}/oficial`);
+          } catch (officialError) {
+            const local = await api<{ listing: any; detailAvailable: boolean }>(`/api/licitaciones/${encodeURIComponent(code)}/local`);
+            return {
+              ...local,
+              source: 'local-fallback',
+              detailError: officialError instanceof Error ? officialError.message : 'Error de conexión con Mercado Público.',
+            };
+          }
+        })(),
         api<{ saved: boolean }>(`/api/company/tracking/lookup?codigo=${encodeURIComponent(code)}`).catch(() => ({
           saved: false,
         })),
       ]);
-      setSelected({ ...data.listing, _detailAvailable: data.detailAvailable });
+      setSelected({ ...data.listing, _source: data.source, _detailError: (data as any).detailError });
       setSelectedSaved(tracking.saved);
     } catch (e) {
       setSelected({ error: e instanceof Error ? e.message : 'No se encontró el detalle local.' });
