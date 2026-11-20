@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 const appRoot = resolve(process.argv[2] ?? '');
 assert.ok(process.platform === 'win32' && process.arch === 'x64', 'IIS runtime reproduction must run on Windows x64.');
 assert.ok(appRoot !== process.cwd() && existsSync(join(appRoot, 'package.json')), 'Pass the downloaded Linux-built application artifact path.');
-for (const file of ['sharkasp-bootstrap.mjs', 'dist/index.html', 'dist-server/server/src/index.js', 'node_modules/argon2/package.json', 'web.config']) {
+for (const file of ['sharkasp-bootstrap.mjs', 'sharkasp-runtime-config.mjs', 'dist/index.html', 'dist-server/server/src/index.js', 'node_modules/argon2/package.json', 'web.config']) {
   assert.ok(existsSync(join(appRoot, file)), `Deployment artifact is missing ${file}.`);
 }
 
