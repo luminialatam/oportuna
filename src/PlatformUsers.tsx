@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import { LoaderCircle, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { LoaderCircle, Search, ShieldCheck, UserPlus, Users, CreditCard } from 'lucide-react';
 
 type PlatformUser = {
   id: number;
@@ -13,6 +13,9 @@ type PlatformUser = {
 };
 
 const pageSize = 50;
+type CompanyPlanRow = { companyId: number; companyName: string; plan: 'crece' | 'vuela' | 'brilla'; billingPeriod: 'monthly' | 'annual'; activeUsers: number; trackedOpportunities: number };
+type PlanChangeRequest = { id: number; companyId: number; companyName: string; requestedPlan: CompanyPlanRow['plan']; billingPeriod: CompanyPlanRow['billingPeriod']; requestedAt: string; requesterFirstName: string; requesterLastName: string };
+const planLabels = { crece: 'Crece', vuela: 'Vuela', brilla: 'Brilla' } as const;
 
 export function PlatformUsers({ csrfToken }: { csrfToken: string }) {
   const [users, setUsers] = useState<PlatformUser[]>([]);
@@ -28,6 +31,11 @@ export function PlatformUsers({ csrfToken }: { csrfToken: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [platformRole, setPlatformRole] = useState<'user' | 'admin'>('user');
+  const [companies, setCompanies] = useState<CompanyPlanRow[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [planSaving, setPlanSaving] = useState<number | null>(null);
+  const [planRequests, setPlanRequests] = useState<PlanChangeRequest[]>([]);
+  const [requestAction, setRequestAction] = useState<number | null>(null);
 
   const loadUsers = useCallback(async (nextOffset = offset, search = query) => {
     setLoading(true);
@@ -49,6 +57,48 @@ export function PlatformUsers({ csrfToken }: { csrfToken: string }) {
   }, [offset, query]);
 
   useEffect(() => { void loadUsers(0, ''); }, []);
+
+  const loadPlans = useCallback(async () => {
+    setPlansLoading(true);
+    try {
+      const [response, requestResponse] = await Promise.all([
+        fetch('/api/platform/companies', { credentials: 'same-origin', cache: 'no-store' }),
+        fetch('/api/platform/plan-requests', { credentials: 'same-origin', cache: 'no-store' }),
+      ]);
+      const data = await response.json();
+      const requestData = await requestResponse.json();
+      if (!response.ok) throw new Error(data.error || 'No se pudieron cargar los planes.');
+      if (!requestResponse.ok) throw new Error(requestData.error || 'No se pudo cargar la bandeja de solicitudes.');
+      setCompanies(data.companies ?? []);
+      setPlanRequests(requestData.requests ?? []);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudieron cargar los planes.'); }
+    finally { setPlansLoading(false); }
+  }, []);
+  useEffect(() => { void loadPlans(); }, [loadPlans]);
+
+  const changePlan = async (companyId: number, plan: CompanyPlanRow['plan']) => {
+    setPlanSaving(companyId); setError(''); setNotice('');
+    try {
+      const response = await fetch(`/api/platform/companies/${companyId}/plan`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: JSON.stringify({ plan }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'No se pudo cambiar el plan.');
+      setCompanies(current => current.map(item => item.companyId === companyId ? { ...item, plan } : item));
+      setNotice(`Plan ${planLabels[plan]} activado para ${companies.find(item => item.companyId === companyId)?.companyName ?? 'la empresa'}.`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo cambiar el plan.'); }
+    finally { setPlanSaving(null); }
+  };
+
+  const reviewPlanRequest = async (id: number, decision: 'approved' | 'rejected') => {
+    setRequestAction(id); setError(''); setNotice('');
+    try {
+      const response = await fetch(`/api/platform/plan-requests/${id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: JSON.stringify({ decision }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'No se pudo resolver la solicitud.');
+      setNotice(decision === 'approved' ? 'Solicitud aprobada y plan activado.' : 'Solicitud rechazada.');
+      await loadPlans();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo resolver la solicitud.'); }
+    finally { setRequestAction(null); }
+  };
 
   const createAccount = async (event: FormEvent) => {
     event.preventDefault();
@@ -100,6 +150,16 @@ export function PlatformUsers({ csrfToken }: { csrfToken: string }) {
 
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       {notice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
+
+      <section className="overflow-hidden rounded-2xl border border-[#E1E4EA] bg-white shadow-sm">
+        <div className="border-b border-[#E1E4EA] p-4"><h2 className="font-bold text-[#171A24]">Solicitudes de cambio de plan</h2><p className="mt-1 text-xs text-[#737D91]">La aprobación aplica el plan y sus cupos inmediatamente. No procesa cobros.</p></div>
+        {plansLoading ? <div className="p-5 text-sm text-[#5D6472]">Cargando solicitudes…</div> : planRequests.length === 0 ? <div className="p-5 text-sm text-[#5D6472]">No hay solicitudes pendientes.</div> : <div className="divide-y divide-[#E9ECF1]">{planRequests.map(request => <div key={request.id} className="flex flex-wrap items-center justify-between gap-4 p-4"><div><b className="block text-sm text-[#171A24]">{request.companyName} · {planLabels[request.requestedPlan]}</b><span className="text-xs text-[#5D6472]">{request.billingPeriod === 'annual' ? 'Anual' : 'Mensual'} · Solicitó {`${request.requesterFirstName} ${request.requesterLastName}`.trim() || 'administrador de empresa'}</span><time className="block text-xs text-[#737D91]">{new Intl.DateTimeFormat('es-CL',{dateStyle:'medium',timeStyle:'short'}).format(new Date(request.requestedAt))}</time></div><div className="flex gap-2"><button type="button" disabled={requestAction !== null} onClick={() => void reviewPlanRequest(request.id,'rejected')} className="rounded-lg border border-[#DCE1EA] px-3 py-2 text-xs font-semibold text-[#5D6472] disabled:opacity-50">Rechazar</button><button type="button" disabled={requestAction !== null} onClick={() => void reviewPlanRequest(request.id,'approved')} className="rounded-lg bg-[#5636D9] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{requestAction === request.id ? 'Procesando…' : 'Aprobar'}</button></div></div>)}</div>}
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-[#E1E4EA] bg-white shadow-sm">
+        <div className="border-b border-[#E1E4EA] p-4"><div className="flex items-center gap-2"><CreditCard size={17} className="text-[#5636D9]"/><h2 className="font-bold text-[#171A24]">Planes por empresa</h2></div><p className="mt-1 text-xs text-[#737D91]">Activación manual sin cobros. Bajar de plan conserva los datos y accesos existentes; los cupos bloquean nuevas incorporaciones.</p></div>
+        {plansLoading ? <div className="p-6 text-sm text-[#5D6472]">Cargando empresas…</div> : companies.length === 0 ? <div className="p-6 text-sm text-[#5D6472]">No hay empresas registradas.</div> : <div className="divide-y divide-[#E9ECF1]">{companies.map(company => <div key={company.companyId} className="flex flex-wrap items-center justify-between gap-3 p-4"><div><b className="block text-sm text-[#171A24]">{company.companyName}</b><span className="text-xs text-[#737D91]">{company.activeUsers} usuarios activos · {company.trackedOpportunities} oportunidades en seguimiento · {company.billingPeriod === 'annual' ? 'Anual' : 'Mensual'}</span></div><label className="flex items-center gap-2 text-xs font-semibold text-[#5D6472]">Plan<select disabled={planSaving === company.companyId} value={company.plan} onChange={event => void changePlan(company.companyId, event.target.value as CompanyPlanRow['plan'])} className="h-10 rounded-lg border border-[#DCE1EA] bg-white px-3 text-sm text-[#171A24]"><option value="crece">Crece · Gratis</option><option value="vuela">Vuela · $49.900 + IVA</option><option value="brilla">Brilla · $79.900 + IVA</option></select>{planSaving === company.companyId && <LoaderCircle size={15} className="animate-spin"/>}</label></div>)}</div>}
+      </section>
 
       <section className="rounded-2xl border border-[#E1E4EA] bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2">

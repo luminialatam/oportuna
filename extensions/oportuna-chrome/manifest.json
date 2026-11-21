@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Oportuna · Mercado Público",
+  "version": "1.0.0",
+  "description": "Abre en Oportuna la ficha pública de Mercado Público que tienes activa.",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["http://127.0.0.1:5180/*", "http://localhost:5180/*"],
+  "action": { "default_title": "Abrir ficha en Oportuna", "default_popup": "popup.html" },
+  "content_scripts": [{ "matches": ["http://127.0.0.1:5180/*", "http://localhost:5180/*"], "js": ["bridge-detection.js"], "run_at": "document_start" }]
+}

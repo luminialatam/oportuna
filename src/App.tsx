@@ -6,6 +6,7 @@ import {
   Bell,
   Building2,
   Clock3,
+  CreditCard,
   Database,
   ExternalLink,
   FileSearch,
@@ -16,6 +17,7 @@ import {
   LogOut,
   MailPlus,
   Menu,
+  Puzzle,
   Search,
   Settings,
   Sparkles,
@@ -35,6 +37,9 @@ import { MarketAnalytics } from './MarketAnalytics';
 import { SandboxCenter } from './SandboxCenter';
 import { ProfilePage, SecurityPage } from './AccountSettings';
 import { PlatformUsers } from './PlatformUsers';
+import { SubscriptionPage } from './SubscriptionPage';
+import { OpportunityInbox } from './OpportunityInbox';
+import { MarketPublicoBridge } from './MarketPublicoBridge';
 import { useLocation, useNavigate } from 'react-router';
 
 type Listing = {
@@ -71,6 +76,9 @@ const SESSION_SEEN_KEY = 'oportuna.sessionSeen';
 const SECTION_PATHS: Record<string, string> = {
   Resumen: '/',
   'Buscar oportunidades': '/buscar',
+  Oportunidades: '/oportunidades',
+  'Plan y suscripción': '/suscripcion',
+  'Mercado Público': '/mercado-publico',
   'Inteligencia de mercado': '/inteligencia-mercado',
   Seguimiento: '/seguimiento',
   Alertas: '/alertas',
@@ -536,6 +544,7 @@ function App() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [companyPlan, setCompanyPlan] = useState<any>(null);
   const [config, setConfig] = useState<any>(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -604,6 +613,19 @@ function App() {
     }
     if (section !== routeSection) setSection(routeSection);
   }, [authState, auth?.activeCompanyId, auth?.platformRole, detailRouteCode, isAdmin, isPlatformAdmin, isCompanySetup, location.pathname, navigate, pendingLegacy, section]);
+
+  useEffect(() => {
+    if (authState !== 'authenticated' || !auth?.activeCompanyId) { setCompanyPlan(null); return; }
+    let active = true;
+    void api<any>('/api/company/plan').then((value) => { if (active) setCompanyPlan(value); }).catch(() => { if (active) setCompanyPlan(null); });
+    return () => { active = false; };
+  }, [authState, auth?.activeCompanyId]);
+
+  useEffect(() => {
+    if (location.pathname === '/inteligencia-mercado' && companyPlan && !companyPlan.plan?.marketAnalytics) {
+      navigate('/suscripcion', { replace: true });
+    }
+  }, [location.pathname, companyPlan, navigate]);
 
   // Restore server-backed sessions after reloads. A temporary backend restart must not
   // be mistaken for an anonymous session or turn a valid cookie into a blank login.
@@ -797,6 +819,9 @@ function App() {
       ]);
       setSelected({ ...data.listing, _source: data.source, _detailError: (data as any).detailError });
       setSelectedSaved(tracking.saved);
+      void api(`/api/company/opportunities/${encodeURIComponent(code)}/read`, { method: 'POST' })
+        .then(() => window.dispatchEvent(new Event('oportuna:refresh-opportunities')))
+        .catch(() => {});
     } catch (e) {
       setSelected({ error: e instanceof Error ? e.message : 'No se encontró el detalle local.' });
     } finally {
@@ -1009,7 +1034,8 @@ function App() {
       items: [
         { name: 'Resumen', icon: LayoutDashboard },
         { name: 'Buscar oportunidades', icon: Search },
-        { name: 'Inteligencia de mercado', icon: BarChart3 },
+        { name: 'Oportunidades', icon: Sparkles },
+        ...(companyPlan?.plan?.marketAnalytics ? [{ name: 'Inteligencia de mercado', icon: BarChart3 }] : []),
       ],
     },
     {
@@ -1130,6 +1156,9 @@ function App() {
             <button type="button" onClick={() => goToSection('Mi perfil')} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#E1E4EA] bg-white text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]">
               <UserRound size={14} /> Mi perfil
             </button>
+            <button type="button" onClick={() => goToSection('Plan y suscripción')} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#E1E4EA] bg-white text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]">
+              <CreditCard size={14} /> Plan y suscripción
+            </button>
             <button type="button" onClick={() => goToSection('Seguridad')} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#E1E4EA] bg-white text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]">
               <Shield size={14} /> Seguridad
             </button>
@@ -1199,6 +1228,8 @@ function App() {
           </form>
 
           <div className="summary-topbar-actions flex items-center gap-3 text-xs">
+            <button type="button" onClick={() => goToSection('Mercado Público')} className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E1E4EA] bg-white px-3 font-semibold text-[#5D6472] hover:border-[#5636D9] hover:text-[#5636D9]"><Puzzle size={14}/> Mercado Público</button>
+            <button type="button" onClick={() => goToSection('Plan y suscripción')} className="hidden sm:inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#5636D9] px-3 font-semibold text-white hover:bg-[#4b2ec7]"><CreditCard size={14}/> Ver planes</button>
             <button
               type="button"
               onClick={() => goToSection('Buscar oportunidades')}
@@ -1296,10 +1327,19 @@ function App() {
               </button>
               {userMenuOpen && (
                 <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-60 rounded-xl border border-[#E1E4EA] bg-white p-2 shadow-lg">
+                  <div className="px-3 pt-1 text-[10px] font-bold uppercase tracking-wider text-[#8A92A6]">Cuenta</div>
                   <div className="px-3 py-2">
                     <b className="block truncate text-xs text-[#171A24]">{greetingName}</b>
                     <span className="block truncate text-xs text-[#8A92A6]">{auth.email}</span>
                   </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => goToSection('Plan y suscripción')}
+                    className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]"
+                  >
+                    <CreditCard size={15} /> Plan y suscripción
+                  </button>
                   <button
                     type="button"
                     role="menuitem"
@@ -1341,6 +1381,9 @@ function App() {
             />
           )}
           {section === 'Seguridad' && <SecurityPage session={auth} />}
+          {section === 'Plan y suscripción' && <SubscriptionPage csrfToken={auth.csrfToken} canRequest={auth.role === 'admin'} onPlanLoaded={setCompanyPlan} />}
+          {section === 'Mercado Público' && <MarketPublicoBridge code={new URLSearchParams(location.search).get('codigo') ?? ''} csrfToken={auth.csrfToken} companyName={auth.memberships.find(membership => membership.companyId === auth.activeCompanyId)?.companyName || 'Empresa activa'} canSave={auth.role === 'admin' || auth.role === 'collaborator'} onSaved={() => goToSection('Seguimiento')} />}
+          {section === 'Oportunidades' && <OpportunityInbox csrfToken={auth.csrfToken} onOpen={(code) => void openDetail(code)} />}
 
           {section === 'Resumen' && (
             <div className="summary-page space-y-6">
