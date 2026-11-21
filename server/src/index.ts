@@ -252,7 +252,13 @@ app.post('/api/company/catalog',requireDb,requestLimit(30,60_000),async(req,res,
 app.patch('/api/company/catalog/:id',requireDb,requestLimit(60,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().positive().parse(req.params.id);const items=await saveCompanyProduct(companyProductSchema.parse(req.body),id);if(!items)return res.status(404).json({error:'No se encontró el producto en el catálogo de esta empresa.'});res.json({items});}catch(error){next(error);}});
 app.delete('/api/company/catalog/:id',requireDb,requestLimit(30,60_000),async(req,res,next)=>{try{const deleted=await deleteCompanyProduct(z.coerce.number().int().positive().parse(req.params.id));if(!deleted)return res.status(404).json({error:'No se encontró el producto en el catálogo de esta empresa.'});res.json({ok:true});}catch(error){next(error);}});
 app.post('/api/company/catalog/suggestions',requireDb,requestLimit(10,60_000),async(req,res,next)=>{try{const body=z.object({nombre:z.string().trim().min(2).max(255),categoria:nullableText(160),descripcion:nullableText(1000)}).parse(req.body);res.json(await suggestCommercialTerms(body));}catch(error){if(error instanceof Error&&error.message.startsWith('Groq'))return res.status(502).json({error:error.message});next(error);}});
-app.get('/api/company/matches',requireDb,requestLimit(30,60_000),async(_req,res,next)=>{try{res.json(await getCompanyMatches());}catch(error){next(error);}});
+app.get('/api/company/matches', requireDb, requestLimit(30, 60_000), async (req, res, next) => {
+  try {
+    res.json(await getCompanyMatches({ board: req.query.view === 'board' }));
+  } catch (error) {
+    next(error);
+  }
+});
 const trackedStateSchema=z.enum(trackingStates);
 app.get('/api/company/tracking/lookup',requireDb,requestLimit(120,60_000),async(req,res,next)=>{try{const codigo=z.string().trim().min(1).max(100).parse(req.query.codigo);res.json(await getTrackedStatus(codigo));}catch(error){next(error);}});
 app.get('/api/company/tracking',requireDb,requestLimit(60,60_000),async(req,res,next)=>{try{const estado=String(req.query.estado??'');const q=String(req.query.q??'').slice(0,120);const [items,counts]=await Promise.all([listTrackedOpportunities({estado,q}),getTrackedCounts()]);res.json({items,counts});}catch(error){next(error);}});

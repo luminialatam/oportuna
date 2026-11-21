@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   Building2,
+  CalendarDays,
   Clock3,
   Database,
   ExternalLink,
@@ -71,8 +72,10 @@ const SESSION_SEEN_KEY = 'oportuna.sessionSeen';
 const SECTION_PATHS: Record<string, string> = {
   Resumen: '/',
   'Buscar oportunidades': '/buscar',
+  Oportunidades: '/oportunidades',
   'Inteligencia de mercado': '/inteligencia-mercado',
   Seguimiento: '/seguimiento',
+  Calendario: '/calendario',
   Alertas: '/alertas',
   'Mi empresa': '/empresa',
   'Equipo y accesos': '/equipo',
@@ -1009,6 +1012,7 @@ function App() {
       items: [
         { name: 'Resumen', icon: LayoutDashboard },
         { name: 'Buscar oportunidades', icon: Search },
+        { name: 'Oportunidades', icon: Sparkles },
         { name: 'Inteligencia de mercado', icon: BarChart3 },
       ],
     },
@@ -1016,6 +1020,7 @@ function App() {
       label: 'Gestionar',
       items: [
         { name: 'Seguimiento', icon: Activity },
+        { name: 'Calendario', icon: CalendarDays },
         { name: 'Alertas', icon: Bell },
       ],
     },
@@ -1038,7 +1043,7 @@ function App() {
     <div className="min-h-screen bg-[#F5F6F8] text-[#171A24] antialiased flex flex-col lg:flex-row">
       {/* SIDEBAR NAVIGATION (Desktop fixed / Mobile drawer conforming to Stitch) */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E1E4EA] p-5 flex flex-col justify-between transition-transform duration-200 lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E1E4EA] p-5 flex flex-col justify-between gap-4 overflow-y-auto transition-transform duration-200 lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
         }`}
       >
@@ -1489,7 +1494,7 @@ function App() {
               <CompanyOpportunities
                 onConfigure={() => goToSection('Mi empresa')}
                 onOpenListing={(code) => void openDetail(code)}
-                onViewAll={() => goToSection('Buscar oportunidades')}
+                onViewAll={() => goToSection('Oportunidades')}
               />
             </div>
           )}
@@ -1814,6 +1819,21 @@ function App() {
             </div>
           )}
 
+          {section === 'Oportunidades' && (
+            <div className="space-y-6">
+              <header>
+                <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">Oportunidades</h1>
+                <p className="text-sm text-[#5D6472] mt-1">Revisa las licitaciones que coinciden con el catálogo de tu empresa.</p>
+              </header>
+              <CompanyOpportunities
+                key={auth.activeCompanyId}
+                board
+                onConfigure={() => goToSection('Mi empresa')}
+                onOpenListing={(code) => void openDetail(code)}
+              />
+            </div>
+          )}
+
           {/* SECTION: INTELIGENCIA DE MERCADO (Stitch 4) */}
           {section === 'Inteligencia de mercado' && (
             <MarketAnalytics
@@ -1827,8 +1847,10 @@ function App() {
           )}
 
           {/* SECTION: SEGUIMIENTO (Stitch 5) */}
-          {section === 'Seguimiento' && (
+          {(section === 'Seguimiento' || section === 'Calendario') && (
             <TrackingWorkspace
+              key={`${auth.activeCompanyId}:${section}`}
+              calendar={section === 'Calendario'}
               onOpen={(code) => void openDetail(code)}
               onChanged={() => void refreshAlertCounts()}
               csrfToken={auth.csrfToken}

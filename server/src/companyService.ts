@@ -197,8 +197,9 @@ export async function suggestCommercialTerms(input: { nombre: string; categoria:
 
 const MATCH_BATCH_SIZE = 250;
 const MATCH_MAX_DURATION_MS = 30_000;
+const MATCH_BOARD_LIMIT = 30;
 
-export async function getCompanyMatches(options: { includeAllItems?: boolean; evaluationLimit?: number; commercialClassification?: boolean } = {}) {
+export async function getCompanyMatches(options: { includeAllItems?: boolean; board?: boolean; evaluationLimit?: number; commercialClassification?: boolean } = {}) {
   const startedAt = Date.now();
   const initialHeap = process.memoryUsage().heapUsed;
   let peakHeapUsed = initialHeap;
@@ -224,7 +225,10 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; ev
   if (!keywords.length) return empty;
   const evaluationLimit = options.evaluationLimit == null ? null : Math.max(1, Math.min(800, Math.trunc(options.evaluationLimit) || 800));
   const key = createHash('sha256').update(JSON.stringify({ companyId, products, profileUpdated: profile?.updated_at, preferenceUpdated: preference?.updated_at, listingVersion: listingVersion[0]?.version, states, regions, includeAllItems: Boolean(options.includeAllItems), evaluationLimit, commercialClassification: options.commercialClassification !== false })).digest('hex');
-  const cached = matchCache.get(key); if (cached && cached.expires > Date.now()) return cached.value;
+  const visibleMatches = (result: CacheValue['value']) =>
+    options.board || options.includeAllItems ? result : { ...result, items: result.items.slice(0, 6) };
+  const cached = matchCache.get(key);
+  if (cached && cached.expires > Date.now()) return visibleMatches(cached.value);
   const statusFilter = states.length ? states : [5];
   const filterValues: unknown[] = [...statusFilter];
   const filters = [`l.codigo_estado IN (${statusFilter.map(() => '?').join(',')})`, `(l.fecha_cierre IS NULL OR l.fecha_cierre>=UTC_TIMESTAMP())`];
@@ -277,7 +281,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; ev
       if (items.trim()) indexed++; else limited++;
       topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
       topResults.sort((a, b) => b.score - a.score || (a.daysToClose ?? 9999) - (b.daysToClose ?? 9999) || String(a.codigo_externo).localeCompare(String(b.codigo_externo)));
-      if (!options.includeAllItems && topResults.length > 6) topResults.pop();
+      if (!options.includeAllItems && topResults.length > MATCH_BOARD_LIMIT) topResults.pop();
     }
   };
 
@@ -315,9 +319,9 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; ev
   const durationMs=Date.now()-startedAt;
   const value = { configured: true, total, high, medium, exploratory, closingSoon, candidatesEvaluated: evaluatedListings,
     evaluation: { evaluatedListings, batches, queryCount, durationMs, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: Math.max(0,peakHeapUsed-initialHeap) },
-    coverage: { indexed, limited }, items: options.includeAllItems ? topResults : topResults.slice(0, 6), disclaimer: 'Coincidencia estimada según evidencias del catálogo, título, descripción y partidas. No confirma elegibilidad; revisa las bases oficiales.' };
+    coverage: { indexed, limited }, items: topResults, disclaimer: 'Coincidencia estimada según evidencias del catálogo, título, descripción y partidas. No confirma elegibilidad; revisa las bases oficiales.' };
   matchCache.set(key, { value, expires: Date.now() + 30_000 }); if (matchCache.size > 200) matchCache.clear();
-  return value;
+  return visibleMatches(value);
 }
 
 export function clearCompanyMatchCache() { matchCache.clear(); }
