@@ -932,11 +932,13 @@ export function CompanyOpportunities({
   onConfigure,
   onOpenListing,
   onViewAll,
+  actionLabel = 'Ver ficha',
   board = false,
 }: {
   onConfigure: () => void;
   onOpenListing?: (code: string) => void;
   onViewAll?: () => void;
+  actionLabel?: string;
   board?: boolean;
 }) {
   const [data, setData] = useState<any>(null);
@@ -974,7 +976,7 @@ export function CompanyOpportunities({
             </span>
           </div>
           <p className="text-xs text-[#5D6472] mt-0.5">
-            Ordenadas por coincidencia con el catálogo y los términos configurados de la empresa.
+            Ordenadas por coincidencia con el catálogo y los términos configurados. El puntaje de 0 a 100 mide texto coincidente; no es una probabilidad de adjudicación.
           </p>
         </div>
         <div className="flex items-center gap-4 shrink-0">
@@ -1017,7 +1019,7 @@ export function CompanyOpportunities({
           {data.items?.length ? (
             <div className="summary-matches-table-wrap">
               <table className="summary-matches-table">
-                <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Match</th><th>Acción</th></tr></thead>
+                <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Puntaje / 100</th><th>Acción</th></tr></thead>
                 <tbody>
                   {data.items.map((item: any) => {
                     const closing = item.fecha_cierre ? new Date(item.fecha_cierre) : null;
@@ -1036,10 +1038,10 @@ export function CompanyOpportunities({
                         <td><span className="summary-match-buyer">{item.organismo || 'No informado'}</span></td>
                         <td className="summary-match-nowrap">{closingLabel}</td>
                         <td className="summary-match-amount">{amount}</td>
-                        <td><span className="summary-match-score">{Number(item.score || 0)}%</span></td>
+                        <td><span className="summary-match-score">{Number(item.score || 0)} / 100</span></td>
                         <td>
                           {onOpenListing ? (
-                            <button className="summary-match-action" onClick={() => onOpenListing(item.codigo_externo)}>Ver ficha</button>
+                            <button className="summary-match-action" onClick={() => onOpenListing(item.codigo_externo)}>{actionLabel}</button>
                           ) : <span>—</span>}
                         </td>
                       </tr>
