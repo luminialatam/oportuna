@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { TrackingCalendar } from './TrackingCalendar';
 import {
   Activity,
   AlertTriangle,
@@ -13,7 +14,7 @@ import {
   X,
 } from 'lucide-react';
 
-type Tracked = {
+export type Tracked = {
   id: number;
   codigo: string;
   estado: string;
@@ -74,10 +75,12 @@ export function TrackingWorkspace({
   onOpen,
   onChanged,
   csrfToken,
+  calendar = false,
 }: {
   onOpen: (codigo: string) => void;
   onChanged: () => void;
   csrfToken: string;
+  calendar?: boolean;
 }) {
   const [items, setItems] = useState<Tracked[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -147,6 +150,19 @@ export function TrackingWorkspace({
       setError(e instanceof Error ? e.message : 'No se pudo quitar la licitación.');
     }
   };
+
+  if (calendar) {
+    return (
+      <TrackingCalendar
+        items={items}
+        total={Object.values(counts).reduce((sum, count) => sum + count, 0)}
+        loading={loading}
+        error={error}
+        onRetry={() => void load()}
+        onOpen={onOpen}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,7 @@
 # Oportuna — Configuración Node.js SharkASP (Fase 3.6)
 
+> Registro histórico de configuración del sitio existente. No usar `/Liciapp` ni el hostname temporal asociado como destino de staging. El flujo vigente y aislado está en [sharkasp-staging-3.7.md](./sharkasp-staging-3.7.md).
+
 Estado: configuración preparada y validada localmente. No se activó Node en el panel, no se subieron archivos y no se desplegó.
 
 ## Valores de aplicación

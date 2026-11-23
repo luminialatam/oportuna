@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory = $true)] [ValidateSet('Smoke', 'Production')] [string] $Mode,
+  [Parameter(Mandatory = $true)] [ValidateSet('Smoke', 'Staging', 'Production')] [string] $Mode,
   [Parameter(Mandatory = $true)] [ValidateRange(1, 99)] [int] $ExpectedNodeMajor,
   [Parameter(Mandatory = $true)] [string] $OutputZip
 )
@@ -29,13 +29,23 @@ try {
   Copy-Item (Join-Path $frontendBuild 'index.html') (Join-Path $stage 'index.html')
   Copy-Item (Join-Path $frontendBuild 'assets') (Join-Path $stage 'assets') -Recurse
   Copy-Item $backendBuild (Join-Path $stage 'dist-server') -Recurse
-  if ($Mode -eq 'Production') {
+  if ($Mode -ne 'Smoke') {
     Copy-Item (Join-Path $projectRoot 'sharkasp-bootstrap.mjs') $stage
+    $runtimeConfigSource = if ($Mode -eq 'Staging') {
+      Join-Path $PSScriptRoot 'sharkasp-runtime-config.staging.mjs'
+    } else {
+      Join-Path $PSScriptRoot 'sharkasp-runtime-config.mjs'
+    }
+    Copy-Item $runtimeConfigSource (Join-Path $stage 'sharkasp-runtime-config.mjs')
   }
   Copy-Item (Join-Path $projectRoot 'package.json') $stage
   Copy-Item (Join-Path $projectRoot 'package-lock.json') $stage
 
-  $templateName = if ($Mode -eq 'Smoke') { 'web.config.template' } else { 'web.config.production.template' }
+  $templateName = switch ($Mode) {
+    'Smoke' { 'web.config.template' }
+    'Staging' { 'web.config.staging.template' }
+    default { 'web.config.production.template' }
+  }
   $configTemplate = Join-Path $PSScriptRoot $templateName
   $config = Get-Content -Raw $configTemplate
   Set-Content -Path (Join-Path $stage 'web.config') -Value $config -Encoding UTF8
@@ -48,12 +58,27 @@ try {
   foreach ($asset in $rootAssets) {
     if (-not (Test-Path -LiteralPath (Join-Path $stage $asset.TrimStart('/')) -PathType Leaf)) { throw "Falta el asset referenciado $asset." }
   }
-  if ($Mode -eq 'Production') {
+  if ($Mode -ne 'Smoke') {
     [xml]$configXml = Get-Content -Raw (Join-Path $stage 'web.config')
     $platform = $configXml.configuration.'system.webServer'.httpPlatform
     if ($platform.processPath -ne 'node' -or $platform.arguments -ne 'sharkasp-bootstrap.mjs') { throw 'web.config no inicia el bootstrap Node de producción.' }
     if ($null -ne $configXml.configuration.'system.webServer'.rewrite) { throw 'web.config contiene rewrite que puede interceptar la API.' }
     if (-not (Test-Path -LiteralPath (Join-Path $stage 'sharkasp-bootstrap.mjs') -PathType Leaf)) { throw 'Falta sharkasp-bootstrap.mjs en la raíz del paquete.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $stage 'sharkasp-runtime-config.mjs') -PathType Leaf)) { throw 'Falta sharkasp-runtime-config.mjs en la raíz del paquete.' }
+    if ($Mode -eq 'Staging') {
+      $environment = @{}
+      foreach ($item in $configXml.configuration.'system.webServer'.httpPlatform.environmentVariables.environmentVariable) {
+        $environment[$item.name] = $item.value
+      }
+      foreach ($required in @{ APP_ENV = 'staging'; NODE_ENV = 'production'; PROCESS_ROLE = 'web'; SYNC_SCHEDULER_ENABLED = 'false'; ENRICHMENT_WORKER_ENABLED = 'false'; ALERT_SCHEDULER_ENABLED = 'false' }.GetEnumerator()) {
+        if ($environment[$required.Key] -ne $required.Value) { throw "Staging web.config must set $($required.Key)=$($required.Value)." }
+      }
+      $stagingRuntime = Get-Content -Raw (Join-Path $stage 'sharkasp-runtime-config.mjs')
+      foreach ($required in @('process.env.DB_HOST', 'process.env.DB_NAME', 'process.env.DB_USER', 'process.env.CLIENT_ORIGIN', "OPORTUNA_DEPLOYMENT_PROFILE: 'isolated-staging'")) {
+        if ($stagingRuntime -notmatch [regex]::Escape($required)) { throw "Staging runtime config must derive $required from isolated staging settings." }
+      }
+      if ($stagingRuntime.Contains("CLIENT_ORIGIN: 'https://") -or $stagingRuntime.Contains('CLIENT_ORIGIN: "https://')) { throw 'Staging runtime config cannot pin a public origin.' }
+    }
   }
 
   Push-Location $stage
@@ -74,7 +99,7 @@ try {
   Write-Output "Paquete generado: $archive"
   Write-Output "Modo: $Mode; Node Windows x64 mayor $nodeMajor; node_modules de producción incluidos."
   Write-Output 'processPath=node, según la configuración funcional de SharkASP.'
-  Write-Output 'No se copiaron .env, credenciales, bases ni respaldos. TRUST_PROXY_HOPS debe configurarse en el entorno privado del sitio.'
+  Write-Output 'No se copiaron .env, credenciales, bases ni respaldos. DB_HOST/DB_NAME/DB_USER, CLIENT_ORIGIN y TRUST_PROXY_HOPS deben configurarse en el entorno privado del sitio.'
 } finally {
   if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 }

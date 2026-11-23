@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   Building2,
+  CalendarDays,
   Clock3,
   Database,
   ExternalLink,
@@ -35,6 +36,9 @@ import { MarketAnalytics } from './MarketAnalytics';
 import { SandboxCenter } from './SandboxCenter';
 import { ProfilePage, SecurityPage } from './AccountSettings';
 import { PlatformUsers } from './PlatformUsers';
+import { OfferPreparationPanel } from './OfferPreparationPanel';
+import { CommercialAgents } from './CommercialAgents';
+import { AnalyticsWorkspace } from './AnalyticsWorkspace';
 import { useLocation, useNavigate } from 'react-router';
 
 type Listing = {
@@ -71,8 +75,12 @@ const SESSION_SEEN_KEY = 'oportuna.sessionSeen';
 const SECTION_PATHS: Record<string, string> = {
   Resumen: '/',
   'Buscar oportunidades': '/buscar',
+  Oportunidades: '/oportunidades',
+  'Agentes IA': '/agentes',
   'Inteligencia de mercado': '/inteligencia-mercado',
+  'Analítica': '/inteligencia-mercado/analitica',
   Seguimiento: '/seguimiento',
+  Calendario: '/calendario',
   Alertas: '/alertas',
   'Mi empresa': '/empresa',
   'Equipo y accesos': '/equipo',
@@ -143,6 +151,44 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return data as T;
 }
 
+function hasListingValue(value: any) {
+  if (value === null || value === undefined || value === '') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object' && !Array.isArray(value)) return Object.keys(value).length > 0;
+  return true;
+}
+
+function mergeListingDetails(official: any, local: any) {
+  const merged = { ...local, ...official };
+  for (const [key, value] of Object.entries(local ?? {})) {
+    if (!hasListingValue(official?.[key])) (merged as any)[key] = value;
+  }
+  const mergeSection = (officialSection: any, localSection: any) => {
+    const section = { ...(localSection ?? {}), ...(officialSection ?? {}) };
+    for (const [key, value] of Object.entries(localSection ?? {})) {
+      if (!hasListingValue(officialSection?.[key])) section[key] = value;
+    }
+    return section;
+  };
+  merged.Comprador = mergeSection(official?.Comprador, local?.Comprador);
+  merged.Fechas = mergeSection(official?.Fechas, local?.Fechas);
+  const buyerName = [
+    merged.Comprador?.NombreOrganismo,
+    merged.NombreOrganismo,
+    merged.OrganismoComprador,
+    merged.Organismo,
+    local?.organismo,
+  ].find((value) => typeof value === 'string' && value.trim());
+  if (buyerName && !hasListingValue(merged.Comprador?.NombreOrganismo)) {
+    merged.Comprador = { ...merged.Comprador, NombreOrganismo: buyerName };
+  }
+  const officialItems = official?.Items?.Listado;
+  const localItems = local?.Items?.Listado;
+  if (!hasListingValue(officialItems) && hasListingValue(localItems)) merged.Items = local.Items;
+  if ([0, '0', false].includes(merged.VisibilidadMonto)) merged.MontoEstimado = null;
+  return merged;
+}
+
 function StatusBadge({ state }: { state: number | null }) {
   const name = state == null ? 'Sin estado' : statusNames[state] ?? `Estado ${state}`;
   const style =
@@ -166,6 +212,9 @@ function StatusBadge({ state }: { state: number | null }) {
 
 function ListingDetailModal({
   listing,
+  companyId,
+  userId,
+  csrfToken,
   loading = false,
   saved,
   saving,
@@ -173,9 +222,13 @@ function ListingDetailModal({
   onSave,
   analysis,
   analysisLoading,
+  onGoToCompany,
   onClose,
 }: {
   listing: any;
+  companyId: number;
+  userId: number;
+  csrfToken: string;
   loading?: boolean;
   saved: boolean | null;
   saving: boolean;
@@ -183,9 +236,13 @@ function ListingDetailModal({
   onSave: () => void;
   analysis: any;
   analysisLoading: boolean;
+  onGoToCompany: () => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<'resumen' | 'items' | 'requisitos' | 'cronograma' | 'analisis'>('resumen');
+  const [tab, setTab] = useState<'resumen' | 'items' | 'requisitos' | 'cronograma' | 'analisis' | 'oferta'>('resumen');
+  useEffect(() => {
+    if (analysis && !analysis.error) setTab('analisis');
+  }, [analysis]);
   const buyer = listing.Comprador ?? {};
   const dates = listing.Fechas ?? {};
   const listedItems = Array.isArray(listing.Items?.Listado) ? listing.Items.Listado : [];
@@ -201,6 +258,29 @@ function ListingDetailModal({
   const documents = documentKeys.flatMap((key) =>
     Array.isArray(listing[key]) ? listing[key].map((item: any) => ({ item, source: key })) : []
   );
+  const relevanceLevel = String(analysis?.commercialRelevance?.level ?? '');
+  const relevanceLabels: Record<string, string> = {
+    high: 'Alta', medium: 'Media', exploratory: 'Exploratoria', none: 'Sin coincidencia',
+    excluded: 'Excluida', unavailable: 'No disponible',
+  };
+  const procurementCode = [listing.CodigoTipo, listing.Tipo, listing.CodigoExterno, listing.codigo_externo]
+    .map((value) => String(value ?? '').match(/(?:^|-)(L1|LE|LP|LQ|LR|E2|CO|B2|H2|I2)\d{0,2}$/i)?.[1]?.toUpperCase())
+    .find(Boolean) ?? null;
+  const procurementRanges: Record<string, string> = {
+    L1: 'Menos de 100 UTM',
+    LE: 'Desde 100 y menos de 1.000 UTM',
+    LP: 'Desde 1.000 y menos de 5.000 UTM',
+    LQ: 'Desde 5.000 y menos de 10.000 UTM',
+    LR: '10.000 UTM o más',
+  };
+  const procurementRange = procurementCode ? procurementRanges[procurementCode] : null;
+  const amountDisplay = listing.MontoEstimado != null
+    ? money(listing.MontoEstimado, listing.Moneda || null)
+    : [0, '0', false].includes(listing.VisibilidadMonto)
+      ? 'No publicado en la ficha oficial'
+      : procurementRange
+        ? 'Monto exacto no informado'
+        : 'Monto no informado';
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-[2px]" onClick={onClose}>
@@ -220,7 +300,7 @@ function ListingDetailModal({
             <div className="flex items-center gap-2 flex-wrap text-xs text-[#5D6472]">
               <span className="font-mono font-semibold text-[#171A24]">{listing.CodigoExterno}</span>
               <span>•</span>
-              <span className="truncate max-w-xs">{buyer.NombreOrganismo || listing.organismo || 'Organismo no informado'}</span>
+              <span className="truncate max-w-xs">{buyer.NombreOrganismo || listing.organismo || listing.NombreOrganismo || listing.OrganismoComprador || 'Organismo no informado'}</span>
               <span>•</span>
               <StatusBadge state={listing.CodigoEstado != null ? Number(listing.CodigoEstado) : null} />
             </div>
@@ -241,6 +321,7 @@ function ListingDetailModal({
             { id: 'requisitos', label: 'Requisitos & Docs' },
             { id: 'cronograma', label: 'Cronograma' },
             { id: 'analisis', label: 'Compatibilidad IA' },
+            { id: 'oferta', label: 'Preparar oferta' },
           ].map((t) => (
             <button
               key={t.id}
@@ -286,8 +367,13 @@ function ListingDetailModal({
                 <div className="p-3.5 rounded-xl border border-[#E1E4EA] space-y-1">
                   <span className="text-[#8A92A6]">Monto Estimado</span>
                   <div className="font-bold text-sm text-[#171A24]">
-                    {listing.MontoEstimado != null ? money(listing.MontoEstimado, listing.Moneda || null) : 'No informado'}
+                    {amountDisplay}
                   </div>
+                  {listing.MontoEstimado == null && procurementRange && (
+                    <small className="block text-xs leading-relaxed text-[#5D6472]">
+                      Tramo del proceso {procurementCode}: {procurementRange}. No equivale a un monto publicado.
+                    </small>
+                  )}
                 </div>
                 <div className="p-3.5 rounded-xl border border-[#E1E4EA] space-y-1">
                   <span className="text-[#8A92A6]">Fecha de Cierre</span>
@@ -302,11 +388,11 @@ function ListingDetailModal({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <span className="text-[#8A92A6] block">Organismo</span>
-                    <b className="text-[#171A24]">{buyer.NombreOrganismo || 'No informado'}</b>
+                    <b className="text-[#171A24]">{buyer.NombreOrganismo || listing.organismo || listing.NombreOrganismo || listing.OrganismoComprador || 'No informado'}</b>
                   </div>
                   <div>
                     <span className="text-[#8A92A6] block">Unidad de Compra</span>
-                    <b className="text-[#171A24]">{buyer.NombreUnidad || 'No informado'}</b>
+                    <b className="text-[#171A24]">{buyer.NombreUnidad || listing.NombreUnidad || 'No informado'}</b>
                   </div>
                   <div>
                     <span className="text-[#8A92A6] block">Región</span>
@@ -416,9 +502,9 @@ function ListingDetailModal({
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-bold text-[#171A24] flex items-center gap-2">
-                    <Sparkles size={16} className="text-[#5636D9]" /> Análisis de Compatibilidad Comercial
+                    <Sparkles size={16} className="text-[#5636D9]" /> Asistente comercial Oportuna
                   </h4>
-                  <p className="text-[#5D6472]">Evaluación contra el catálogo de productos de tu empresa.</p>
+                  <p className="text-[#5D6472]">Cruza el catálogo con la ficha disponible y propone el siguiente paso comercial.</p>
                 </div>
                 <button
                   onClick={onAnalyze}
@@ -426,29 +512,31 @@ function ListingDetailModal({
                   className="h-8 px-3 bg-[#5636D9] hover:bg-[#4b2ec7] text-white font-semibold rounded-lg flex items-center gap-1.5"
                 >
                   {analysisLoading ? <LoaderCircle size={13} className="spin" /> : <Sparkles size={13} />}
-                  {analysisLoading ? 'Analizando…' : 'Ejecutar Análisis IA'}
+                  {analysisLoading ? 'Evaluando…' : 'Evaluar oportunidad'}
                 </button>
               </div>
 
               {analysisLoading ? (
                 <div className="p-8 text-center text-[#5D6472] bg-[#F8F9FA] rounded-xl border border-[#E1E4EA]">
                   <LoaderCircle size={20} className="spin mx-auto text-[#5636D9] mb-2" />
-                  Analizando requisitos y compatibilidad con Groq/IA…
+                  Revisando coincidencia del catálogo, plazo y datos disponibles…
+                </div>
+              ) : analysis?.error ? (
+                <div role="alert" className="p-4 text-red-800 bg-red-50 rounded-xl border border-red-200">
+                  {analysis.error}
                 </div>
               ) : analysis ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-3 rounded-xl bg-[#f0edff]/30 border border-[#5636D9]/20">
-                      <span className="text-[#5D6472] block">Relevancia Comercial</span>
-                      <b className="text-xl text-[#5636D9] font-bold">
-                        {analysis.commercialRelevance?.score ?? '—'}%
-                      </b>
+                      <span className="text-[#5D6472] block">Puntaje de coincidencia textual</span>
+                      <b className="text-xl text-[#5636D9] font-bold">{analysis.commercialRelevance?.score ?? '—'}{analysis.commercialRelevance?.score != null ? ' / 100' : ''}</b>
                       <small className="text-[#5D6472] block mt-0.5">
-                        {analysis.commercialRelevance?.level ?? 'No evaluado'}
+                        {relevanceLabels[relevanceLevel] ?? (relevanceLevel || 'No evaluado')} · no es probabilidad de adjudicación
                       </small>
                     </div>
                     <div className="p-3 rounded-xl bg-gray-50 border border-[#E1E4EA]">
-                      <span className="text-[#5D6472] block">Cobertura de Datos</span>
+                      <span className="text-[#5D6472] block">Cobertura de la ficha</span>
                       <b className="text-xl text-[#171A24] font-bold">
                         {analysis.coverage?.score ?? 0}%
                       </b>
@@ -458,11 +546,60 @@ function ListingDetailModal({
                     </div>
                   </div>
 
+                  {analysis.decision && (
+                    <section className={`rounded-xl border p-4 ${analysis.decision.tone === 'positive' ? 'border-emerald-200 bg-emerald-50/60' : analysis.decision.tone === 'caution' ? 'border-amber-200 bg-amber-50/70' : 'border-[#E1E4EA] bg-[#F8F9FA]'}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h5 className="font-bold text-[#171A24]">Decisión comercial sugerida</h5>
+                        <span className="rounded-full bg-white/80 px-2.5 py-1 font-semibold text-[#344054]">{analysis.decision.label}</span>
+                      </div>
+                      <p className="mt-2 text-[#344054] leading-relaxed">{analysis.decision.summary}</p>
+
+                      {analysis.decision.evidence?.length > 0 && <div className="mt-3">
+                        <h6 className="font-bold text-[#171A24]">Evidencia utilizada</h6>
+                        <ul className="mt-1 list-disc space-y-1 pl-4 text-[#475467]">
+                          {analysis.decision.evidence.map((item: string, idx: number) => <li key={idx}>{item}</li>)}
+                        </ul>
+                      </div>}
+
+                      {analysis.decision.toConfirm?.length > 0 && <div className="mt-3">
+                        <h6 className="font-bold text-[#171A24]">Antes de decidir, confirma</h6>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {analysis.decision.toConfirm.slice(0, 8).map((item: string) => <span key={item} className="rounded-full border border-amber-200 bg-white px-2 py-1 text-amber-900">{item}</span>)}
+                        </div>
+                      </div>}
+
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-3">
+                        <div className="min-w-0 flex-1">
+                          <strong className="block text-[#171A24]">Siguiente paso recomendado</strong>
+                          <span className="mt-0.5 block text-[#5D6472]">{analysis.decision.nextAction.reason}</span>
+                        </div>
+                        <button type="button" onClick={() => analysis.decision.nextAction.tab === 'catalogo' ? onGoToCompany() : setTab(analysis.decision.nextAction.tab)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#5636D9] px-3 py-2 font-semibold text-white hover:bg-[#4b2ec7]">
+                          {analysis.decision.nextAction.label}<ArrowRight size={14} />
+                        </button>
+                      </div>
+                    </section>
+                  )}
+
                   {analysis.interpretation?.executiveSummary && (
                     <div className="p-3.5 rounded-xl bg-white border border-[#E1E4EA] space-y-1">
-                      <span className="font-bold text-[#171A24]">Resumen Ejecutivo</span>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-bold text-[#171A24]">Resumen de la ficha</span>
+                        <small className="rounded-full bg-[#F2F0FF] px-2 py-1 text-[#5636D9]">{analysis.provider === 'groq' ? 'Redactado con IA' : 'Resumen local automático'}</small>
+                      </div>
                       <p className="text-[#5D6472] leading-relaxed">{analysis.interpretation.executiveSummary}</p>
                     </div>
+                  )}
+
+                  <div className="rounded-lg border border-[#E1E4EA] bg-white px-3.5 py-3 text-[#5D6472] leading-relaxed">
+                    El puntaje proviene de reglas de coincidencia entre el catálogo y el texto de la ficha. El resumen puede usar IA generativa; las bases y anexos no se consideran revisados por Oportuna.
+                  </div>
+
+                  {(analysis.interpretation?.technicalNotes?.length > 0 || analysis.interpretation?.administrativeNotes?.length > 0) && (
+                    <details className="rounded-lg border border-[#E1E4EA] bg-white p-3.5">
+                      <summary className="cursor-pointer font-bold text-[#171A24]">Notas técnicas y administrativas de la ficha</summary>
+                      {analysis.interpretation?.technicalNotes?.length > 0 && <div className="mt-3"><strong>Aspectos técnicos</strong><ul className="mt-1 list-disc space-y-1 pl-4 text-[#5D6472]">{analysis.interpretation.technicalNotes.map((note: string, idx: number) => <li key={`t-${idx}`}>{note}</li>)}</ul></div>}
+                      {analysis.interpretation?.administrativeNotes?.length > 0 && <div className="mt-3"><strong>Aspectos administrativos</strong><ul className="mt-1 list-disc space-y-1 pl-4 text-[#5D6472]">{analysis.interpretation.administrativeNotes.map((note: string, idx: number) => <li key={`a-${idx}`}>{note}</li>)}</ul></div>}
+                    </details>
                   )}
 
                   {analysis.interpretation?.risks?.length > 0 && (
@@ -478,10 +615,19 @@ function ListingDetailModal({
                 </div>
               ) : (
                 <div className="p-8 text-center text-[#8A92A6] bg-[#F8F9FA] rounded-xl border border-[#E1E4EA]">
-                  Presiona "Ejecutar Análisis IA" para obtener una lectura técnica de las bases.
+                  Evalúa el encaje con el catálogo, los datos de la ficha y qué conviene revisar antes de cotizar.
                 </div>
               )}
             </div>
+          )}
+
+          {tab === 'oferta' && (
+            <OfferPreparationPanel
+              listing={listing}
+              companyId={companyId}
+              userId={userId}
+              csrfToken={csrfToken}
+            />
           )}
             </>
           )}
@@ -534,6 +680,21 @@ function App() {
   const [section, setSection] = useState(() => PATH_SECTIONS[location.pathname] ?? 'Resumen');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest('.profile-menu-wrap')) setUserMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setUserMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [userMenuOpen]);
   const [health, setHealth] = useState<Health | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [config, setConfig] = useState<any>(null);
@@ -780,16 +941,25 @@ function App() {
     try {
       const [data, tracking] = await Promise.all([
         (async () => {
-          try {
-            return await api<{ listing: any; source: string }>(`/api/licitaciones/${encodeURIComponent(code)}/oficial`);
-          } catch (officialError) {
-            const local = await api<{ listing: any; detailAvailable: boolean }>(`/api/licitaciones/${encodeURIComponent(code)}/local`);
+          const [officialResult, localResult] = await Promise.all([
+            api<{ listing: any; source: string }>(`/api/licitaciones/${encodeURIComponent(code)}/oficial`)
+              .then((value) => ({ value, error: null as unknown }))
+              .catch((error: unknown) => ({ value: null, error })),
+            api<{ listing: any; detailAvailable: boolean }>(`/api/licitaciones/${encodeURIComponent(code)}/local`)
+              .catch(() => null),
+          ]);
+          if (officialResult.value) {
             return {
-              ...local,
-              source: 'local-fallback',
-              detailError: officialError instanceof Error ? officialError.message : 'Error de conexión con Mercado Público.',
+              listing: mergeListingDetails(officialResult.value.listing, localResult?.listing),
+              source: officialResult.value.source,
             };
           }
+          if (localResult) return {
+            ...localResult,
+            source: 'local-fallback',
+            detailError: officialResult.error instanceof Error ? officialResult.error.message : 'No se pudo consultar Mercado Público; se muestran los datos locales disponibles.',
+          };
+          throw officialResult.error ?? new Error('No se pudo cargar la ficha.');
         })(),
         api<{ saved: boolean }>(`/api/company/tracking/lookup?codigo=${encodeURIComponent(code)}`).catch(() => ({
           saved: false,
@@ -1009,13 +1179,17 @@ function App() {
       items: [
         { name: 'Resumen', icon: LayoutDashboard },
         { name: 'Buscar oportunidades', icon: Search },
+        { name: 'Oportunidades', icon: Sparkles },
+        { name: 'Agentes IA', icon: FileSearch },
         { name: 'Inteligencia de mercado', icon: BarChart3 },
+        { name: 'Analítica', icon: BarChart3, subItem: true },
       ],
     },
     {
       label: 'Gestionar',
       items: [
         { name: 'Seguimiento', icon: Activity },
+        { name: 'Calendario', icon: CalendarDays },
         { name: 'Alertas', icon: Bell },
       ],
     },
@@ -1038,7 +1212,7 @@ function App() {
     <div className="min-h-screen bg-[#F5F6F8] text-[#171A24] antialiased flex flex-col lg:flex-row">
       {/* SIDEBAR NAVIGATION (Desktop fixed / Mobile drawer conforming to Stitch) */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E1E4EA] p-5 flex flex-col justify-between transition-transform duration-200 lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E1E4EA] p-5 flex flex-col justify-between gap-4 overflow-y-auto transition-transform duration-200 lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
         }`}
       >
@@ -1101,7 +1275,7 @@ function App() {
                       key={item.name}
                       onClick={() => goToSection(item.name)}
                       aria-current={active ? 'page' : undefined}
-                      className={`w-full h-10 px-3 rounded-xl flex items-center justify-between text-xs font-semibold transition-colors ${
+                      className={`w-full h-10 px-3 rounded-xl flex items-center justify-between text-xs font-semibold transition-colors ${'subItem' in item && item.subItem ? 'pl-8 h-9 text-[11px]' : ''} ${
                         active
                           ? 'bg-[#f0edff] text-[#5636D9]'
                           : 'text-[#5D6472] hover:bg-[#F8F9FA] hover:text-[#171A24]'
@@ -1168,7 +1342,7 @@ function App() {
       )}
 
       {/* MAIN CONTENT AREA */}
-      <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
+      <div className="min-w-0 flex-1 lg:ml-64 flex flex-col min-h-screen">
         {/* TOPBAR */}
         <header className={`summary-topbar h-14 bg-white border-b border-[#E1E4EA] px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30 shadow-sm ${section === 'Resumen' ? 'summary-topbar-home' : ''}`}>
           <div className="summary-topbar-identity flex items-center gap-3">
@@ -1207,11 +1381,7 @@ function App() {
             >
               <Search size={16} />
             </button>
-            <span className={`summary-health-pill hidden 2xl:flex items-center gap-1.5 px-3 py-1 rounded-full border ${health?.mysql ? 'text-[#16845B] bg-[#E8F5E9] border-[#d6eadb]' : 'text-amber-800 bg-amber-50 border-amber-200'}`}>
-              <span className="summary-health-dot" />
-              {health?.mysql ? 'Índice local conectado' : 'Índice local no disponible'}
-            </span>
-            <span className="hidden 2xl:flex items-center gap-1.5 text-[#5D6472] bg-[#F8F9FA] px-3 py-1 rounded-full border border-[#E1E4EA]">
+            <span className="summary-topbar-date hidden 2xl:flex items-center gap-1.5 text-[#5D6472] bg-[#F8F9FA] px-3 py-1 rounded-full border border-[#E1E4EA]">
               <Clock3 size={13} className="text-[#8A92A6]" />
               {todayLabel}
             </span>
@@ -1278,12 +1448,13 @@ function App() {
                 void openDetail(item.code);
               }}
             />
-            <div className="relative hidden lg:block">
+            <div className="profile-menu-wrap relative hidden lg:block">
               <button
                 type="button"
                 className="summary-topbar-profile flex items-center gap-2 rounded-xl px-2 py-1 hover:bg-[#F8F9FA]"
                 aria-haspopup="menu"
                 aria-expanded={userMenuOpen}
+                aria-controls="account-profile-menu"
                 onClick={() => setUserMenuOpen((open) => !open)}
               >
                 <span className="summary-topbar-avatar">
@@ -1295,7 +1466,7 @@ function App() {
                 </span>
               </button>
               {userMenuOpen && (
-                <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-60 rounded-xl border border-[#E1E4EA] bg-white p-2 shadow-lg">
+                <div id="account-profile-menu" role="menu" aria-label="Menú de perfil" className="profile-menu absolute right-0 top-full z-50 mt-2 w-60 rounded-xl border border-[#E1E4EA] bg-white p-2 shadow-lg">
                   <div className="px-3 py-2">
                     <b className="block truncate text-xs text-[#171A24]">{greetingName}</b>
                     <span className="block truncate text-xs text-[#8A92A6]">{auth.email}</span>
@@ -1303,7 +1474,7 @@ function App() {
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => goToSection('Mi perfil')}
+                    onClick={() => { setUserMenuOpen(false); goToSection('Mi perfil'); }}
                     className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]"
                   >
                     <UserRound size={15} /> Mi perfil
@@ -1311,7 +1482,7 @@ function App() {
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => goToSection('Seguridad')}
+                    onClick={() => { setUserMenuOpen(false); goToSection('Seguridad'); }}
                     className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]"
                   >
                     <Shield size={15} /> Seguridad
@@ -1331,7 +1502,7 @@ function App() {
         </header>
 
         {/* BODY CONTAINER */}
-        <main className="flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto space-y-6">
+        <main className="min-w-0 flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto space-y-6">
           {/* SECTION: RESUMEN (Stitch screen 1) */}
           {section === 'Mi perfil' && (
             <ProfilePage
@@ -1489,7 +1660,7 @@ function App() {
               <CompanyOpportunities
                 onConfigure={() => goToSection('Mi empresa')}
                 onOpenListing={(code) => void openDetail(code)}
-                onViewAll={() => goToSection('Buscar oportunidades')}
+                onViewAll={() => goToSection('Oportunidades')}
               />
             </div>
           )}
@@ -1530,29 +1701,29 @@ function App() {
                 </div>
               </div>
 
-              {/* Natural Query Search Bar */}
-              <div className="bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-4">
+              {/* Search and filters */}
+              <div className="opportunity-search-panel">
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     void runSearch(search, 1);
                   }}
-                  className="flex items-center gap-2"
+                  className="opportunity-search-form"
                 >
-                  <div className="relative flex-1">
-                    <Search size={18} className="absolute left-3.5 top-3 text-[#8A92A6]" />
+                  <div className="opportunity-query-wrap">
+                    <Search size={21} aria-hidden="true" />
                     <input
                       type="text"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Describe qué ofrece tu empresa... Ej: Insumos de laboratorio en Santiago o Mantención de transformadores"
-                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                      aria-label="Describe qué oportunidad buscas"
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={searchLoading}
-                    className="h-11 px-5 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-xl flex items-center gap-2 transition-colors shadow-sm shrink-0"
+                    className="opportunity-search-submit"
                   >
                     {searchLoading ? <LoaderCircle size={16} className="spin" /> : <Search size={16} />}
                     Buscar
@@ -1560,8 +1731,8 @@ function App() {
                 </form>
 
                 {/* Example query chips */}
-                <div className="flex items-center gap-1.5 flex-wrap text-xs">
-                  <span className="text-[#8A92A6]">Prueba buscar:</span>
+                <div className="opportunity-search-examples">
+                  <span>Prueba buscar:</span>
                   {[
                     'Equipamiento médico y quirúrgico',
                     'Servicios de aseo en hospitales',
@@ -1575,21 +1746,44 @@ function App() {
                         setSearch(ex);
                         void runSearch(ex, 1);
                       }}
-                      className="px-2.5 py-1 rounded-full bg-[#F5F6F8] hover:bg-[#f0edff] text-[#5D6472] hover:text-[#5636D9] border border-[#E1E4EA] transition-colors"
+                      className="opportunity-example-chip"
                     >
                       {ex}
                     </button>
                   ))}
                 </div>
 
-                {/* Filters Row */}
-                <div className="pt-3 border-t border-[#E1E4EA] grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div>
-                    <label className="block text-[#8A92A6] font-semibold mb-1">Coincidencia</label>
+                <div className="opportunity-filter-heading">
+                  <div className="opportunity-filter-title">
+                    <strong>Filtros</strong>
+                    <span>Combina criterios admitidos por el buscador</span>
+                    {(Number(Boolean(matchLevelFilter)) + Number(Boolean(stateFilter)) + Number(Boolean(regionFilter.trim()))) > 0 && (
+                      <span className="opportunity-active-count">
+                        {Number(Boolean(matchLevelFilter)) + Number(Boolean(stateFilter)) + Number(Boolean(regionFilter.trim()))} filtros activos
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="opportunity-clear-filters"
+                    disabled={!matchLevelFilter && !stateFilter && !regionFilter}
+                    onClick={() => {
+                      setMatchLevelFilter('');
+                      setStateFilter('');
+                      setRegionFilter('');
+                    }}
+                  >
+                    Limpiar filtros
+                  </button>
+                </div>
+
+                <div className="opportunity-filter-grid">
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-match-level">Nivel de coincidencia</label>
                     <select
+                      id="opportunity-match-level"
                       value={matchLevelFilter}
                       onChange={(e) => setMatchLevelFilter(e.target.value)}
-                      className="w-full h-8 px-2 rounded-lg border border-[#E1E4EA] text-xs bg-white text-[#171A24]"
                     >
                       <option value="">Todos los niveles</option>
                       <option value="high">Alta</option>
@@ -1597,12 +1791,12 @@ function App() {
                       <option value="exploratory">Exploratoria</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-[#8A92A6] font-semibold mb-1">Estado</label>
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-status">Estado</label>
                     <select
+                      id="opportunity-status"
                       value={stateFilter}
                       onChange={(e) => setStateFilter(e.target.value)}
-                      className="w-full h-8 px-2 rounded-lg border border-[#E1E4EA] text-xs bg-white text-[#171A24]"
                     >
                       <option value="">Todos los estados</option>
                       <option value="5">Publicada</option>
@@ -1611,24 +1805,33 @@ function App() {
                       <option value="7">Desierta</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-[#8A92A6] font-semibold mb-1">Región</label>
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-region">Región</label>
                     <input
+                      id="opportunity-region"
                       value={regionFilter}
                       onChange={(e) => setRegionFilter(e.target.value)}
                       placeholder="Ej. Metropolitana"
-                      className="w-full h-8 px-2 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24]"
                     />
                   </div>
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      onClick={() => void runSearch(search, 1)}
-                      className="w-full h-8 bg-white border border-[#E1E4EA] hover:bg-gray-50 text-[#5D6472] font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5"
-                    >
-                      <Filter size={13} /> Aplicar filtros
-                    </button>
+                  <div className="opportunity-filter-field opportunity-filter-disabled">
+                    <label htmlFor="opportunity-modality">Modalidad <span>API</span></label>
+                    <select id="opportunity-modality" disabled value="">
+                      <option value="">No disponible en este buscador</option>
+                    </select>
                   </div>
+                </div>
+
+                <div className="opportunity-filter-footer">
+                  <span><span className="opportunity-info-mark">i</span> La modalidad no está disponible en el servicio de búsqueda actual.</span>
+                  <button
+                    type="button"
+                    onClick={() => void runSearch(search, 1)}
+                    disabled={searchLoading || search.trim().length < 2}
+                    className="opportunity-apply-filters"
+                  >
+                    <Filter size={16} /> Aplicar filtros
+                  </button>
                 </div>
               </div>
 
@@ -1814,6 +2017,29 @@ function App() {
             </div>
           )}
 
+          {section === 'Oportunidades' && (
+            <div className="space-y-6">
+              <header>
+                <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">Oportunidades</h1>
+                <p className="text-sm text-[#5D6472] mt-1">Revisa las licitaciones que coinciden con el catálogo de tu empresa.</p>
+              </header>
+              <CompanyOpportunities
+                key={auth.activeCompanyId}
+                board
+                onConfigure={() => goToSection('Mi empresa')}
+                onOpenListing={(code) => void openDetail(code)}
+              />
+            </div>
+          )}
+
+          {section === 'Agentes IA' && (
+            <CommercialAgents
+              companyName={auth.memberships.find((membership) => membership.companyId === auth.activeCompanyId)?.companyName ?? 'tu empresa'}
+              onConfigure={() => goToSection('Mi empresa')}
+              onAnalyzeListing={(code) => { void openDetail(code); void analyzeListing(code); }}
+            />
+          )}
+
           {/* SECTION: INTELIGENCIA DE MERCADO (Stitch 4) */}
           {section === 'Inteligencia de mercado' && (
             <MarketAnalytics
@@ -1822,13 +2048,24 @@ function App() {
               error={error}
               onOpenListing={(code) => void openDetail(code)}
               onViewListings={() => goToSection('Buscar oportunidades')}
+              onOpenAnalytics={() => goToSection('Analítica')}
               onRetry={() => void refresh()}
             />
           )}
 
+          {section === 'Analítica' && (
+            <AnalyticsWorkspace
+              key={auth.activeCompanyId}
+              request={api}
+              csrfToken={auth.csrfToken}
+            />
+          )}
+
           {/* SECTION: SEGUIMIENTO (Stitch 5) */}
-          {section === 'Seguimiento' && (
+          {(section === 'Seguimiento' || section === 'Calendario') && (
             <TrackingWorkspace
+              key={`${auth.activeCompanyId}:${section}`}
+              calendar={section === 'Calendario'}
               onOpen={(code) => void openDetail(code)}
               onChanged={() => void refreshAlertCounts()}
               csrfToken={auth.csrfToken}
@@ -1960,6 +2197,9 @@ function App() {
       {selected && (
         <ListingDetailModal
           listing={selected}
+          companyId={auth.activeCompanyId ?? 0}
+          userId={auth.userId}
+          csrfToken={auth.csrfToken}
           loading={detailLoading}
           saved={selectedSaved}
           saving={detailSaving}
@@ -1970,6 +2210,7 @@ function App() {
           }}
           analysis={analysis}
           analysisLoading={analysisLoading}
+          onGoToCompany={() => goToSection('Mi empresa')}
           onClose={closeDetail}
         />
       )}

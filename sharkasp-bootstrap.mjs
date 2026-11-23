@@ -24,8 +24,26 @@ function isInside(candidate, parent) {
 }
 
 function loadPrivateSecrets() {
-  const secretPath = resolve(appRoot, '..', 'oportuna-private', 'secrets.json');
-  if (!existsSync(secretPath)) return { source: 'process_environment' };
+  const configuredPath = process.env.OPORTUNA_PRIVATE_SECRETS_PATH?.trim();
+  const isolatedStaging = process.env.OPORTUNA_DEPLOYMENT_PROFILE === 'isolated-staging';
+  const defaultSecretPath = resolve(appRoot, '..', 'oportuna-private', 'secrets.json');
+  if (isolatedStaging) {
+    if (!configuredPath) return { error: 'Staging requiere una ruta privada de secretos exclusiva.' };
+    for (const name of privateVariableNames) delete process.env[name];
+  }
+  const secretPath = configuredPath
+    ? resolve(appRoot, configuredPath)
+    : defaultSecretPath;
+  const comparableSecretPath = process.platform === 'win32' ? secretPath.toLowerCase() : secretPath;
+  const comparableDefaultPath = process.platform === 'win32' ? defaultSecretPath.toLowerCase() : defaultSecretPath;
+  if (isolatedStaging && comparableSecretPath === comparableDefaultPath) {
+    return { error: 'Staging debe usar un archivo de secretos separado del sitio compartido.' };
+  }
+  if (!existsSync(secretPath)) {
+    return isolatedStaging
+      ? { error: 'No existe el archivo privado dedicado a staging.' }
+      : { source: 'process_environment' };
+  }
   const stat = lstatSync(secretPath);
   if (stat.isSymbolicLink() || !stat.isFile() || stat.size < 2 || stat.size > 8192) {
     return { error: 'El archivo privado debe ser un archivo regular, pequeño y no ser un enlace.' };

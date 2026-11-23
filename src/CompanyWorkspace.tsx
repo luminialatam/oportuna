@@ -932,10 +932,14 @@ export function CompanyOpportunities({
   onConfigure,
   onOpenListing,
   onViewAll,
+  actionLabel = 'Ver ficha',
+  board = false,
 }: {
   onConfigure: () => void;
   onOpenListing?: (code: string) => void;
   onViewAll?: () => void;
+  actionLabel?: string;
+  board?: boolean;
 }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -943,7 +947,7 @@ export function CompanyOpportunities({
 
   useEffect(() => {
     let live = true;
-    request<any>('/api/company/matches')
+    request<any>(board ? '/api/company/matches?view=board' : '/api/company/matches')
       .then((val) => {
         if (live) setData(val);
       })
@@ -956,7 +960,7 @@ export function CompanyOpportunities({
     return () => {
       live = false;
     };
-  }, []);
+  }, [board]);
 
   return (
     <section className="summary-matches-panel bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-4">
@@ -972,7 +976,7 @@ export function CompanyOpportunities({
             </span>
           </div>
           <p className="text-xs text-[#5D6472] mt-0.5">
-            Ordenadas por coincidencia con el catálogo y los términos configurados de la empresa.
+            Ordenadas por coincidencia con el catálogo y los términos configurados. El puntaje de 0 a 100 mide texto coincidente; no es una probabilidad de adjudicación.
           </p>
         </div>
         <div className="flex items-center gap-4 shrink-0">
@@ -981,7 +985,7 @@ export function CompanyOpportunities({
           </button>
           {onViewAll && (
             <button onClick={onViewAll} className="text-xs font-semibold text-[#5636D9] hover:underline inline-flex items-center gap-1">
-              Ver todas <Search size={13} />
+              Ver oportunidades <Search size={13} />
             </button>
           )}
         </div>
@@ -1015,9 +1019,9 @@ export function CompanyOpportunities({
           {data.items?.length ? (
             <div className="summary-matches-table-wrap">
               <table className="summary-matches-table">
-                <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Match</th><th>Acción</th></tr></thead>
+                <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Puntaje / 100</th><th>Acción</th></tr></thead>
                 <tbody>
-                  {data.items.slice(0, 6).map((item: any) => {
+                  {data.items.map((item: any) => {
                     const closing = item.fecha_cierre ? new Date(item.fecha_cierre) : null;
                     const closingLabel = closing && Number.isFinite(closing.getTime())
                       ? new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }).format(closing)
@@ -1034,10 +1038,10 @@ export function CompanyOpportunities({
                         <td><span className="summary-match-buyer">{item.organismo || 'No informado'}</span></td>
                         <td className="summary-match-nowrap">{closingLabel}</td>
                         <td className="summary-match-amount">{amount}</td>
-                        <td><span className="summary-match-score">{Number(item.score || 0)}%</span></td>
+                        <td><span className="summary-match-score">{Number(item.score || 0)} / 100</span></td>
                         <td>
                           {onOpenListing ? (
-                            <button className="summary-match-action" onClick={() => onOpenListing(item.codigo_externo)}>Ver ficha</button>
+                            <button className="summary-match-action" onClick={() => onOpenListing(item.codigo_externo)}>{actionLabel}</button>
                           ) : <span>—</span>}
                         </td>
                       </tr>
@@ -1050,6 +1054,9 @@ export function CompanyOpportunities({
             <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472]">
               No encontramos coincidencias con el catálogo actual.
             </div>
+          )}
+          {board && data.total > data.items?.length && (
+            <p className="text-xs text-[#5D6472]">Mostrando las {data.items.length} coincidencias con mayor relevancia de {data.total} encontradas.</p>
           )}
           {data.disclaimer && <p className="summary-match-disclaimer">{data.disclaimer}</p>}
         </>

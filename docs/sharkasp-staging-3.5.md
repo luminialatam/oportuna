@@ -1,6 +1,6 @@
 # Oportuna — preparación de staging en SharkASP (Fase 3.5)
 
-> Addendum Fase 3.6: la carpeta `/Liciapp`, los entrypoints compilados, smoke sin credenciales y paquete Windows se detallan en [sharkasp-staging-3.6.md](./sharkasp-staging-3.6.md), que reemplaza las indicaciones iniciales de plantilla/paquete de este informe.
+> Documento histórico. El procedimiento vigente de staging aislado, modo seguro de empaquetado y migraciones 001–018 está en [sharkasp-staging-3.7.md](./sharkasp-staging-3.7.md). La URL temporal observada en esta fase pertenece al sitio existente y no debe usarse como staging.
 
 Estado: preparación local, sin acceso al panel, publicación ni importación de datos. HTTPS del dominio provisional se verificó de forma pública; no se usó el dominio HTTP con credenciales.
 
@@ -94,7 +94,7 @@ La aplicación permite iniciar roles separados: `web`, `sync-worker`, `enrichmen
 
 ## MySQL de staging
 
-Crear una base distinta de la local, con usuario exclusivo de privilegio mínimo y TLS verificado. No importar el dump ni registros locales; la base comienza sin usuarios, empresas ni licitaciones. Aplicar las migraciones del proyecto en orden (001–013) desde un proceso controlado, con respaldo del schema de staging y registro del resultado. No habilitar sincronización hasta revisar presupuesto/consumo de la API y aprobar explícitamente poblar staging desde la fuente oficial. La migración 013 se requiere por los límites compartidos en entornos no-development.
+Crear una base distinta de la local, con usuario exclusivo de privilegio mínimo y TLS verificado. No importar el dump ni registros locales; la base comienza sin usuarios, empresas ni licitaciones. Aplicar las migraciones ascendentes del proyecto, consecutivamente desde 001 hasta la última de la versión (001–018 en esta candidata), desde un proceso controlado, con respaldo del schema de staging y registro del resultado. Excluir `012_authentication.down.sql`. No habilitar sincronización hasta revisar presupuesto/consumo de la API y aprobar explícitamente poblar staging desde la fuente oficial. La migración 013 se requiere por los límites compartidos en entornos no-development.
 
 Confirmar con SharkASP: versión/compatibilidad MySQL 8, host y puerto, acceso de red desde la aplicación, TLS obligatorio, certificado CA que debe usarse en `DB_SSL_CA`, límites de conexiones, cuotas/espacio, backups y procedimiento de restauración probado. `DB_SSL=true` en Oportuna valida el certificado; no usar `rejectUnauthorized=false` para ocultar un problema de CA.
 
@@ -114,7 +114,7 @@ Confirmar con SharkASP: versión/compatibilidad MySQL 8, host y puerto, acceso d
 ## Plan de staging y rollback
 
 1. Confirmar los puntos anteriores y HTTPS antes de crear credenciales de staging. Aprovisionar un hostname/base MySQL vacíos y aislados.
-2. Ejecutar migraciones 001–013 en la base de staging, verificando cada versión y restauración de prueba. Crear/activar administrador de staging solo con procedimiento autorizado y datos de prueba.
+2. Ejecutar las migraciones 001–018 en la base de staging, verificando cada versión y restauración de prueba. Crear/activar administrador de staging solo con procedimiento autorizado y datos de prueba.
 3. Construir el paquete; desplegar web con flags de scheduler desactivados. Verificar `/`, recarga de rutas de React, `/api/health`, cookies, sesión, CSRF, CORS, MySQL TLS y ausencia de secretos en assets/logs.
 4. Validar staging con datos mínimos autorizados. Habilitar la primera sincronización solo después de una autorización separada. Activar workers únicamente cuando el hosting confirme su supervisión y hayan pasado pruebas idempotentes.
 5. Rollback: detener/revertir proceso web a la versión anterior (mantener paquete de build anterior fuera de la raíz activa); no revertir migraciones con pérdida de datos. Respaldar antes de cada migración; preferir migraciones aditivas hacia adelante. Si la app no inicia, mantener workers apagados y no iniciar sync. Restaurar exclusivamente la base de staging desde su backup, nunca sustituir la base local.
