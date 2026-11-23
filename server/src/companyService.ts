@@ -279,7 +279,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
       if (best.level === 'high') high++; else if (best.level === 'medium') medium++; else exploratory++;
       if (daysToClose != null && daysToClose >= 0 && daysToClose <= 14) closingSoon++;
       if (items.trim()) indexed++; else limited++;
-      topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
+      topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, fecha_publicacion: row.fecha_publicacion, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
       topResults.sort((a, b) => b.score - a.score || (a.daysToClose ?? 9999) - (b.daysToClose ?? 9999) || String(a.codigo_externo).localeCompare(String(b.codigo_externo)));
       if (!options.includeAllItems && topResults.length > MATCH_BOARD_LIMIT) topResults.pop();
     }
@@ -289,7 +289,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
     const textClauses = keywords.map(() => "LOWER(CONCAT_WS(' ',COALESCE(l.nombre,''),COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Descripcion')),''))) COLLATE utf8mb4_0900_ai_ci LIKE ?");
     const legacyValues = [...filterValues,...keywords.map(term => `%${term}%`),...keywords.map(term => `%${term}%`)];
     const itemClause = `EXISTS (SELECT 1 FROM licitacion_items li WHERE li.codigo_externo=l.codigo_externo AND (${keywords.map(() => "LOWER(COALESCE(li.search_text,'')) COLLATE utf8mb4_0900_ai_ci LIKE ?").join(' OR ')}))`;
-    const [candidateRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.organismo,l.monto_estimado,l.moneda,
+    const [candidateRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.fecha_publicacion,l.organismo,l.monto_estimado,l.moneda,
       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.RegionUnidad')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.Region'))) region,
       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Descripcion')),'') official_description,
       COALESCE((SELECT GROUP_CONCAT(DISTINCT CONCAT_WS(' ',li.nombre,li.descripcion,li.categoria,li.search_text) SEPARATOR ' ') FROM licitacion_items li WHERE li.codigo_externo=l.codigo_externo),'') item_text
@@ -300,7 +300,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
   } else {
     while (true) {
       if (Date.now() - startedAt > MATCH_MAX_DURATION_MS) throw new Error('El Match completo superó el límite de 30 segundos. Vuelve a intentarlo cuando haya menos carga.');
-      const [batchRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.organismo,l.monto_estimado,l.moneda,
+      const [batchRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.fecha_publicacion,l.organismo,l.monto_estimado,l.moneda,
         COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.RegionUnidad')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.Region'))) region,
         COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Descripcion')),'') official_description,
         COALESCE(GROUP_CONCAT(DISTINCT CONCAT_WS(' ',li.nombre,li.descripcion,li.categoria,li.search_text) SEPARATOR ' '),'') item_text
