@@ -29,6 +29,7 @@ import { listCompanyAccessRequests, registerCompanyForCurrentUser, requestCompan
 import { normalizeChileanRut } from './chileanRut.js';
 import { logMysqlFailure } from './mysqlDiagnostics.js';
 import { runSmtpStartupProbeOnce } from './smtpStartupProbe.js';
+import { dismissProactiveMatch, getProactiveSearchPreferences, runProactiveSearchPass, saveProactiveSearchPreferences, setProactiveMatchRead } from './proactiveSearchService.js';
 
 const app = express();
 const runtime = loadRuntimeConfig();
@@ -37,6 +38,7 @@ app.set('trust proxy',runtime.trustProxyHops || false);
 app.use(cors({ origin: (origin, callback) => callback(null, !origin || runtime.allowedOrigins.includes(origin)), credentials: true, optionsSuccessStatus: 204 }));
 app.use(express.json({ limit: '32kb' }));
 app.use(requireSecureTransport);
+app.use('/api/platform/test-center',requireAuth,requirePlatformAdmin);
 const backendDirectory = dirname(fileURLToPath(import.meta.url));
 const frontendDirectory = [
   join(process.cwd(), 'dist'),
@@ -112,13 +114,15 @@ app.get('/api/platform/users',requireDb,requireAuth,requirePlatformAdmin,async(r
     const limit=Math.min(100,Math.max(1,Number(req.query.limit)||50));
     const offset=Math.max(0,Number(req.query.offset)||0);
     const term=`%${query}%`;
-    const where=query?`WHERE email_normalized LIKE ? OR first_name LIKE ? OR last_name LIKE ?`:'';
+    const where=query?`WHERE u.email_normalized LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?`:'';
     const values=query?[term,term,term]:[];
     const [[rows],[counts]]=await Promise.all([
-      pool.query<any[]>(`SELECT id,email_normalized email,first_name firstName,last_name lastName,platform_role platformRole,status,email_verified_at emailVerifiedAt,created_at createdAt FROM app_users ${where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`,[...values,limit,offset]),
-      pool.query<any[]>(`SELECT COUNT(*) total FROM app_users ${where}`,values),
+      pool.query<any[]>(`SELECT u.id,u.email_normalized email,u.first_name firstName,u.last_name lastName,u.platform_role platformRole,u.status,u.email_verified_at emailVerifiedAt,u.created_at createdAt,
+        COALESCE((SELECT GROUP_CONCAT(DISTINCT m.role ORDER BY m.role SEPARATOR ',') FROM company_memberships m WHERE m.user_id=u.id AND m.status='active'),'') companyRoles
+        FROM app_users u ${where} ORDER BY u.created_at DESC,u.id DESC LIMIT ? OFFSET ?`,[...values,limit,offset]),
+      pool.query<any[]>(`SELECT COUNT(*) total FROM app_users ${query?`WHERE email_normalized LIKE ? OR first_name LIKE ? OR last_name LIKE ?`:''}`,values),
     ]);
-    res.set('Cache-Control','no-store').json({users:rows,total:Number(counts[0]?.total??0),limit,offset});
+    res.set('Cache-Control','no-store').json({users:rows.map(row=>({...row,companyRoles:String(row.companyRoles??'').split(',').filter(Boolean)})),total:Number(counts[0]?.total??0),limit,offset});
   } catch(error) { next(error); }
 });
 app.post('/api/platform/users',requireDb,requireAuth,requireCsrf,requirePlatformAdmin,requestLimit(10,60*60_000,'platform-user-create'),async(req,res,next)=>{
@@ -226,6 +230,8 @@ app.get('/api/onboarding/progress',requireDb,requireAuth,requireActiveCompany,as
 app.post('/api/auth/invitations/accept',requireDb,requireAuth,requireVerifiedEmail,requireCsrf,requestLimit(6,60*60_000,'invitation-accept'),async(req,res,next)=>{try{const body=z.object({invitationToken:z.string().min(32).max(128)}).parse(req.body);const companyId=await acceptInvitationForUser(body.invitationToken,req.auth!.userId,req.auth!.email);if(!await setActiveCompany(req.auth!.id,req.auth!.userId,companyId))return res.status(403).json({error:'No fue posible activar la empresa invitada.'});const session=await getSession(getRequestSessionToken(req),getRequestCsrfToken(req));if(!session)return res.status(401).json({error:'La sesión expiró.'});res.json({authenticated:true,...session});}catch(error){next(error);}});
 app.post('/api/auth/company',requireDb,requireAuth,requireCsrf,async(req,res,next)=>{try{const body=z.object({companyId:z.coerce.number().int().positive()}).parse(req.body);if(!await setActiveCompany(req.auth!.id,req.auth!.userId,body.companyId))return res.status(403).json({error:'No tienes una membresía activa en esa empresa.'});const token=getRequestSessionToken(req);const session=await getSession(token,getRequestCsrfToken(req));if(!session)return res.status(401).json({error:'La sesión expiró.'});res.json({authenticated:true,...session});}catch(error){next(error);}});
 app.use('/api/company',requireAuth,requireCsrf,requireVerifiedEmail,requireActiveCompany);
+app.get('/api/company/proactive-search',requireDb,async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json(await getProactiveSearchPreferences());}catch(error){next(error);}});
+app.put('/api/company/proactive-search',requireDb,requireCompanyRole('admin'),requestLimit(20,60_000,'proactive-search-preferences'),async(req,res,next)=>{try{const body=z.object({enabled:z.boolean(),frequency:z.enum(['hourly','daily','weekly'])}).strict().parse(req.body);res.set('Cache-Control','no-store').json(await saveProactiveSearchPreferences(body));}catch(error){next(error);}});
 app.put('/api/company/profile',requireCompanyRole('admin'));
 app.post('/api/company/catalog',requireCompanyRole('admin'));
 app.patch('/api/company/catalog/:id',requireCompanyRole('admin'));
@@ -329,10 +335,11 @@ app.patch('/api/company/tracking/:id/dates/:dateId',requireDb,requireCompanyRole
 app.delete('/api/company/tracking/:id/dates/:dateId',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(40,60_000),async(req,res,next)=>{try{const trackingId=z.coerce.number().int().positive().parse(req.params.id);const dateId=z.coerce.number().int().positive().parse(req.params.dateId);if(!await deleteTrackedDate(trackingId,dateId))return res.status(404).json({error:'No se encontró la fecha en este espacio.'});res.json({ok:true});}catch(error){next(error);}});
 app.use('/api/alerts',requireAuth,requireCsrf,requireActiveCompany);
 app.get('/api/alerts/count',requireDb,requestLimit(120,60_000),async(_req,res,next)=>{try{res.json(await alertCounts());}catch(error){next(error);}});
-app.get('/api/alerts',requireDb,requestLimit(40,60_000),async(req,res,next)=>{try{const filter=z.enum(['all','unread','closing','followup']).default('all').parse(req.query.filter);const [items,counts]=await Promise.all([listAlerts({filter,limit:100}),alertCounts()]);res.json({items,counts});}catch(error){next(error);}});
+app.get('/api/alerts',requireDb,requestLimit(40,60_000),async(req,res,next)=>{try{const filter=z.enum(['all','unread','closing','followup','matches']).default('all').parse(req.query.filter);const [items,counts]=await Promise.all([listAlerts({filter,limit:100}),alertCounts()]);res.json({items,counts});}catch(error){next(error);}});
 app.post('/api/alerts/evaluate',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(12,60_000),async(_req,res,next)=>{try{res.json({...await evaluateAlerts(),counts:await alertCounts()});}catch(error){next(error);}});
-app.post('/api/alerts/:id/read',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(120,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().positive().parse(req.params.id);if(!await markAlertRead(id))return res.status(404).json({error:'No se encontró la alerta activa en este espacio.'});res.json({ok:true,counts:await alertCounts()});}catch(error){next(error);}});
-app.post('/api/alerts/:id/dismiss',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(120,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().positive().parse(req.params.id);if(!await dismissAlert(id))return res.status(404).json({error:'No se encontró la alerta activa en este espacio.'});res.json({ok:true,counts:await alertCounts()});}catch(error){next(error);}});
+app.post('/api/alerts/:id/read',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(120,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().parse(req.params.id);const ok=id<0?await setProactiveMatchRead(Math.abs(id)):await markAlertRead(z.coerce.number().int().positive().parse(id));if(!ok)return res.status(404).json({error:'No se encontró la alerta activa en este espacio.'});res.json({ok:true,counts:await alertCounts()});}catch(error){next(error);}});
+app.post('/api/alerts/:id/dismiss',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(120,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().parse(req.params.id);const ok=id<0?await dismissProactiveMatch(Math.abs(id)):await dismissAlert(z.coerce.number().int().positive().parse(id));if(!ok)return res.status(404).json({error:'No se encontró la alerta activa en este espacio.'});res.json({ok:true,counts:await alertCounts()});}catch(error){next(error);}});
+app.post('/api/internal/proactive-search/run',requireDb,requireServiceOrAdmin,requestLimit(2,60_000,'proactive-search-run'),async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json(await runProactiveSearchPass());}catch(error){next(error);}});
 app.use('/api/buscador/enrichment',requireAuth,requireCsrf,requireActiveCompany,requireCompanyRole('admin'));
 app.post('/api/buscador/enrichment',requireDb,requestLimit(5,60_000),async(req,res,next)=>{try{const body=z.object({query:z.string().trim().min(2).max(500).optional(),codes:z.array(z.string().trim().min(1).max(100)).max(10).optional()}).refine(value=>Boolean(value.query||value.codes?.length)).parse(req.body);const chosen=[...(body.codes??[]).slice(0,5)];if(body.query)chosen.push(...await findEnrichmentCandidates(body.query,Math.max(1,10-chosen.length)));const unique=[...new Set(chosen)].slice(0,10);res.status(202).json({...await enqueueEnrichment(unique),candidatesSelected:unique.length});}catch(error){next(error);}});
 app.post('/api/buscador/enrichment/prioritized',requireDb,requestLimit(2,60_000),async(req,res,next)=>{try{const body=z.object({limit:z.coerce.number().int().min(1).max(10).default(5)}).parse(req.body??{});const codes=await findPriorityCandidates(body.limit);res.status(202).json({...await enqueueEnrichment(codes),candidatesSelected:codes.length,limit:body.limit});}catch(error){next(error);}});
@@ -387,6 +394,7 @@ app.get('/api/configuracion', requireDb, async (_req, res, next) => {
   } catch (error) { next(error); }
 });
 if (runtime.appEnv !== 'development' && ['web', 'all'].includes(runtime.processRole)) {
+  app.get('/centro-de-pruebas',requireAuth,requirePlatformAdmin,(_req,res,next)=>res.sendFile(join(frontendDirectory,'index.html'),error=>error?next(error):undefined));
   app.get('*', (req, res, next) => {
     if (req.path === '/api' || req.path.startsWith('/api/')) return next();
     res.sendFile(join(frontendDirectory, 'index.html'));

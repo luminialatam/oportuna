@@ -9,6 +9,7 @@ import {
   Filter,
   X,
 } from 'lucide-react';
+import { ProactiveSearchControls } from './ProactiveSearchControls';
 
 export type AlertItem = {
   id: number;
@@ -189,6 +190,8 @@ export function AlertsPage({
   onOpen,
   loading,
   error,
+  csrfToken,
+  canManageCompany,
 }: {
   items: AlertItem[];
   filter: string;
@@ -198,6 +201,8 @@ export function AlertsPage({
   onOpen: (item: AlertItem) => void;
   loading: boolean;
   error: string;
+  csrfToken: string;
+  canManageCompany: boolean;
 }) {
   return (
     <div className="space-y-6">
@@ -217,6 +222,8 @@ export function AlertsPage({
 
       </div>
 
+      <ProactiveSearchControls csrfToken={csrfToken} canManageCompany={canManageCompany}/>
+
       {/* TAB 1: REAL ALERTS LIST */}
         <div className="space-y-4">
           {/* Filters Bar */}
@@ -229,6 +236,7 @@ export function AlertsPage({
               { id: 'unread', label: 'Sin leer' },
               { id: 'closing', label: 'Cierres próximos (24h/48h)' },
               { id: 'followup', label: 'Seguimiento' },
+              { id: 'matches', label: 'Nuevas coincidencias' },
             ].map((f) => (
               <button
                 key={f.id}

@@ -7,6 +7,7 @@ type PlatformUser = {
   firstName: string;
   lastName: string;
   platformRole: 'user' | 'admin';
+  companyRoles: Array<'admin' | 'collaborator'>;
   status: 'active' | 'suspended';
   emailVerifiedAt: string | null;
   createdAt: string;
@@ -153,7 +154,7 @@ export function PlatformUsers({ csrfToken }: { csrfToken: string }) {
               <tbody className="divide-y divide-[#E9ECF1]">
                 {users.map((user) => <tr key={user.id}>
                   <td className="px-5 py-4"><div className="font-semibold text-[#202635]">{`${user.firstName} ${user.lastName}`.trim() || '—'}</div><div className="mt-0.5 text-xs text-[#737D91]">{user.email}</div></td>
-                  <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${user.platformRole === 'admin' ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700'}`}>{user.platformRole === 'admin' ? 'Administrador' : 'Cliente'}</span></td>
+                  <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${user.platformRole === 'admin' ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700'}`}>{user.platformRole === 'admin' ? 'Administrador de plataforma' : 'Cliente'}</span>{user.companyRoles?.length > 0 && <small className="mt-1 block text-xs text-[#737D91]">Rol en empresa: {[...new Set(user.companyRoles)].map(role => role === 'admin' ? 'Administrador' : 'Colaborador').join(', ')}</small>}</td>
                   <td className="px-5 py-4 text-[#4C5568]">{user.status === 'active' ? 'Activa' : 'Suspendida'}</td>
                   <td className="px-5 py-4 text-[#4C5568]">{user.emailVerifiedAt ? 'Verificado' : 'Pendiente'}</td>
                   <td className="px-5 py-4 text-[#737D91]">{new Intl.DateTimeFormat('es-CL',{dateStyle:'medium'}).format(new Date(user.createdAt))}</td>

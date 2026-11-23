@@ -759,7 +759,7 @@ function App() {
     }
     if (detailRouteCode) return;
     const routeSection = PATH_SECTIONS[location.pathname];
-    if (!routeSection || ((routeSection === 'Equipo y accesos' || routeSection === 'Configuración') && !isAdmin) || (routeSection === 'Cuentas de usuario' && !isPlatformAdmin)) {
+    if (!routeSection || ((routeSection === 'Equipo y accesos' || routeSection === 'Configuración') && !isAdmin) || ((routeSection === 'Cuentas de usuario' || routeSection === 'Centro de Pruebas') && !isPlatformAdmin)) {
       navigate('/', { replace: true });
       return;
     }
@@ -1202,10 +1202,7 @@ function App() {
         ...(isAdmin ? [{ name: 'Configuración', icon: Settings }] : []),
       ],
     },
-    {
-      label: 'Herramientas internas',
-      items: [{ name: 'Centro de Pruebas', icon: FlaskConical, isSandbox: true }],
-    },
+    ...(isPlatformAdmin ? [{ label: 'Herramientas internas', items: [{ name: 'Centro de Pruebas', icon: FlaskConical, isSandbox: true }] }] : []),
   ];
 
   return (
@@ -2095,6 +2092,8 @@ function App() {
               onOpen={(item) => void openDetail(item.code)}
               loading={alertsLoading}
               error={alertsError}
+              csrfToken={auth.csrfToken}
+              canManageCompany={auth.role === 'admin'}
             />
           )}
 
@@ -2177,7 +2176,7 @@ function App() {
           )}
 
           {/* SECTION: CENTRO DE PRUEBAS (Isolated Sandbox, Stitch screen) */}
-          {section === 'Centro de Pruebas' && (
+          {section === 'Centro de Pruebas' && isPlatformAdmin && (
             <SandboxCenter onBackToApp={() => goToSection('Resumen')} />
           )}
         </main>
