@@ -706,6 +706,9 @@ function App() {
   const [stateFilter, setStateFilter] = useState('');
   const [matchLevelFilter, setMatchLevelFilter] = useState('');
   const [regionFilter, setRegionFilter] = useState('');
+  const [modalityFilter, setModalityFilter] = useState('');
+  const [closeAfterFilter, setCloseAfterFilter] = useState('');
+  const [closeBeforeFilter, setCloseBeforeFilter] = useState('');
   const [searchView, setSearchView] = useState<'table' | 'cards'>('table');
   const [page, setPage] = useState(1);
   const [searchResults, setSearchResults] = useState<any>(null);
@@ -1050,6 +1053,9 @@ function App() {
           states: stateFilter ? [Number(stateFilter)] : [],
           matchLevel: matchLevelFilter || undefined,
           region: regionFilter || null,
+          modality: modalityFilter || null,
+          closeAfter: closeAfterFilter || null,
+          closeBefore: closeBeforeFilter || null,
         }),
       });
       setSearch(q);
@@ -1754,20 +1760,23 @@ function App() {
                   <div className="opportunity-filter-title">
                     <strong>Filtros</strong>
                     <span>Combina criterios admitidos por el buscador</span>
-                    {(Number(Boolean(matchLevelFilter)) + Number(Boolean(stateFilter)) + Number(Boolean(regionFilter.trim()))) > 0 && (
+                    {(Number(Boolean(matchLevelFilter)) + Number(Boolean(stateFilter)) + Number(Boolean(regionFilter.trim())) + Number(Boolean(modalityFilter)) + Number(Boolean(closeAfterFilter)) + Number(Boolean(closeBeforeFilter))) > 0 && (
                       <span className="opportunity-active-count">
-                        {Number(Boolean(matchLevelFilter)) + Number(Boolean(stateFilter)) + Number(Boolean(regionFilter.trim()))} filtros activos
+                        {Number(Boolean(matchLevelFilter)) + Number(Boolean(stateFilter)) + Number(Boolean(regionFilter.trim())) + Number(Boolean(modalityFilter)) + Number(Boolean(closeAfterFilter)) + Number(Boolean(closeBeforeFilter))} filtros activos
                       </span>
                     )}
                   </div>
                   <button
                     type="button"
                     className="opportunity-clear-filters"
-                    disabled={!matchLevelFilter && !stateFilter && !regionFilter}
+                    disabled={!matchLevelFilter && !stateFilter && !regionFilter && !modalityFilter && !closeAfterFilter && !closeBeforeFilter}
                     onClick={() => {
                       setMatchLevelFilter('');
                       setStateFilter('');
                       setRegionFilter('');
+                      setModalityFilter('');
+                      setCloseAfterFilter('');
+                      setCloseBeforeFilter('');
                     }}
                   >
                     Limpiar filtros
@@ -1811,16 +1820,27 @@ function App() {
                       placeholder="Ej. Metropolitana"
                     />
                   </div>
-                  <div className="opportunity-filter-field opportunity-filter-disabled">
-                    <label htmlFor="opportunity-modality">Modalidad <span>API</span></label>
-                    <select id="opportunity-modality" disabled value="">
-                      <option value="">No disponible en este buscador</option>
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-modality">Tipo de proceso</label>
+                    <select id="opportunity-modality" value={modalityFilter} onChange={(e) => setModalityFilter(e.target.value)}>
+                      <option value="">Todos los tipos</option>
+                      <option value="public">Licitación pública</option>
+                      <option value="private">Licitación privada</option>
+                      <option value="agile">Compra Ágil</option>
                     </select>
+                  </div>
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-close-after">Cierre desde</label>
+                    <input id="opportunity-close-after" type="date" value={closeAfterFilter} onChange={(e) => setCloseAfterFilter(e.target.value)} />
+                  </div>
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-close-before">Cierre hasta</label>
+                    <input id="opportunity-close-before" type="date" value={closeBeforeFilter} onChange={(e) => setCloseBeforeFilter(e.target.value)} />
                   </div>
                 </div>
 
                 <div className="opportunity-filter-footer">
-                  <span><span className="opportunity-info-mark">i</span> La modalidad no está disponible en el servicio de búsqueda actual.</span>
+                  <span><span className="opportunity-info-mark">i</span> El tipo de proceso y el rango de cierre se aplican al buscar.</span>
                   <button
                     type="button"
                     onClick={() => void runSearch(search, 1)}
