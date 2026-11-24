@@ -1315,7 +1315,7 @@ function App() {
                   {auth.firstName ? `${auth.firstName} ${auth.lastName}` : auth.email}
                 </span>
                 <span className="text-[10px] text-[#8A92A6] block truncate">
-                  {auth.role === 'admin' ? 'Administrador' : 'Colaborador'}
+                  {auth.platformRole === 'admin' ? 'Administrador de plataforma' : 'Cliente'}
                 </span>
               </div>
             </div>
@@ -1459,7 +1459,7 @@ function App() {
                 </span>
                 <span className="min-w-0">
                   <b>{greetingName}</b>
-                  <small>{auth.role === 'admin' ? 'Administrador' : 'Colaborador'}</small>
+                  <small>{auth.platformRole === 'admin' ? 'Administrador de plataforma' : 'Cliente'}</small>
                 </span>
               </button>
               {userMenuOpen && (
