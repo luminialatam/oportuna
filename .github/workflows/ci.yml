@@ -245,6 +245,8 @@ jobs:
           if (-not (Test-Path -LiteralPath (Join-Path $package 'node_modules/argon2/prebuilds/win32-x64/argon2.glibc.node') -PathType Leaf)) { throw 'Windows x64 Argon2 runtime is missing.' }
           $actualConfig = [System.IO.File]::ReadAllText((Join-Path $package 'web.config'))
           $expectedConfig = [System.IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'web.config'))
+          $actualConfig = $actualConfig.Replace("`r`n", "`n").Replace("`r", "`n")
+          $expectedConfig = $expectedConfig.Replace("`r`n", "`n").Replace("`r", "`n")
           if ($actualConfig -cne $expectedConfig) { throw 'Deployment package web.config differs from the versioned repository file.' }
           [xml]$config = $actualConfig
           $platform = $config.configuration.'system.webServer'.httpPlatform
