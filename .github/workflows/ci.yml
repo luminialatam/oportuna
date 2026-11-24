@@ -284,7 +284,11 @@ jobs:
 
           $preview = & $env:MSDEPLOY_PATH -verb:sync "-source:$source" "-dest:$destination" -enableRule:DoNotDeleteRule -whatif 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) {
-            $code = if ($preview -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
+            $safePreview = $preview.Replace($env:WEBDEPLOY_USERNAME, '[redacted]').Replace($env:WEBDEPLOY_PASSWORD, '[redacted]')
+            $safePreview = $safePreview -replace 'https?://[^,\s]+', '[webdeploy-endpoint]'
+            $diagnostics = @($safePreview -split "`r?`n" | Where-Object { $_ -match '(?i)(error|failed|status|unauthorized|forbidden|certificate|connection|exception|cannot|unable|not authorized)' } | Select-Object -First 12)
+            foreach ($line in $diagnostics) { Write-Output "WEBDEPLOY_PREVIEW_DIAGNOSTIC: $line" }
+            $code = if ($safePreview -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
             throw "Web Deploy preview failed; code=$code. Production files were not changed."
           }
           Write-Output 'WEBDEPLOY_PREVIEW=PASS; destination=luminiadev-001-site5; deletions=disabled'
