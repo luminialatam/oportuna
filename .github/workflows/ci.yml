@@ -234,6 +234,9 @@ jobs:
 
       - name: Validate package and locate Web Deploy
         shell: pwsh
+        env:
+          WEBDEPLOY_USERNAME: ${{ secrets.SHARKASP_LICIAPP_WEBDEPLOY_USERNAME }}
+          WEBDEPLOY_PASSWORD: ${{ secrets.SHARKASP_LICIAPP_WEBDEPLOY_PASSWORD }}
         run: |
           $ErrorActionPreference = 'Stop'
           $package = Join-Path $env:RUNNER_TEMP 'oportuna-iis-linux-artifact'
