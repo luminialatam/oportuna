@@ -215,3 +215,97 @@ jobs:
       - name: Start the Linux-built package with HTTP_PLATFORM_PORT and smoke the IIS handoff
         shell: pwsh
         run: node server/test/iisRuntime.integration.mjs "$env:APPLICATION_ROOT"
+
+  deploy-production:
+    name: Deploy validated package to Oportuna production
+    needs: [verify, verify-railpack-runtime, verify-iis-windows-runtime]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Check out smoke-test script
+        uses: actions/checkout@v4
+
+      - name: Download the exact IIS-verified deployment package
+        uses: actions/download-artifact@v4
+        with:
+          name: oportuna-iis-runtime-linux-artifact
+          path: ${{ runner.temp }}/oportuna-iis-linux-artifact
+
+      - name: Validate package and locate Web Deploy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = Join-Path $env:RUNNER_TEMP 'oportuna-iis-linux-artifact'
+          $required = @('web.config','index.html','sharkasp-bootstrap.mjs','sharkasp-runtime-config.mjs','package.json')
+          foreach ($name in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $package $name) -PathType Leaf)) { throw "Deployment package is missing $name." }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $package 'dist-server/server/src/index.js') -PathType Leaf)) { throw 'Compiled Node server is missing.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $package 'node_modules/argon2/prebuilds/win32-x64/argon2.glibc.node') -PathType Leaf)) { throw 'Windows x64 Argon2 runtime is missing.' }
+          $actualConfig = [System.IO.File]::ReadAllText((Join-Path $package 'web.config'))
+          $expectedConfig = [System.IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'web.config'))
+          if ($actualConfig -cne $expectedConfig) { throw 'Deployment package web.config differs from the versioned repository file.' }
+          [xml]$config = $actualConfig
+          $platform = $config.configuration.'system.webServer'.httpPlatform
+          if ($platform.processPath -ne 'node' -or $platform.arguments -ne 'sharkasp-bootstrap.mjs') { throw 'web.config does not launch the production Node bootstrap.' }
+          if ($null -ne $config.configuration.'system.webServer'.rewrite) { throw 'web.config contains rewrite rules that could bypass API routing.' }
+          $html = [System.IO.File]::ReadAllText((Join-Path $package 'index.html'))
+          if ($html -match '/src/main\.tsx|@vite/client') { throw 'Deployment package contains Vite source HTML instead of the compiled frontend.' }
+          if ((Test-Path -LiteralPath (Join-Path $package '.env')) -or (Test-Path -LiteralPath (Join-Path $package 'secrets.json'))) { throw 'Deployment package contains a root-level private configuration file.' }
+          $candidates = @(
+            "$env:ProgramFiles\IIS\Microsoft Web Deploy V3\msdeploy.exe",
+            "${env:ProgramFiles(x86)}\IIS\Microsoft Web Deploy V3\msdeploy.exe"
+          )
+          $msdeploy = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $msdeploy) { throw 'Web Deploy client is unavailable on the GitHub runner.' }
+          if ([string]::IsNullOrWhiteSpace($env:WEBDEPLOY_USERNAME) -or [string]::IsNullOrWhiteSpace($env:WEBDEPLOY_PASSWORD)) { throw 'Existing SharkASP Web Deploy credentials are unavailable in GitHub Secrets.' }
+          "DEPLOY_PACKAGE=$package" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MSDEPLOY_PATH=$msdeploy" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Output 'PACKAGE_VALIDATION=PASS; WEB_CONFIG_FROM_GIT=PASS; PRIVATE_ROOT_FILES=ABSENT'
+
+      - name: Preview and deploy to the existing Liciapp IIS application
+        shell: pwsh
+        env:
+          WEBDEPLOY_USERNAME: ${{ secrets.SHARKASP_LICIAPP_WEBDEPLOY_USERNAME }}
+          WEBDEPLOY_PASSWORD: ${{ secrets.SHARKASP_LICIAPP_WEBDEPLOY_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $site = 'luminiadev-001-site5'
+          $endpoint = 'https://win1006.site4now.net:8172/MsDeploy.axd?site=luminiadev-001-site5'
+          $auth = "computerName=$endpoint,userName=$env:WEBDEPLOY_USERNAME,password=$env:WEBDEPLOY_PASSWORD,authType=Basic"
+          $source = "contentPath=$env:DEPLOY_PACKAGE"
+          $destination = "iisApp=$site,$auth"
+
+          $preview = & $env:MSDEPLOY_PATH -verb:sync "-source:$source" "-dest:$destination" -enableRule:DoNotDeleteRule -whatif 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) {
+            $code = if ($preview -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
+            throw "Web Deploy preview failed; code=$code. Production files were not changed."
+          }
+          Write-Output 'WEBDEPLOY_PREVIEW=PASS; destination=luminiadev-001-site5; deletions=disabled'
+
+          $deployOutput = & $env:MSDEPLOY_PATH -verb:sync "-source:$source" "-dest:$destination" -enableRule:DoNotDeleteRule -enableRule:AppOffline 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) {
+            $code = if ($deployOutput -match '(?i)(ERROR_[A-Z0-9_]+|0x[0-9a-f]{8})') { $Matches[1] } else { 'not-provided' }
+            throw "Web Deploy failed; code=$code. Review the run before retrying."
+          }
+          Write-Output 'WEBDEPLOY=PASS; versioned web.config and application package sent to production.'
+
+      - name: Verify the public site and database
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $passed = $false
+          for ($attempt = 1; $attempt -le 12; $attempt++) {
+            $output = & node deploy/sharkasp/smoke-test.mjs https://tailflow.pro 2>&1 | Out-String
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -eq 0) {
+              Write-Output $output.Trim()
+              $passed = $true
+              break
+            }
+            Write-Output "Post-deploy health check is not ready (attempt $attempt of 12)."
+            if ($attempt -lt 12) { Start-Sleep -Seconds 10 }
+          }
+          if (-not $passed) { throw 'Production smoke test failed after 12 attempts; inspect the deployment run and site health.' }
+
