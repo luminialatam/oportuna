@@ -962,12 +962,14 @@ export function CompanyOpportunities({
   onOpenListing,
   onViewAll,
   actionLabel = 'Ver ficha',
+  viewAllLabel = 'Ver oportunidades',
   board = false,
 }: {
   onConfigure: () => void;
   onOpenListing?: (code: string) => void;
   onViewAll?: () => void;
   actionLabel?: string;
+  viewAllLabel?: string;
   board?: boolean;
 }) {
   const [data, setData] = useState<any>(null);
@@ -1025,7 +1027,7 @@ export function CompanyOpportunities({
           </button>
           {onViewAll && (
             <button onClick={onViewAll} className="text-xs font-semibold text-[#5636D9] hover:underline inline-flex items-center gap-1">
-              Ver oportunidades <Search size={13} />
+              {viewAllLabel} <Search size={13} />
             </button>
           )}
         </div>
