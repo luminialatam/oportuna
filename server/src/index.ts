@@ -20,7 +20,7 @@ import { deleteOfferDraft, getOfferDraft, saveOfferDraft } from './offerPreparat
 import { offerDraftSchema } from './offerDraftValidation.js';
 import { deleteAnalyticsView, exportAnalyticsCsv, getAnalytics, listAnalyticsViews, saveAnalyticsView } from './analyticsService.js';
 import { normalizeAnalyticsFilters } from './analyticsFilters.js';
-import { alertCounts, dismissAlert, evaluateAlerts, listAlerts, markAlertRead } from './alertService.js';
+import { alertCounts, dismissAlert, evaluateAlerts, getAlertOverview, listAlerts, markAlertRead } from './alertService.js';
 import { startAlertScheduler } from './alertScheduler.js';
 import type { ApiListing } from './types.js';
 import { acceptInvitationForUser, changePasswordForSession, createInvitation, createPasswordReset, createSession, createUser, registerPendingUser, issueEmailVerification, issueEmailVerificationForAddress, completeEmailVerification, consumePasswordReset, getSession, login, normalizeEmail, revokeSession, rotateCsrf, setActiveCompany, updatePersonalProfile } from './authService.js';
@@ -30,7 +30,7 @@ import { listCompanyAccessRequests, registerCompanyForCurrentUser, requestCompan
 import { normalizeChileanRut } from './chileanRut.js';
 import { logMysqlFailure } from './mysqlDiagnostics.js';
 import { runSmtpStartupProbeOnce } from './smtpStartupProbe.js';
-import { dismissProactiveMatch, getProactiveSearchPreferences, runProactiveSearchPass, saveProactiveSearchPreferences, setProactiveMatchRead } from './proactiveSearchService.js';
+import { dismissProactiveMatch, getProactiveSearchPreferences, runCurrentCompanyProactiveSearch, runProactiveSearchPass, saveProactiveSearchPreferences, setProactiveMatchRead } from './proactiveSearchService.js';
 
 const app = express();
 const runtime = loadRuntimeConfig();
@@ -234,6 +234,7 @@ app.post('/api/auth/company',requireDb,requireAuth,requireCsrf,async(req,res,nex
 app.use('/api/company',requireAuth,requireCsrf,requireVerifiedEmail,requireActiveCompany);
 app.get('/api/company/proactive-search',requireDb,async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json(await getProactiveSearchPreferences());}catch(error){next(error);}});
 app.put('/api/company/proactive-search',requireDb,requireCompanyRole('admin'),requestLimit(20,60_000,'proactive-search-preferences'),async(req,res,next)=>{try{const body=z.object({enabled:z.boolean(),frequency:z.enum(['hourly','daily','weekly'])}).strict().parse(req.body);res.set('Cache-Control','no-store').json(await saveProactiveSearchPreferences(body));}catch(error){next(error);}});
+app.post('/api/company/proactive-search/run',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(3,60_000,'proactive-search-manual'),async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json(await runCurrentCompanyProactiveSearch());}catch(error){next(error);}});
 app.put('/api/company/profile',requireCompanyRole('admin'));
 app.post('/api/company/catalog',requireCompanyRole('admin'));
 app.patch('/api/company/catalog/:id',requireCompanyRole('admin'));
@@ -282,8 +283,7 @@ app.delete('/api/company/catalog/:id',requireDb,requestLimit(30,60_000),async(re
 app.post('/api/company/catalog/suggestions',requireDb,requestLimit(10,60_000),async(req,res,next)=>{try{const body=z.object({nombre:z.string().trim().min(2).max(255),categoria:nullableText(160),descripcion:nullableText(1000)}).parse(req.body);res.json(await suggestCommercialTerms(body));}catch(error){if(error instanceof Error&&error.message.startsWith('Groq'))return res.status(502).json({error:error.message});next(error);}});
 app.get('/api/company/matches', requireDb, requestLimit(30, 60_000), async (req, res, next) => {
   try {
-    // Bound the proactive scan to the 800 nearest-closing relevant candidates; a full scan can time out for large profiles.
-    res.json(await getCompanyMatches({ board: req.query.view === 'board', evaluationLimit: 800 }));
+    res.json(await getCompanyMatches({ board: req.query.view === 'board' }));
   } catch (error) {
     next(error);
   }
@@ -338,6 +338,7 @@ app.patch('/api/company/tracking/:id/dates/:dateId',requireDb,requireCompanyRole
 app.delete('/api/company/tracking/:id/dates/:dateId',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(40,60_000),async(req,res,next)=>{try{const trackingId=z.coerce.number().int().positive().parse(req.params.id);const dateId=z.coerce.number().int().positive().parse(req.params.dateId);if(!await deleteTrackedDate(trackingId,dateId))return res.status(404).json({error:'No se encontró la fecha en este espacio.'});res.json({ok:true});}catch(error){next(error);}});
 app.use('/api/alerts',requireAuth,requireCsrf,requireActiveCompany);
 app.get('/api/alerts/count',requireDb,requestLimit(120,60_000),async(_req,res,next)=>{try{res.json(await alertCounts());}catch(error){next(error);}});
+app.get('/api/alerts/overview',requireDb,requestLimit(60,60_000),async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json(await getAlertOverview());}catch(error){next(error);}});
 app.get('/api/alerts',requireDb,requestLimit(40,60_000),async(req,res,next)=>{try{const filter=z.enum(['all','unread','closing','followup','matches']).default('all').parse(req.query.filter);const [items,counts]=await Promise.all([listAlerts({filter,limit:100}),alertCounts()]);res.json({items,counts});}catch(error){next(error);}});
 app.post('/api/alerts/evaluate',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(12,60_000),async(_req,res,next)=>{try{res.json({...await evaluateAlerts(),counts:await alertCounts()});}catch(error){next(error);}});
 app.post('/api/alerts/:id/read',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(120,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().parse(req.params.id);const ok=id<0?await setProactiveMatchRead(Math.abs(id)):await markAlertRead(z.coerce.number().int().positive().parse(id));if(!ok)return res.status(404).json({error:'No se encontró la alerta activa en este espacio.'});res.json({ok:true,counts:await alertCounts()});}catch(error){next(error);}});
