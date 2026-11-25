@@ -1713,6 +1713,7 @@ function App() {
                     Tarjetas
                   </button>
                 </div>
+                </div>
               </div>
 
               {/* Search and filters */}
