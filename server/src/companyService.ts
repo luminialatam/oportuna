@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import pool from './db.js';
 import { currentCompanyContext } from './companyRequestContext.js';
 import { formatChileanRut, normalizeChileanRut } from './chileanRut.js';
-import { classifyCommercialIntent, commercialIntentMatchesOffer, commercialOfferTypeList, commercialOfferTypeLabels, commercialTerms, commercialTermVariants, hasCatalogDomainConflict, isKnownProductPlaceName, matchesCommercialExclusion, normalizeCommercialText, scoreCatalogMatch } from './commercialMatching.js';
+import { classifyCommercialIntent, commercialIntentMatchesOffer, commercialOfferTypeList, commercialOfferTypeLabels, commercialTerms, commercialTermVariants, hasCatalogDomainConflict, hasProfileKeywordEvidence, isKnownProductPlaceName, matchesCommercialExclusion, normalizeCommercialText, scoreCatalogMatch } from './commercialMatching.js';
 
 type ProfileInput = {
   nombreComercial: string | null; razonSocial: string | null; rut: string | null;
@@ -270,6 +270,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
         if (options.commercialClassification !== false && hasCatalogDomainConflict([product.nombre, product.categoria ?? '', ...product.palabrasClave, ...product.sinonimos].join(' '), text)) continue;
         if (product.exclusiones.some((phrase: string) => matchesCommercialExclusion(text, phrase))) continue;
         if (options.commercialClassification !== false && commercialIntentMatchesOffer(intent, product.tiposComerciales) === false) continue;
+        if (product.source === 'profile' && !hasProfileKeywordEvidence(product.nombre, title, description, items)) continue;
         const score = scoreCatalogMatch(product, title, description, items); if (!score) continue;
         if (!best || score.score > best.score) best = { ...score, productName: product.nombre, offerTypes: product.tiposComerciales };
       }
