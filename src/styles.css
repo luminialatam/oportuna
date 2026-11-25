@@ -481,11 +481,13 @@ body { overflow-x: clip; }
 .summary-matches-table th,.summary-matches-table td{box-sizing:border-box}
 .summary-matches-table th:nth-child(1){width:30%}.summary-matches-table th:nth-child(2){width:17%}.summary-matches-table th:nth-child(3){width:12%}.summary-matches-table th:nth-child(4){width:17%}.summary-matches-table th:nth-child(5){width:11%}.summary-matches-table th:nth-child(6){width:13%}
 .summary-match-nowrap,.summary-match-amount{white-space:normal;overflow-wrap:anywhere}
-.summary-match-action{max-width:100%;white-space:normal;line-height:1.25}
-.summary-match-dismiss{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:34px;padding:6px 9px;border:1px solid #E1E4EA;border-radius:8px;background:#fff;color:#626B7B;font-size:12px;font-weight:600;line-height:1.2;white-space:normal;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
-.summary-match-dismiss:hover:not(:disabled){border-color:#f0b7b7;background:#fff7f7;color:#b42318}
+.summary-match-actions{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.summary-match-action,.summary-match-dismiss{display:inline-flex;align-items:center;justify-content:center;flex:0 0 36px;width:36px;height:36px;min-height:36px;padding:0;border:1px solid #E1E4EA;border-radius:10px;background:#fff;color:#687184;cursor:pointer;transition:background .15s,border-color .15s,color .15s,transform .15s}
+.summary-match-action{border-color:#DED8FF;background:#F5F2FF;color:#5636D9}
+.summary-match-action:hover{border-color:#BDB0FF;background:#EBE6FF;transform:translateY(-1px)}
+.summary-match-dismiss:hover:not(:disabled){border-color:#F0B7B7;background:#FFF7F7;color:#B42318;transform:translateY(-1px)}
 .summary-match-dismiss:disabled{opacity:.55;cursor:wait}
-.summary-match-dismiss:focus-visible{outline:2px solid #5636D9;outline-offset:2px}
+.summary-match-action:focus-visible,.summary-match-dismiss:focus-visible{outline:2px solid #5636D9;outline-offset:2px}
 @media(max-width:900px){
   .summary-matches-table-wrap{overflow:visible}
   .summary-matches-table,.summary-matches-table tbody{display:block;width:100%}
