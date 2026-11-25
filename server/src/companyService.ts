@@ -20,8 +20,8 @@ const matchCache = new Map<string, CacheValue>();
 const GENERIC = new Set('servicio servicios equipo equipos equipamiento industrial industriales comercial comerciales producto productos suministro suministros compra compras adquisicion adquisiciones varios varias gestion integral general publico publica chile empresa licitacion licitaciones'.split(' '));
 const STOP = new Set('de del la el los las un una unos unas en y o por para con a al como sus que'.split(' '));
 const cleanList = (value: unknown): string[] => {
-  if (Array.isArray(value)) return [...new Set(value.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(Boolean))].slice(0, 40);
-  if (typeof value === 'string') return [...new Set(value.split(/[\n,;]+/).map(item => item.trim()).filter(Boolean))].slice(0, 40);
+  if (Array.isArray(value)) return [...new Set(value.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(Boolean))].slice(0, 70);
+  if (typeof value === 'string') return [...new Set(value.split(/[\n,;]+/).map(item => item.trim()).filter(Boolean))].slice(0, 70);
   return [];
 };
 function jsonList(value: unknown): string[] {
