@@ -928,6 +928,35 @@ export function CompanyWorkspace({
   );
 }
 
+function MatchLoadingSkeleton() {
+  return (
+    <div role="status" aria-live="polite" aria-label="Buscando oportunidades relacionadas con tu empresa" className="space-y-3 py-2">
+      <span className="sr-only">Buscando oportunidades relacionadas con los productos y palabras clave de tu empresa…</span>
+      <div className="flex items-center gap-2 text-xs font-medium text-[#5D6472]">
+        <span className="inline-flex h-2 w-2 rounded-full bg-[#5636D9] animate-pulse" />
+        Buscando oportunidades relacionadas con tu empresa…
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 animate-pulse">
+        {['Coincidencias','Alta','Media','Próximos cierres'].map((label) => (
+          <div key={label} className="rounded-lg border border-[#E1E4EA] bg-[#F8F9FB] p-3 space-y-2">
+            <div className="h-3 w-20 rounded bg-[#E1E4EA]" />
+            <div className="h-5 w-10 rounded bg-[#D9D3F8]" />
+          </div>
+        ))}
+      </div>
+      <div className="overflow-hidden rounded-lg border border-[#E1E4EA]">
+        {[0, 1, 2].map((row) => (
+          <div key={row} className="grid grid-cols-[minmax(0,2fr)_1fr_0.8fr] gap-4 border-b last:border-b-0 border-[#E1E4EA] p-3 animate-pulse">
+            <div className="space-y-2"><div className="h-3 w-4/5 rounded bg-[#E1E4EA]" /><div className="h-3 w-2/5 rounded bg-[#ECEEF2]" /></div>
+            <div className="h-3 w-3/4 rounded bg-[#ECEEF2] self-center" />
+            <div className="h-3 w-2/3 rounded bg-[#ECEEF2] self-center" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function CompanyOpportunities({
   onConfigure,
   onOpenListing,
@@ -944,23 +973,34 @@ export function CompanyOpportunities({
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let live = true;
-    request<any>(board ? '/api/company/matches?view=board' : '/api/company/matches')
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 45_000);
+    setLoading(true);
+    setError('');
+    request<any>(board ? '/api/company/matches?view=board' : '/api/company/matches', { signal: controller.signal })
       .then((val) => {
         if (live) setData(val);
       })
       .catch((e) => {
-        if (live) setError(e instanceof Error ? e.message : 'No se pudieron cargar las oportunidades.');
+        if (!live) return;
+        setError(e?.name === 'AbortError'
+          ? 'La búsqueda está tardando más de lo esperado. Puedes volver a intentarlo.'
+          : e instanceof Error ? e.message : 'No se pudieron cargar las oportunidades. Puedes volver a intentarlo.');
       })
       .finally(() => {
+        window.clearTimeout(timeout);
         if (live) setLoading(false);
       });
     return () => {
       live = false;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
-  }, [board]);
+  }, [board, reloadKey]);
 
   return (
     <section className="summary-matches-panel bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-4">
@@ -992,11 +1032,12 @@ export function CompanyOpportunities({
       </div>
 
       {loading ? (
-        <div className="py-8 text-center text-xs text-[#5D6472]">
-          Calculando coincidencias con tu catálogo en MySQL…
-        </div>
+        <MatchLoadingSkeleton />
       ) : error ? (
-        <div className="py-4 text-xs text-red-600">{error}</div>
+        <div role="alert" className="py-4 flex items-center justify-between gap-3 text-xs text-red-600">
+          <span>{error}</span>
+          <button onClick={() => setReloadKey((key) => key + 1)} className="shrink-0 rounded-lg border border-[#E1E4EA] px-3 py-2 font-semibold text-[#5636D9] hover:bg-[#f0edff]">Reintentar</button>
+        </div>
       ) : !data?.configured ? (
         <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472] space-y-2">
           <Sparkles size={20} className="mx-auto text-[#8A92A6]" />
