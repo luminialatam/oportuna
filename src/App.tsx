@@ -1552,6 +1552,7 @@ function App() {
               <RevenueDesk
                 onOpen={(code) => void openDetail(code)}
                 onViewAll={() => goToSection('Seguimiento')}
+                onSearch={() => goToSection('Oportunidades')}
               />
 
               <section className="summary-metric-grid grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Métricas del índice">
