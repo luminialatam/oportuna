@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 import { loadRuntimeConfig } from './runtimeConfig.js';
 import { checkRateLimit, consumeRateLimit } from './rateLimitStore.js';
 import pool from './db.js';
@@ -38,6 +39,7 @@ app.set('trust proxy',runtime.trustProxyHops || false);
 app.use(cors({ origin: (origin, callback) => callback(null, !origin || runtime.allowedOrigins.includes(origin)), credentials: true, optionsSuccessStatus: 204 }));
 app.use(express.json({ limit: '32kb' }));
 app.use(requireSecureTransport);
+app.use((_req,res,next)=>{res.locals.requestId=randomUUID().replace(/-/g,'').slice(0,12).toUpperCase();next();});
 app.use('/api/platform/test-center',requireAuth,requirePlatformAdmin);
 const backendDirectory = dirname(fileURLToPath(import.meta.url));
 const frontendDirectory = [
@@ -400,12 +402,30 @@ if (runtime.appEnv !== 'development' && ['web', 'all'].includes(runtime.processR
     res.sendFile(join(frontendDirectory, 'index.html'));
   });
 }
-app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (error instanceof z.ZodError) return res.status(400).json({ error: 'Parámetros inválidos.' });
-  const status = error instanceof MercadoPublicoError ? error.status : 500;
-  if(status>=500)console.error(`[api] internal_error type=${error instanceof Error?error.name:'unknown'}`);
-  const message = status<500&&error instanceof MercadoPublicoError ? error.message : status===500?'Ocurrió un error interno.':'No se pudo completar la solicitud.';
-  return res.status(status).json({ error: message });
+  const cause=error as {code?:unknown};
+  const dbCode=typeof cause?.code==='string'?cause.code:'';
+  const isOfferDraft=req.path.startsWith('/api/company/offer-drafts/');
+  const requestId=String(res.locals.requestId||'SIN-REF');
+  let status=error instanceof MercadoPublicoError?error.status:500;
+  let message=status<500&&error instanceof MercadoPublicoError?error.message:'No se pudo completar la solicitud.';
+  if(status>=500){
+    console.error(`[api] internal_error ref=${requestId} method=${req.method} route=${req.path} type=${error instanceof Error?error.name:'unknown'} code=${dbCode||'none'}`);
+    message='Ocurrió un error interno.';
+    if(isOfferDraft){
+      if(dbCode==='ER_NO_SUCH_TABLE'||dbCode==='ER_BAD_FIELD_ERROR'){
+        status=503;
+        message='El guardado de borradores no está habilitado correctamente en el servidor. Contacta al administrador e indica la referencia '+requestId+'.';
+      }else if(dbCode==='ER_NO_REFERENCED_ROW_2'||dbCode==='ER_ROW_IS_REFERENCED_2'){
+        status=409;
+        message='La empresa, la sesión o la licitación ya no coincide con los datos del servidor. Recarga la ficha e inténtalo otra vez. Referencia: '+requestId+'.';
+      }else{
+        message='No se pudo guardar el borrador. Tus datos siguen en pantalla. Inténtalo nuevamente; si vuelve a fallar, comparte esta referencia con soporte: '+requestId+'.';
+      }
+    }
+  }
+  return res.status(status).json({ error: message, ...(status>=500||isOfferDraft?{requestId}:{}) });
 });
 async function initializeWorker() {
   await pool.query('SELECT 1');
