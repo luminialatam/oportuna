@@ -252,6 +252,26 @@ jobs:
           fi
           echo 'PACKAGE_VALIDATION=PASS; WEB_CONFIG_FROM_GIT=PASS; PRIVATE_ROOT_FILES=ABSENT'
 
+      - name: Recycle the IIS Node process for this deployment
+        env:
+          DEPLOYMENT_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          config = Path(os.environ['RUNNER_TEMP']) / 'oportuna-iis-linux-artifact' / 'web.config'
+          content = config.read_text(encoding='utf-8')
+          marker = f'    <!-- Oportuna deployment {os.environ["DEPLOYMENT_SHA"]} -->'
+          if '</configuration>' not in content:
+              raise SystemExit('No se pudo marcar web.config para reciclar el proceso IIS.')
+          content = content.replace('</configuration>', f'{marker}\n</configuration>', 1)
+          config.write_text(content, encoding='utf-8')
+          print('IIS deployment marker set; web.config will recycle the Node process after package upload.')
+          PY
+
       - name: Publish only inside the restricted /Liciapp FTP account
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
