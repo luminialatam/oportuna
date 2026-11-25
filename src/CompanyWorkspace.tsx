@@ -976,7 +976,7 @@ export function CompanyOpportunities({
             </span>
           </div>
           <p className="text-xs text-[#5D6472] mt-0.5">
-            Ordenadas por coincidencia con el catálogo y los términos configurados. El puntaje de 0 a 100 mide texto coincidente; no es una probabilidad de adjudicación.
+            Oportuna cruza las licitaciones activas del índice local con tus productos y palabras clave comerciales. El puntaje de 0 a 100 mide evidencia textual; no predice una adjudicación.
           </p>
         </div>
         <div className="flex items-center gap-4 shrink-0">
@@ -1010,6 +1010,11 @@ export function CompanyOpportunities({
         </div>
       ) : (
         <>
+          <p className="text-xs text-[#5D6472]">
+            {data.matchingBasis === 'profile_keywords'
+              ? `Coincidencia automática usando ${Number(data.profileKeywordCount || 0)} palabras clave guardadas en Mi empresa. Se recalcula al abrir esta vista y cuando se actualiza el índice local.`
+              : 'Coincidencia automática usando los productos activos de tu catálogo y el perfil comercial. Se recalcula al abrir esta vista y cuando se actualiza el índice local.'}
+          </p>
           <div className="summary-match-metrics grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div><span>Coincidencias</span><b>{Number(data.total || 0).toLocaleString('es-CL')}</b></div>
             <div><span>Alta</span><b>{Number(data.high || 0).toLocaleString('es-CL')}</b></div>
@@ -1052,7 +1057,7 @@ export function CompanyOpportunities({
             </div>
           ) : (
             <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472]">
-              No encontramos coincidencias con el catálogo actual.
+              No hay coincidencias en las licitaciones activas del índice local para los criterios comerciales guardados. La búsqueda evaluó {Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones.
             </div>
           )}
           {board && data.total > data.items?.length && (

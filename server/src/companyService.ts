@@ -29,6 +29,19 @@ function jsonList(value: unknown): string[] {
   if (typeof value === 'string') { try { return cleanList(JSON.parse(value)); } catch { return []; } }
   return [];
 }
+function matchingProducts(productRows: any[], profile: any): any[] {
+  const saved = productRows.map((row: any) => ({ ...row,
+    palabrasClave: jsonList(row.palabras_clave), sinonimos: jsonList(row.sinonimos),
+    terminosRelacionados: jsonList(row.terminos_relacionados), aplicaciones: jsonList(row.aplicaciones),
+    exclusiones: jsonList(row.exclusiones), tiposComerciales: commercialOfferTypeList(row.tipos_comerciales),
+  }));
+  if (saved.length) return saved;
+  // Use saved company keywords as product phrases when no separate catalog records exist.
+  return [...new Set(jsonList(profile?.palabras_clave).map(value => value.trim()).filter(Boolean))].map((nombre, index) => ({
+    id: `profile-keyword-${index}`, nombre, categoria: '', descripcion: '', palabrasClave: [], sinonimos: [],
+    terminosRelacionados: [], aplicaciones: [], exclusiones: [], tiposComerciales: [], source: 'profile',
+  }));
+}
 function jsonNumberList(value: unknown): number[] {
   let parsed = value;
   if (typeof value === 'string') { try { parsed = JSON.parse(value); } catch { return []; } }
@@ -54,8 +67,9 @@ export async function scoreCurrentCompanyListing(input: { title: string; descrip
     pool.query<any[]>('SELECT actividad,rubros,palabras_clave,terminos_excluidos FROM commercial_profiles WHERE company_id=?', [companyId]),
     pool.query<any[]>('SELECT id,nombre,categoria,descripcion,palabras_clave,sinonimos,terminos_relacionados,aplicaciones,exclusiones,tipos_comerciales FROM company_products WHERE company_id=? AND activo=1 ORDER BY updated_at DESC LIMIT 200', [companyId]),
   ]);
-  if (!productRows.length) return { score: null, level: 'unavailable' as const, productName: null, exactPhrase: false, matchedSources: [], reason: 'La empresa activa no tiene productos configurados en su catálogo.' };
   const profile = profileRows[0];
+  const products = matchingProducts(productRows, profile);
+  if (!products.length) return { score: null, level: 'unavailable' as const, productName: null, exactPhrase: false, matchedSources: [], reason: 'Agrega palabras clave comerciales o productos al perfil de la empresa para activar las coincidencias.' };
   const profileTerms = [...new Set([
     ...terms(String(profile?.actividad ?? '')),
     ...jsonList(profile?.rubros).flatMap(terms),
@@ -67,12 +81,12 @@ export async function scoreCurrentCompanyListing(input: { title: string; descrip
     return { score: null, level: 'excluded' as const, productName: null, exactPhrase: false, matchedSources: [], reason: 'La ficha coincide con una exclusión comercial del perfil activo.' };
   }
   let best: any = null;
-  for (const row of productRows) {
+  for (const row of products) {
     const product = {
       nombre: String(row.nombre), categoria: row.categoria ?? '', descripcion: row.descripcion ?? '',
-      palabrasClave: jsonList(row.palabras_clave), sinonimos: jsonList(row.sinonimos),
-      terminosRelacionados: jsonList(row.terminos_relacionados), aplicaciones: jsonList(row.aplicaciones),
-      exclusiones: jsonList(row.exclusiones), tiposComerciales: commercialOfferTypeList(row.tipos_comerciales), profileTerms,
+      palabrasClave: row.palabrasClave, sinonimos: row.sinonimos,
+      terminosRelacionados: row.terminosRelacionados, aplicaciones: row.aplicaciones,
+      exclusiones: row.exclusiones, tiposComerciales: row.tiposComerciales, profileTerms,
     };
     if (isKnownProductPlaceName(combined, [product.nombre, product.categoria, product.descripcion, ...product.palabrasClave, ...product.sinonimos, ...product.terminosRelacionados].join(' '))) continue;
     if (hasCatalogDomainConflict([product.nombre, product.categoria, ...product.palabrasClave, ...product.sinonimos].join(' '), combined)) continue;
@@ -212,11 +226,13 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
     query('SELECT id,nombre,categoria,descripcion,palabras_clave,sinonimos,terminos_relacionados,aplicaciones,exclusiones,tipos_comerciales FROM company_products WHERE company_id=? AND activo=1 ORDER BY updated_at DESC LIMIT 200', [companyId]),
     query('SELECT MAX(last_synced_at) version FROM licitaciones'),
   ]);
-  const products = productRows.map((row: any) => ({ ...row, palabrasClave: jsonList(row.palabras_clave), sinonimos: jsonList(row.sinonimos), terminosRelacionados: jsonList(row.terminos_relacionados), aplicaciones: jsonList(row.aplicaciones), exclusiones: jsonList(row.exclusiones), tiposComerciales: commercialOfferTypeList(row.tipos_comerciales) }));
   const profile = profileRows[0]; const preference = preferenceRows[0];
+  const products = matchingProducts(productRows, profile);
   const states = jsonNumberList(preference?.estados);
   const regions = jsonList(preference?.regiones).map(normalize).filter(Boolean);
-  const empty = { configured: products.length > 0, total: 0, high: 0, medium: 0, exploratory: 0, closingSoon: 0, candidatesEvaluated: 0, evaluation: { evaluatedListings: 0, batches: 0, queryCount, durationMs: Date.now() - startedAt, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: 0 }, coverage: { indexed: 0, limited: 0 }, items: [], disclaimer: 'La relevancia comercial se basa en texto y datos indexados. No confirma elegibilidad; revisa las bases oficiales.' };
+  const matchingBasis = productRows.length ? 'catalog' : 'profile_keywords';
+  const profileKeywordCount = jsonList(profile?.palabras_clave).length;
+  const empty = { configured: products.length > 0, matchingBasis, profileKeywordCount, total: 0, high: 0, medium: 0, exploratory: 0, closingSoon: 0, candidatesEvaluated: 0, evaluation: { evaluatedListings: 0, batches: 0, queryCount, durationMs: Date.now() - startedAt, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: 0 }, coverage: { indexed: 0, limited: 0 }, items: [], disclaimer: 'La relevancia comercial se basa en el catálogo o las palabras clave del perfil y los datos indexados. No confirma elegibilidad; revisa las bases oficiales.' };
   if (!products.length) return empty;
   const profileTerms = [...new Set([...terms(String(profile?.actividad ?? '')), ...jsonList(profile?.rubros).flatMap(terms), ...jsonList(profile?.palabras_clave).flatMap(terms)])];
   for (const product of products) product.profileTerms = profileTerms;
@@ -317,9 +333,9 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
     }
   }
   const durationMs=Date.now()-startedAt;
-  const value = { configured: true, total, high, medium, exploratory, closingSoon, candidatesEvaluated: evaluatedListings,
+  const value = { configured: true, matchingBasis, profileKeywordCount, total, high, medium, exploratory, closingSoon, candidatesEvaluated: evaluatedListings,
     evaluation: { evaluatedListings, batches, queryCount, durationMs, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: Math.max(0,peakHeapUsed-initialHeap) },
-    coverage: { indexed, limited }, items: topResults, disclaimer: 'Coincidencia estimada según evidencias del catálogo, título, descripción y partidas. No confirma elegibilidad; revisa las bases oficiales.' };
+    coverage: { indexed, limited }, items: topResults, disclaimer: 'Coincidencia estimada según evidencias del catálogo o las palabras clave del perfil, título, descripción y partidas. No confirma elegibilidad; revisa las bases oficiales.' };
   matchCache.set(key, { value, expires: Date.now() + 30_000 }); if (matchCache.size > 200) matchCache.clear();
   return visibleMatches(value);
 }
