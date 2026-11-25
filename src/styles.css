@@ -185,7 +185,7 @@
 .summary-feature-search button{display:inline-flex;align-items:center;justify-content:center;gap:7px;flex:none;min-height:36px;padding:0 13px;border:0;border-radius:7px;background:#5636d9;color:#fff;font-size:11px;font-weight:700;white-space:nowrap}
 .summary-feature-search button:hover{background:#4b2ec7}
 .summary-activity-panel,.summary-evolution-panel,.summary-matches-panel{padding:20px;border:1px solid #e1e4ea;border-radius:12px;background:#fff;box-shadow:0 1px 3px #171a240a}
-.summary-activity-panel,.summary-evolution-panel{min-height:365px}
+.summary-activity-panel{min-height:365px}.summary-evolution-panel{align-self:start;min-height:0}
 .summary-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #e1e4ea}
 .summary-section-heading h2{margin:0;color:#171a24;font-size:16px;font-weight:700;line-height:1.35}
 .summary-section-heading p{margin:4px 0 0;color:#5d6472;font-size:11px;line-height:1.45}
@@ -211,13 +211,13 @@
 .summary-recent-copy small{overflow:hidden;color:#8a92a6;font-size:var(--type-badge);text-overflow:ellipsis;white-space:nowrap}
 .summary-recent-arrow{flex:none;color:#8a92a6}
 .summary-empty-state{display:grid;min-height:100px;place-items:center;padding:16px;border:1px dashed #dce0e7;border-radius:9px;color:#737b88;font-size:11px;text-align:center}
-.summary-state-chart{display:grid;gap:15px;padding:6px 0}
+.summary-state-chart{display:grid;gap:11px;padding:4px 0}
 .summary-state-row{display:grid;gap:6px}
 .summary-state-label{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#5d6472;font-size:11px}
 .summary-state-label b{color:#171a24;font-size:11px}
 .summary-state-track{height:7px;overflow:hidden;border-radius:99px;background:#f0f1f3}
 .summary-state-track>span{display:block;height:100%;min-width:2px;border-radius:inherit;background:linear-gradient(90deg,#c9bfff,#5636d9)}
-.summary-chart-note{margin:16px 0 0;padding:10px 11px;border-radius:8px;background:#f8f9fa;color:#737b88;font-size:var(--type-badge);line-height:1.5}
+.summary-chart-note{margin:10px 0 0;padding:9px 10px;border-radius:8px;background:#f8f9fa;color:#737b88;font-size:var(--type-badge);line-height:1.5}
 .summary-matches-panel{min-width:0}
 .summary-match-metrics>div{display:grid;gap:4px;min-width:0;padding:10px 11px;border:1px solid #e1e4ea;border-radius:8px;background:#f8f9fa}
 .summary-match-metrics span{color:#5d6472;font-size:var(--type-badge)}
