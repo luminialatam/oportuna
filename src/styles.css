@@ -453,3 +453,24 @@ body { overflow-x: clip; }
 .revenue-desk-error{color:#b42318}
 @media(max-width:900px){.revenue-desk-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.revenue-desk{padding:16px}.revenue-desk-header{flex-direction:column}.revenue-desk-header h2{font-size:18px}.revenue-desk-link{align-self:flex-start}.revenue-desk-next-title{flex-direction:column;gap:3px}.revenue-desk-row{gap:8px;padding:11px 10px}.revenue-desk-row-copy b{font-size:12px}.revenue-desk-row-copy small{font-size:10px}}
+
+/* Dashboard: show actionable empty state and keep activity/chart compact and readable. */
+.revenue-desk-first-run{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;padding:16px;border:1px solid #e7e3fb;border-radius:13px;background:linear-gradient(110deg,#f8f6ff,#fff 65%)}
+.revenue-desk-first-run-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#eeeaff;color:#5636d9}
+.revenue-desk-first-run-copy{min-width:0}
+.revenue-desk-first-run-copy strong{display:block;color:#222b3c;font-size:14px;line-height:1.4}
+.revenue-desk-first-run-copy p{max-width:760px;margin:4px 0 0;color:#687286;font-size:12px;line-height:1.55}
+.revenue-desk-first-run-action{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:0 13px;border:1px solid #ded7ff;border-radius:9px;background:#fff;color:#5636d9;font-size:12px;font-weight:750;white-space:nowrap}
+.revenue-desk-first-run-action:hover{background:#f5f2ff}
+.summary-activity-panel,.summary-evolution-panel{min-height:0}
+.summary-insight-grid{align-items:start}
+.summary-recent-copy b{display:block;overflow:visible;white-space:normal;overflow-wrap:anywhere;line-height:1.45;-webkit-line-clamp:unset}
+.summary-recent-copy small{display:block;overflow:visible;white-space:normal;overflow-wrap:anywhere;line-height:1.45}
+.summary-recent-item{align-items:flex-start;padding:10px 3px}
+.summary-recent-arrow{align-self:center}
+.summary-state-chart{gap:9px;padding:2px 0}
+.summary-state-row{gap:4px}
+.summary-state-label,.summary-state-label b{font-size:12px;line-height:1.35}
+.summary-state-track{height:5px}
+.summary-chart-note{margin-top:10px;padding:8px 10px;line-height:1.45}
+@media(max-width:700px){.revenue-desk-first-run{grid-template-columns:auto minmax(0,1fr);align-items:start}.revenue-desk-first-run-action{grid-column:1/-1;justify-self:start}}
