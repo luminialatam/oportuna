@@ -15,7 +15,7 @@ import { searchListings, analyzeListing, findEnrichmentCandidates, groqConfigure
 import { parseTenderAmount, tenderAmountStatus, tenderAmountUpsertSql } from './tenderAmount.js';
 import { previewEnrichmentCandidates, enqueueEnrichment, enrichmentMetrics, enrichmentPilotStatus, enrichmentStatus, findPriorityCandidates, indexOfficialDetail, pauseEnrichmentPilot, resumeEnrichmentPilot, retryEnrichmentPilotFailures, startEnrichmentPilotBatch, recoverEnrichmentQueue, startEnrichmentWorker } from './listingEnrichment.js';
 import { deleteCompanyProduct, getCompanyMatches, getCompanyWorkspace, saveCompanyProfile, saveCompanyProduct, searchCompanyProducts, suggestCommercialTerms } from './companyService.js';
-import { addTrackedDate, deleteTrackedDate, deleteTrackedOpportunity, getTrackedCounts, getTrackedStatus, listTrackedOpportunities, saveTrackedOpportunity, trackingStates, updateTrackedDate, updateTrackedOpportunity } from './trackingService.js';
+import { addTrackedDate, deleteTrackedDate, deleteTrackedOpportunity, dismissTrackedOpportunity, getTrackedCounts, getTrackedStatus, listTrackedOpportunities, saveTrackedOpportunity, trackingStates, updateTrackedDate, updateTrackedOpportunity } from './trackingService.js';
 import { deleteOfferDraft, getOfferDraft, saveOfferDraft } from './offerPreparationService.js';
 import { offerDraftSchema } from './offerDraftValidation.js';
 import { deleteAnalyticsView, exportAnalyticsCsv, getAnalytics, listAnalyticsViews, saveAnalyticsView } from './analyticsService.js';
@@ -284,6 +284,15 @@ app.post('/api/company/catalog/suggestions',requireDb,requestLimit(10,60_000),as
 app.get('/api/company/matches', requireDb, requestLimit(30, 60_000), async (req, res, next) => {
   try {
     res.json(await getCompanyMatches({ board: req.query.view === 'board' }));
+  } catch (error) {
+    next(error);
+  }
+});
+app.post('/api/company/matches/dismiss', requireDb, requireCompanyRole('admin','collaborator'), requestLimit(60, 60_000), async (req, res, next) => {
+  try {
+    const body = z.object({ codigo: z.string().trim().min(1).max(100) }).parse(req.body);
+    if (!await dismissTrackedOpportunity(body.codigo)) return res.status(404).json({ error: 'La licitación ya no está disponible en el índice local.' });
+    res.json({ ok: true, discarded: true });
   } catch (error) {
     next(error);
   }
