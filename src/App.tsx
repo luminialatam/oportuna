@@ -1549,6 +1549,7 @@ function App() {
               <RevenueDesk
                 onOpen={(code) => void openDetail(code)}
                 onViewAll={() => goToSection('Seguimiento')}
+                onSearch={() => goToSection('Buscar oportunidades')}
               />
 
               <section className="summary-metric-grid grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Métricas del índice">
@@ -1593,7 +1594,7 @@ function App() {
               </section>
 
               <section className="summary-insight-grid grid grid-cols-1 xl:grid-cols-12 gap-5">
-                <article className="summary-activity-panel xl:col-span-5">
+                <article className="summary-activity-panel xl:col-span-6">
                   <div className="summary-section-heading">
                     <div>
                       <h2>Actividad reciente</h2>
@@ -1637,7 +1638,7 @@ function App() {
                   </div>
                 </article>
 
-                <article className="summary-evolution-panel xl:col-span-7">
+                <article className="summary-evolution-panel xl:col-span-6">
                   <div className="summary-section-heading">
                     <div>
                       <h2>Evolución de oportunidades</h2>
