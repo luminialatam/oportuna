@@ -37,6 +37,13 @@ export function OfferPreparationPanel({
   csrfToken: string;
 }) {
   const code = String(listing.CodigoExterno ?? listing.codigo_externo ?? '');
+  const listingStatus = Number(listing.CodigoEstado ?? listing.codigo_estado);
+  const closedStatusMessage = listingStatus === 6
+    ? 'Este proceso aparece cerrado. Puedes conservar este borrador para registro interno, pero no representa una oferta presentable.'
+    : listingStatus === 7 ? 'Este proceso aparece desierto. La preparación solo sirve como registro interno.'
+      : listingStatus === 8 ? 'Este proceso ya aparece adjudicado. Usa la preparación solo para análisis interno.'
+        : [15, 18].includes(listingStatus) ? 'Este proceso aparece revocado. La preparación solo sirve como registro interno.'
+          : listingStatus === 19 ? 'Este proceso aparece suspendido. Confirma su situación en Mercado Público antes de continuar.' : '';
   const products = useMemo(() => {
     const value = listing.Items?.Listado;
     return Array.isArray(value) ? value : value ? [value] : [];
@@ -156,6 +163,7 @@ export function OfferPreparationPanel({
         <strong className="block">Preparación interna; no envía una postulación</strong>
         Esta herramienta organiza la cotización de tu empresa. La presentación oficial y la carga de documentos se realizan en Mercado Público.
       </div>
+      {closedStatusMessage && <div role="status" className="rounded-xl border border-amber-300 bg-[#fffaf0] p-4 text-sm text-amber-900"><strong className="mr-1">Estado de la ficha:</strong>{closedStatusMessage}</div>}
 
       <div className="rounded-xl border border-[#E1E4EA] bg-white p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
