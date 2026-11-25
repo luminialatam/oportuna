@@ -264,6 +264,7 @@ jobs:
           server-dir: /
           dangerous-clean-slate: false
           exclude: |
+            **/node_modules/**
             **/.env
             **/.env.*
             **/secrets.json
