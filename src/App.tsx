@@ -1671,6 +1671,7 @@ function App() {
               </section>
 
               <CompanyOpportunities
+                csrfToken={auth.csrfToken}
                 onConfigure={() => goToSection('Mi empresa')}
                 onOpenListing={(code) => void openDetail(code)}
                 onViewAll={() => goToSection('Oportunidades')}
@@ -2052,6 +2053,7 @@ function App() {
               </header>
               <CompanyOpportunities
                 key={auth.activeCompanyId}
+                csrfToken={auth.csrfToken}
                 board
                 onConfigure={() => goToSection('Mi empresa')}
                 onOpenListing={(code) => void openDetail(code)}
@@ -2061,6 +2063,7 @@ function App() {
 
           {section === 'Agentes IA' && (
             <CommercialAgents
+              csrfToken={auth.csrfToken}
               companyName={auth.memberships.find((membership) => membership.companyId === auth.activeCompanyId)?.companyName ?? 'tu empresa'}
               onConfigure={() => goToSection('Mi empresa')}
               onAnalyzeListing={(code) => { void openDetail(code); void analyzeListing(code); }}
