@@ -1549,7 +1549,7 @@ function App() {
               <RevenueDesk
                 onOpen={(code) => void openDetail(code)}
                 onViewAll={() => goToSection('Seguimiento')}
-                onSearch={() => goToSection('Buscar oportunidades')}
+                onSearch={() => goToSection('Oportunidades')}
               />
 
               <section className="summary-metric-grid grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Métricas del índice">
@@ -1679,18 +1679,22 @@ function App() {
           {section === 'Buscar oportunidades' && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                <div>
+                <div className="min-w-0">
                   <div className="text-[11px] font-bold text-[#5636D9] uppercase tracking-wider mb-1">
-                    Mercado Público
+                    Mercado Público · Búsqueda manual
                   </div>
                   <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">
-                    Buscar Oportunidades
+                    Explorar licitaciones
                   </h1>
                   <p className="text-sm text-[#5D6472] mt-1">
-                    Encuentra licitaciones y compras ágiles mediante búsqueda semántica asistida y filtros combinables.
+                    Busca una compra específica por texto y filtros. Para revisar las coincidencias detectadas automáticamente para tu empresa, ve a Oportunidades.
                   </p>
                 </div>
 
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                <button type="button" onClick={() => goToSection('Oportunidades')} className="rounded-lg border border-[#E1E4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5636D9] hover:bg-[#F8F9FB]">
+                  Ver coincidencias de mi empresa
+                </button>
                 <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-[#E1E4EA] shadow-sm">
                   <button
                     onClick={() => setSearchView('table')}
@@ -1885,9 +1889,14 @@ function App() {
                   </h3>
                   <p className="text-xs text-[#5D6472]">
                     {search.trim().length < 2
-                      ? 'Escribe al menos 2 caracteres o elige uno de los ejemplos para iniciar la búsqueda.'
+                      ? 'Escribe una consulta para buscar una compra específica. Si quieres partir con recomendaciones basadas en tu empresa, revisa sus coincidencias automáticas.'
                       : 'Prueba ajustando los términos o limpiando los filtros aplicados.'}
                   </p>
+                  {search.trim().length < 2 && (
+                    <button type="button" onClick={() => goToSection('Oportunidades')} className="inline-flex items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#482CC8]">
+                      Ver oportunidades recomendadas <ArrowRight size={14} />
+                    </button>
+                  )}
                 </div>
               ) : searchView === 'table' ? (
                 <div className="bg-white rounded-xl border border-[#E1E4EA] shadow-sm overflow-hidden">
@@ -2043,15 +2052,22 @@ function App() {
 
           {section === 'Oportunidades' && (
             <div className="space-y-6">
-              <header>
-                <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">Oportunidades</h1>
-                <p className="text-sm text-[#5D6472] mt-1">Revisa las licitaciones que coinciden con el catálogo de tu empresa.</p>
+              <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">Oportunidades</h1>
+                  <p className="text-sm text-[#5D6472] mt-1">Recomendaciones automáticas según el catálogo de tu empresa.</p>
+                </div>
+                <button type="button" onClick={() => goToSection('Buscar oportunidades')} className="inline-flex items-center justify-center gap-2 self-start rounded-lg border border-[#E1E4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5636D9] hover:bg-[#F8F9FB] sm:self-auto">
+                  Buscar por texto y filtros <Search size={14} />
+                </button>
               </header>
               <CompanyOpportunities
                 key={auth.activeCompanyId}
                 board
                 onConfigure={() => goToSection('Mi empresa')}
                 onOpenListing={(code) => void openDetail(code)}
+                onViewAll={() => goToSection('Buscar oportunidades')}
+                viewAllLabel="Búsqueda manual"
               />
             </div>
           )}
