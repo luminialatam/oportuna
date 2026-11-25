@@ -22,7 +22,7 @@ function daysUntil(value: Date, now: Date) {
   return Math.ceil((value.getTime() - now.getTime()) / 86_400_000);
 }
 
-export function RevenueDesk({ onOpen, onViewAll }: { onOpen: (code: string) => void; onViewAll: () => void }) {
+export function RevenueDesk({ onOpen, onViewAll, onSearch }: { onOpen: (code: string) => void; onViewAll: () => void; onSearch: () => void }) {
   const [items, setItems] = useState<TrackingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -69,6 +69,16 @@ export function RevenueDesk({ onOpen, onViewAll }: { onOpen: (code: string) => v
       {loading ? <div className="revenue-desk-loading"><LoaderCircle size={18} className="spin" /> Cargando tu pipeline…</div> : error ? (
         <div className="revenue-desk-error"><CircleAlert size={17} /> {error}</div>
       ) : (
+        items.length === 0 ? (
+          <div className="revenue-desk-first-run">
+            <span className="revenue-desk-first-run-icon"><TrendingUp size={20} /></span>
+            <div className="revenue-desk-first-run-copy">
+              <strong>Tu centro comercial se activa con tu primera oportunidad</strong>
+              <p>Aún no hay licitaciones guardadas en Seguimiento. Busca oportunidades relacionadas con el catálogo de tu empresa y guarda las que quieras evaluar; aquí verás cierres próximos, ofertas en preparación y tareas pendientes.</p>
+            </div>
+            <button type="button" className="revenue-desk-first-run-action" onClick={onSearch}>Buscar oportunidades <ArrowRight size={15} /></button>
+          </div>
+        ) : (
         <>
           <div className="revenue-desk-metrics">
             <div><span><Layers3 size={15} /> Oportunidades activas</span><strong>{active.length}</strong><small>En evaluación o preparación</small></div>
@@ -88,6 +98,7 @@ export function RevenueDesk({ onOpen, onViewAll }: { onOpen: (code: string) => v
             }) : <div className="revenue-desk-empty">No hay cierres futuros en tu seguimiento. Guarda una oportunidad para que aparezca aquí.</div>}
           </div>
         </>
+        )
       )}
     </section>
   );
