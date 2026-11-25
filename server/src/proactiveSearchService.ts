@@ -16,11 +16,14 @@ function schedulerStatus(){
 
 export async function getProactiveSearchPreferences(){
   const companyId=await resolveCurrentCompanyId();
-  const [[rows],[products]]=await Promise.all([
+  const [[rows],[products],[profiles]]=await Promise.all([
     pool.query<any[]>('SELECT enabled,frequency,last_checked_at lastCheckedAt,last_error_code lastErrorCode FROM company_proactive_search_preferences WHERE company_id=?',[companyId]),
     pool.query<any[]>('SELECT COUNT(*) total FROM company_products WHERE company_id=? AND activo=1',[companyId]),
+    pool.query<any[]>('SELECT palabras_clave keywords FROM commercial_profiles WHERE company_id=?',[companyId]),
   ]);
-  return {enabled:Boolean(rows[0]?.enabled),frequency:(rows[0]?.frequency??'daily') as Frequency,lastCheckedAt:rows[0]?.lastCheckedAt??null,lastErrorCode:rows[0]?.lastErrorCode??null,configuredProfiles:Number(products[0]?.total??0),scheduler:schedulerStatus()};
+  const productCount=Number(products[0]?.total??0);
+  const keywordCount=jsonList(profiles[0]?.keywords).length;
+  return {enabled:Boolean(rows[0]?.enabled),frequency:(rows[0]?.frequency??'daily') as Frequency,lastCheckedAt:rows[0]?.lastCheckedAt??null,lastErrorCode:rows[0]?.lastErrorCode??null,configuredProfiles:productCount+keywordCount,scheduler:schedulerStatus()};
 }
 
 export async function saveProactiveSearchPreferences(input:{enabled:boolean;frequency:Frequency}){
@@ -48,6 +51,27 @@ async function evaluateCompany(companyId:number,cutoff:Date|null){
     created+=Number(inserted.affectedRows??0);
   }
   return {evaluated:Number(result.candidatesEvaluated??0),created};
+}
+
+/** Runs the active company's local index search on demand, sharing the worker lock. */
+export async function runCurrentCompanyProactiveSearch(){
+  const companyId=await resolveCurrentCompanyId();
+  const preferences=await getProactiveSearchPreferences();
+  if(!preferences.configuredProfiles)return {evaluated:0,created:0,configured:false,locked:false,completedAt:new Date().toISOString()};
+  const connection=await pool.getConnection();let locked=false;
+  try{
+    const [lockRows]=await connection.query<any[]>("SELECT GET_LOCK('oportuna_proactive_search',0) acquired");
+    locked=Number(lockRows[0]?.acquired)===1;
+    if(!locked)return {evaluated:0,created:0,configured:true,locked:true,completedAt:null};
+    const result=await evaluateCompany(companyId,null);
+    const completedAt=new Date();
+    await pool.execute(`INSERT INTO company_proactive_search_preferences(company_id,enabled,frequency,last_checked_at,last_error_code)
+      VALUES(?,0,'daily',?,NULL) ON DUPLICATE KEY UPDATE last_checked_at=VALUES(last_checked_at),last_error_code=NULL`,[companyId,sqlUtc(completedAt)]);
+    return {...result,configured:true,locked:false,completedAt:completedAt.toISOString()};
+  }finally{
+    if(locked)await connection.query("SELECT RELEASE_LOCK('oportuna_proactive_search')");
+    connection.release();
+  }
 }
 
 /** One MySQL advisory lock prevents overlapping process and cron runs. */
