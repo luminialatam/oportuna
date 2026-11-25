@@ -55,10 +55,12 @@ export function CommercialAgents({
   onConfigure,
   onAnalyzeListing,
   companyName,
+  csrfToken,
 }: {
   onConfigure: () => void;
   onAnalyzeListing: (code: string) => void;
   companyName: string;
+  csrfToken: string;
 }) {
   return (
     <div className="space-y-6">
@@ -99,6 +101,7 @@ export function CommercialAgents({
         </div>
         <CompanyOpportunities
           board
+          csrfToken={csrfToken}
           onConfigure={onConfigure}
           onOpenListing={onAnalyzeListing}
           actionLabel="Evaluar oportunidad"
