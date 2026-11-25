@@ -220,11 +220,12 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
   let queryCount = 0;
   const query = (sql: string, values: unknown[] = []) => { queryCount++; return pool.query<any[]>(sql, values); };
   const companyId = await companyContext();
-  const [[profileRows], [preferenceRows], [productRows], [listingVersion]] = await Promise.all([
+  const [[profileRows], [preferenceRows], [productRows], [listingVersion], [trackingVersion]] = await Promise.all([
     query('SELECT actividad,rubros,regiones,palabras_clave,terminos_excluidos,updated_at FROM commercial_profiles WHERE company_id=?', [companyId]),
     query('SELECT estados,regiones,updated_at FROM company_search_preferences WHERE company_id=?', [companyId]),
     query('SELECT id,nombre,categoria,descripcion,palabras_clave,sinonimos,terminos_relacionados,aplicaciones,exclusiones,tipos_comerciales FROM company_products WHERE company_id=? AND activo=1 ORDER BY updated_at DESC LIMIT 200', [companyId]),
     query('SELECT MAX(last_synced_at) version FROM licitaciones'),
+    query('SELECT MAX(updated_at) version FROM company_opportunity_tracking WHERE company_id=?', [companyId]),
   ]);
   const profile = profileRows[0]; const preference = preferenceRows[0];
   const products = matchingProducts(productRows, profile);
@@ -240,7 +241,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
   const keywords = [...new Set([...nameKeywords, ...products.flatMap(product => [...terms(product.nombre), ...terms(product.categoria ?? ''), ...product.palabrasClave.flatMap(terms), ...product.sinonimos.flatMap(terms), ...product.terminosRelacionados.flatMap(terms), ...product.aplicaciones.flatMap(terms)]), ...profileTerms].flatMap(commercialTermVariants))].slice(0, 90);
   if (!keywords.length) return empty;
   const evaluationLimit = options.evaluationLimit == null ? null : Math.max(1, Math.min(800, Math.trunc(options.evaluationLimit) || 800));
-  const key = createHash('sha256').update(JSON.stringify({ companyId, products, profileUpdated: profile?.updated_at, preferenceUpdated: preference?.updated_at, listingVersion: listingVersion[0]?.version, states, regions, includeAllItems: Boolean(options.includeAllItems), evaluationLimit, commercialClassification: options.commercialClassification !== false })).digest('hex');
+  const key = createHash('sha256').update(JSON.stringify({ companyId, products, profileUpdated: profile?.updated_at, preferenceUpdated: preference?.updated_at, listingVersion: listingVersion[0]?.version, trackingVersion: trackingVersion[0]?.version, states, regions, includeAllItems: Boolean(options.includeAllItems), evaluationLimit, commercialClassification: options.commercialClassification !== false })).digest('hex');
   const visibleMatches = (result: CacheValue['value']) =>
     options.board || options.includeAllItems ? result : { ...result, items: result.items.slice(0, 6) };
   const cached = matchCache.get(key);
@@ -248,6 +249,8 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
   const statusFilter = states.length ? states : [5];
   const filterValues: unknown[] = [...statusFilter];
   const filters = [`l.codigo_estado IN (${statusFilter.map(() => '?').join(',')})`, `(l.fecha_cierre IS NULL OR l.fecha_cierre>=UTC_TIMESTAMP())`];
+  filters.push("NOT EXISTS (SELECT 1 FROM company_opportunity_tracking t WHERE t.company_id=? AND t.codigo_externo=l.codigo_externo AND t.estado='discarded')");
+  filterValues.push(companyId);
   if (regions.length) {
     const regionExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.RegionUnidad')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.Region')))";
     filters.push(`(${regionExpr} IS NULL OR (${regions.map(() => `LOWER(${regionExpr}) COLLATE utf8mb4_0900_ai_ci LIKE ?`).join(' OR ')}))`);
