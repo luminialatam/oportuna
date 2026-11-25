@@ -1185,7 +1185,7 @@ function App() {
       label: 'Explorar',
       items: [
         { name: 'Resumen', icon: LayoutDashboard },
-        { name: 'Buscar oportunidades', icon: Search },
+        { name: 'Buscar oportunidades', label: 'Búsqueda manual', icon: Search },
         { name: 'Oportunidades', icon: Sparkles },
         { name: 'Agentes IA', icon: FileSearch },
         { name: 'Inteligencia de mercado', icon: BarChart3 },
@@ -1287,7 +1287,7 @@ function App() {
                     >
                       <div className="flex items-center gap-2.5">
                         <item.icon size={17} className={active ? 'text-[#5636D9]' : 'text-[#8A92A6]'} />
-                        <span>{item.name}</span>
+                        <span>{'label' in item ? item.label : item.name}</span>
                       </div>
                       {'isSandbox' in item && item.isSandbox && (
                         <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
