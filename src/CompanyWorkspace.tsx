@@ -1012,8 +1012,8 @@ export function CompanyOpportunities({
         <>
           <p className="text-xs text-[#5D6472]">
             {data.matchingBasis === 'profile_keywords'
-              ? `Coincidencia automática usando ${Number(data.profileKeywordCount || 0)} palabras clave guardadas en Mi empresa. Se recalcula al abrir esta vista y cuando se actualiza el índice local.`
-              : 'Coincidencia automática usando los productos activos de tu catálogo y el perfil comercial. Se recalcula al abrir esta vista y cuando se actualiza el índice local.'}
+              ? `Coincidencia automática usando ${Number(data.profileKeywordCount || 0)} palabras clave guardadas en Mi empresa. Se revisan hasta ${Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} fichas candidatas, priorizadas por fecha de cierre.`
+              : `Coincidencia automática usando los productos activos de tu catálogo y el perfil comercial. Se revisan hasta ${Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} fichas candidatas, priorizadas por fecha de cierre.`}
           </p>
           <div className="summary-match-metrics grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div><span>Coincidencias</span><b>{Number(data.total || 0).toLocaleString('es-CL')}</b></div>
