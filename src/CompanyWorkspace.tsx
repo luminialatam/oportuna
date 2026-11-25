@@ -964,6 +964,7 @@ export function CompanyOpportunities({
   actionLabel = 'Ver ficha',
   viewAllLabel = 'Ver oportunidades',
   board = false,
+  csrfToken,
 }: {
   onConfigure: () => void;
   onOpenListing?: (code: string) => void;
@@ -971,11 +972,33 @@ export function CompanyOpportunities({
   actionLabel?: string;
   viewAllLabel?: string;
   board?: boolean;
+  csrfToken: string;
 }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [dismissingCode, setDismissingCode] = useState('');
+  const [actionNotice, setActionNotice] = useState('');
+
+  const dismissMatch = async (code: string) => {
+    setDismissingCode(code);
+    setActionNotice('');
+    setError('');
+    try {
+      await request('/api/company/matches/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: code }),
+      }, csrfToken);
+      setActionNotice(`Descartaste ${code}. Buscando la siguiente coincidencia para tu empresa…`);
+      setReloadKey((key) => key + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo descartar esta coincidencia.');
+    } finally {
+      setDismissingCode('');
+    }
+  };
 
   useEffect(() => {
     let live = true;
@@ -1033,6 +1056,7 @@ export function CompanyOpportunities({
         </div>
       </div>
 
+      {actionNotice && <p role="status" aria-live="polite" className="rounded-lg border border-[#DED8FF] bg-[#FAF9FF] px-3 py-2 text-xs text-[#5636D9]">{actionNotice}</p>}
       {loading ? (
         <MatchLoadingSkeleton />
       ) : error ? (
@@ -1088,9 +1112,22 @@ export function CompanyOpportunities({
                         <td className="summary-match-amount">{amount}</td>
                         <td><span className="summary-match-score">{Number(item.score || 0)} / 100</span></td>
                         <td>
-                          {onOpenListing ? (
-                            <button className="summary-match-action" onClick={() => onOpenListing(item.codigo_externo)}>{actionLabel}</button>
-                          ) : <span>—</span>}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {onOpenListing ? (
+                              <button className="summary-match-action" onClick={() => onOpenListing(item.codigo_externo)}>{actionLabel}</button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="summary-match-dismiss"
+                              disabled={Boolean(dismissingCode)}
+                              onClick={() => void dismissMatch(item.codigo_externo)}
+                              aria-label={`Descartar ${item.nombre || item.codigo_externo} y mostrar la siguiente coincidencia`}
+                              title="No me sirve: descartar y cargar la siguiente"
+                            >
+                              {dismissingCode === item.codigo_externo ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                              <span>{dismissingCode === item.codigo_externo ? 'Actualizando…' : 'No me sirve'}</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
