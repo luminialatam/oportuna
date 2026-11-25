@@ -39,6 +39,7 @@ import { PlatformUsers } from './PlatformUsers';
 import { OfferPreparationPanel } from './OfferPreparationPanel';
 import { CommercialAgents } from './CommercialAgents';
 import { AnalyticsWorkspace } from './AnalyticsWorkspace';
+import { RevenueDesk } from './RevenueDesk';
 import { useLocation, useNavigate } from 'react-router';
 
 type Listing = {
@@ -1544,6 +1545,11 @@ function App() {
                   </button>
                 )}
               </section>
+
+              <RevenueDesk
+                onOpen={(code) => void openDetail(code)}
+                onViewAll={() => goToSection('Seguimiento')}
+              />
 
               <section className="summary-metric-grid grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Métricas del índice">
                 <article className="summary-metric-card">
