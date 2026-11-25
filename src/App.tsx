@@ -29,7 +29,7 @@ import {
 
 import { CompanyOpportunities, CompanyWorkspace } from './CompanyWorkspace';
 import { TrackingWorkspace } from './TrackingWorkspace';
-import { AlertNotificationPanel, AlertsPage, type AlertItem } from './AlertCenter';
+import { AlertNotificationPanel, AlertsPage, type AlertItem, type AlertOverview } from './AlertCenter';
 import { AuthGate, EmailVerificationGate, LegacyClaim, type AuthResult } from './AuthGate';
 import { CompanyTeamManagement, NoCompanyOnboarding } from './Onboarding';
 import { MarketAnalytics } from './MarketAnalytics';
@@ -725,6 +725,7 @@ function App() {
 
   // Alerts State
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [alertOverview, setAlertOverview] = useState<AlertOverview | null>(null);
   const [alertCounts, setAlertCounts] = useState({ total: 0, unread: 0 });
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [alertsLoading, setAlertsLoading] = useState(false);
@@ -892,11 +893,13 @@ function App() {
     setAlertsError('');
     try {
       await api('/api/alerts/evaluate', { method: 'POST' });
-      const res = await api<{ items: AlertItem[]; counts: { total: number; unread: number } }>(
-        `/api/alerts?filter=${f}`
-      );
+      const [res, overview] = await Promise.all([
+        api<{ items: AlertItem[]; counts: { total: number; unread: number } }>(`/api/alerts?filter=${f}`),
+        api<AlertOverview>('/api/alerts/overview'),
+      ]);
       setAlerts(res.items);
       setAlertCounts(res.counts);
+      setAlertOverview(overview);
     } catch (e) {
       setAlertsError(e instanceof Error ? e.message : 'No se pudieron cargar las alertas.');
     } finally {
@@ -1185,7 +1188,7 @@ function App() {
       label: 'Explorar',
       items: [
         { name: 'Resumen', icon: LayoutDashboard },
-        { name: 'Buscar oportunidades', label: 'Búsqueda manual', icon: Search },
+        { name: 'Buscar oportunidades', icon: Search },
         { name: 'Oportunidades', icon: Sparkles },
         { name: 'Agentes IA', icon: FileSearch },
         { name: 'Inteligencia de mercado', icon: BarChart3 },
@@ -1287,7 +1290,7 @@ function App() {
                     >
                       <div className="flex items-center gap-2.5">
                         <item.icon size={17} className={active ? 'text-[#5636D9]' : 'text-[#8A92A6]'} />
-                        <span>{'label' in item ? item.label : item.name}</span>
+                        <span>{item.name}</span>
                       </div>
                       {'isSandbox' in item && item.isSandbox && (
                         <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
@@ -1549,7 +1552,6 @@ function App() {
               <RevenueDesk
                 onOpen={(code) => void openDetail(code)}
                 onViewAll={() => goToSection('Seguimiento')}
-                onSearch={() => goToSection('Oportunidades')}
               />
 
               <section className="summary-metric-grid grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Métricas del índice">
@@ -1594,7 +1596,7 @@ function App() {
               </section>
 
               <section className="summary-insight-grid grid grid-cols-1 xl:grid-cols-12 gap-5">
-                <article className="summary-activity-panel xl:col-span-6">
+                <article className="summary-activity-panel xl:col-span-5">
                   <div className="summary-section-heading">
                     <div>
                       <h2>Actividad reciente</h2>
@@ -1638,7 +1640,7 @@ function App() {
                   </div>
                 </article>
 
-                <article className="summary-evolution-panel xl:col-span-6">
+                <article className="summary-evolution-panel xl:col-span-7">
                   <div className="summary-section-heading">
                     <div>
                       <h2>Evolución de oportunidades</h2>
@@ -1679,22 +1681,18 @@ function App() {
           {section === 'Buscar oportunidades' && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                <div className="min-w-0">
+                <div>
                   <div className="text-[11px] font-bold text-[#5636D9] uppercase tracking-wider mb-1">
-                    Mercado Público · Búsqueda manual
+                    Mercado Público
                   </div>
                   <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">
-                    Explorar licitaciones
+                    Buscar Oportunidades
                   </h1>
                   <p className="text-sm text-[#5D6472] mt-1">
-                    Busca una compra específica por texto y filtros. Para revisar las coincidencias detectadas automáticamente para tu empresa, ve a Oportunidades.
+                    Encuentra licitaciones y compras ágiles mediante búsqueda semántica asistida y filtros combinables.
                   </p>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                <button type="button" onClick={() => goToSection('Oportunidades')} className="rounded-lg border border-[#E1E4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5636D9] hover:bg-[#F8F9FB]">
-                  Ver coincidencias de mi empresa
-                </button>
                 <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-[#E1E4EA] shadow-sm">
                   <button
                     onClick={() => setSearchView('table')}
@@ -1712,7 +1710,6 @@ function App() {
                   >
                     Tarjetas
                   </button>
-                </div>
                 </div>
               </div>
 
@@ -1890,14 +1887,9 @@ function App() {
                   </h3>
                   <p className="text-xs text-[#5D6472]">
                     {search.trim().length < 2
-                      ? 'Escribe una consulta para buscar una compra específica. Si quieres partir con recomendaciones basadas en tu empresa, revisa sus coincidencias automáticas.'
+                      ? 'Escribe al menos 2 caracteres o elige uno de los ejemplos para iniciar la búsqueda.'
                       : 'Prueba ajustando los términos o limpiando los filtros aplicados.'}
                   </p>
-                  {search.trim().length < 2 && (
-                    <button type="button" onClick={() => goToSection('Oportunidades')} className="inline-flex items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#482CC8]">
-                      Ver oportunidades recomendadas <ArrowRight size={14} />
-                    </button>
-                  )}
                 </div>
               ) : searchView === 'table' ? (
                 <div className="bg-white rounded-xl border border-[#E1E4EA] shadow-sm overflow-hidden">
@@ -2053,22 +2045,15 @@ function App() {
 
           {section === 'Oportunidades' && (
             <div className="space-y-6">
-              <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">Oportunidades</h1>
-                  <p className="text-sm text-[#5D6472] mt-1">Recomendaciones automáticas según el catálogo de tu empresa.</p>
-                </div>
-                <button type="button" onClick={() => goToSection('Buscar oportunidades')} className="inline-flex items-center justify-center gap-2 self-start rounded-lg border border-[#E1E4EA] bg-white px-3 py-2 text-xs font-semibold text-[#5636D9] hover:bg-[#F8F9FB] sm:self-auto">
-                  Buscar por texto y filtros <Search size={14} />
-                </button>
+              <header>
+                <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">Oportunidades</h1>
+                <p className="text-sm text-[#5D6472] mt-1">Revisa las licitaciones que coinciden con el catálogo de tu empresa.</p>
               </header>
               <CompanyOpportunities
                 key={auth.activeCompanyId}
                 board
                 onConfigure={() => goToSection('Mi empresa')}
                 onOpenListing={(code) => void openDetail(code)}
-                onViewAll={() => goToSection('Buscar oportunidades')}
-                viewAllLabel="Búsqueda manual"
               />
             </div>
           )}
@@ -2117,6 +2102,7 @@ function App() {
           {section === 'Alertas' && (
             <AlertsPage
               items={alerts}
+              overview={alertOverview}
               filter={alertsFilter}
               onFilter={(val) => setAlertsFilter(val)}
               onRead={(id) => {
@@ -2134,6 +2120,14 @@ function App() {
                 });
               }}
               onOpen={(item) => void openDetail(item.code)}
+              onGoToTracking={() => goToSection('Seguimiento')}
+              onRunSearch={async () => {
+                const result = await api<{ evaluated: number; created: number; configured: boolean; locked: boolean }>('/api/company/proactive-search/run', { method: 'POST' });
+                if (result.locked) throw new Error('Ya hay una búsqueda automática en curso. Intenta de nuevo en un momento.');
+                await loadAlerts(alertsFilter);
+                return result;
+              }}
+              canRunSearch={auth.role === 'admin' || auth.role === 'collaborator'}
               loading={alertsLoading}
               error={alertsError}
               csrfToken={auth.csrfToken}
