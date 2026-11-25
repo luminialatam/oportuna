@@ -421,3 +421,35 @@ body { overflow-x: clip; }
   .summary-topbar-identity > div { font-size: 12px; }
   .summary-topbar-profile { max-width: 42px; }
 }
+
+.revenue-desk{display:grid;gap:17px;padding:22px;background:linear-gradient(135deg,#fff 0%,#fbfaff 100%);border:1px solid #ded8ff;border-radius:18px;box-shadow:0 5px 20px #32206f0a}
+.revenue-desk-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.revenue-desk-eyebrow{display:inline-flex;align-items:center;gap:7px;color:#5636d9;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.revenue-desk-header h2{margin:5px 0 0;color:#171a24;font-size:20px;font-weight:800;letter-spacing:-.025em}
+.revenue-desk-header p{margin:4px 0 0;color:#687286;font-size:13px;line-height:1.5}
+.revenue-desk-link{display:inline-flex;align-items:center;gap:7px;flex:none;padding:9px 12px;border:1px solid #e3ddff;border-radius:10px;background:#fff;color:#5636d9;font-size:13px;font-weight:700}
+.revenue-desk-link:hover{background:#f5f2ff}
+.revenue-desk-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.revenue-desk-metrics>div{display:grid;gap:5px;padding:13px 14px;border:1px solid #e7e9f0;border-radius:12px;background:#fff}
+.revenue-desk-metrics>div>span{display:flex;align-items:center;gap:7px;color:#667085;font-size:12px;font-weight:650}
+.revenue-desk-metrics>div>span svg{color:#7255e9}
+.revenue-desk-metrics strong{color:#171a24;font-size:27px;line-height:1.1;font-weight:800}
+.revenue-desk-metrics small{color:#8791a3;font-size:11px}
+.revenue-desk-metrics>div.is-urgent{border-color:#ffd5b3;background:#fffaf5}
+.revenue-desk-metrics>div.is-urgent>span svg,.revenue-desk-metrics>div.is-urgent strong{color:#bd520d}
+.revenue-desk-next{overflow:hidden;border:1px solid #e7e9f0;border-radius:12px;background:#fff}
+.revenue-desk-next-title{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid #edf0f4;color:#222b3c;font-size:12px}
+.revenue-desk-next-title span{color:#8791a3;font-weight:500}
+.revenue-desk-row{display:flex;width:100%;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid #f0f1f5;text-align:left;color:#7d8799}
+.revenue-desk-row:last-child{border-bottom:0}
+.revenue-desk-row:hover{background:#faf9ff;color:#5636d9}
+.revenue-desk-row-copy{display:grid;flex:1;min-width:0;gap:4px}
+.revenue-desk-row-copy b{overflow:hidden;color:#222b3c;font-size:13px;text-overflow:ellipsis;white-space:nowrap}
+.revenue-desk-row-copy small{overflow:hidden;color:#8791a3;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.revenue-desk-deadline{flex:none;padding:5px 9px;border-radius:7px;background:#f2f4f7;color:#536075;font-size:11px;font-weight:750;white-space:nowrap}
+.revenue-desk-deadline.is-soon{background:#fff3df;color:#a85d00}
+.revenue-desk-deadline.is-critical{background:#fff0ef;color:#bf3434}
+.revenue-desk-empty,.revenue-desk-loading,.revenue-desk-error{display:flex;align-items:center;gap:9px;padding:16px;color:#687286;font-size:12px}
+.revenue-desk-error{color:#b42318}
+@media(max-width:900px){.revenue-desk-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.revenue-desk{padding:16px}.revenue-desk-header{flex-direction:column}.revenue-desk-header h2{font-size:18px}.revenue-desk-link{align-self:flex-start}.revenue-desk-next-title{flex-direction:column;gap:3px}.revenue-desk-row{gap:8px;padding:11px 10px}.revenue-desk-row-copy b{font-size:12px}.revenue-desk-row-copy small{font-size:10px}}
