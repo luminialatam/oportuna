@@ -11,7 +11,8 @@ import {
   parseExplicitExclusions,
   scoreCatalogMatch,
   searchAmbiguityHint,
-, hasProfileKeywordEvidence} from '../src/commercialMatching.js';
+  hasProfileKeywordEvidence,
+} from '../src/commercialMatching.js';
 
 const pendones = scoreCatalogMatch(
   { nombre: 'Pendones', sinonimos: ['banner publicitario'] },
