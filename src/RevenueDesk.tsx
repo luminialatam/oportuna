@@ -74,7 +74,7 @@ export function RevenueDesk({ onOpen, onViewAll, onSearch }: { onOpen: (code: st
             <span className="revenue-desk-first-run-icon"><TrendingUp size={20} /></span>
             <div className="revenue-desk-first-run-copy">
               <strong>Tu centro comercial se activa con tu primera oportunidad</strong>
-              <p>Aún no hay licitaciones guardadas en Seguimiento. Busca oportunidades relacionadas con el catálogo de Andes Organics y guarda las que quieras evaluar; aquí verás cierres próximos, ofertas en preparación y tareas pendientes.</p>
+              <p>Aún no hay licitaciones guardadas en Seguimiento. Busca oportunidades relacionadas con el catálogo de tu empresa y guarda las que quieras evaluar; aquí verás cierres próximos, ofertas en preparación y tareas pendientes.</p>
             </div>
             <button type="button" className="revenue-desk-first-run-action" onClick={onSearch}>Buscar oportunidades <ArrowRight size={15} /></button>
           </div>
