@@ -262,7 +262,7 @@ function companyProfileFieldErrors(error:z.ZodError){
   else if(field==='sitioWeb')message='Ingresa una URL válida que comience con http:// o https://, o deja el campo vacío.';
   else if(field==='rut')message='Ingresa un RUT válido; este identificador no se puede borrar de una empresa registrada.';
   else if(issue.code==='too_small')message=detail.origin==='array'?'Agrega al menos un elemento.':`Escribe al menos ${detail.minimum??2} caracteres.`;
-  else if(issue.code==='too_big')message=detail.origin==='array'?`No puede superar ${detail.maximum??40} elementos.`:`No puede superar ${detail.maximum??'el límite'} caracteres.`;
+  else if(issue.code==='too_big')message=detail.origin==='array'?`No puede superar ${detail.maximum??70} elementos.`:`No puede superar ${detail.maximum??'el límite'} caracteres.`;
   else if(issue.code==='invalid_type')message='Revisa el formato de este campo.';
   const entry=`${line}${message}`;
   (result[field]??=[]).push(entry);
