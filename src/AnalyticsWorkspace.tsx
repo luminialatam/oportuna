@@ -60,14 +60,19 @@ function TrendChart({ rows }: { rows: Analytics['trend'] }) {
   if (!rows.length) return <div className="analytics-empty">No hay datos del período seleccionado.</div>;
   const width = 760; const height = 230; const pad = { left: 42, right: 18, top: 16, bottom: 34 };
   const max = Math.max(1, ...rows.map((row) => row.listings));
-  const x = (index: number) => pad.left + (rows.length < 2 ? 0 : index * (width - pad.left - pad.right) / (rows.length - 1));
+  const x = (index: number) => pad.left + (rows.length < 2 ? (width - pad.left - pad.right) / 2 : index * (width - pad.left - pad.right) / (rows.length - 1));
   const y = (value: number) => height - pad.bottom - value / max * (height - pad.top - pad.bottom);
-  const path = rows.map((row, index) => `${index === 0 ? 'M' : 'L'} ${x(index)} ${y(row.listings)}`).join(' ');
+  const path = rows.length > 1 ? rows.map((row, index) => `${index === 0 ? 'M' : 'L'} ${x(index)} ${y(row.listings)}`).join(' ') : '';
   return <div className="analytics-chart-scroll"><svg className="analytics-trend-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Fichas indexadas por mes">
     {[0, 0.5, 1].map((fraction) => { const yPos = pad.top + fraction * (height - pad.top - pad.bottom); return <g key={fraction}><line x1={pad.left} x2={width - pad.right} y1={yPos} y2={yPos} className="analytics-chart-grid" /><text x={pad.left - 9} y={yPos + 4} textAnchor="end" className="analytics-chart-axis">{fmt(Math.round(max * (1 - fraction)))}</text></g>; })}
     <path d={path} className="analytics-trend-line" />
     {rows.map((row, index) => <g key={row.month}><circle cx={x(index)} cy={y(row.listings)} r="4" className="analytics-trend-point"><title>{row.month}: {fmt(row.listings)} fichas</title></circle><text x={x(index)} y={height - 9} textAnchor="middle" className="analytics-chart-axis">{row.month.slice(5)}</text></g>)}
   </svg></div>;
+}
+
+function CoverageMeter({ label, value, total }: { label: string; value: number; total: number }) {
+  const percent = total ? Math.round(value / total * 100) : 0;
+  return <div className="analytics-coverage-item"><div><span>{label}</span><b>{fmt(value)} <small>({percent}%)</small></b></div><div className="analytics-coverage-track"><span style={{ width: `${percent}%` }} /></div></div>;
 }
 
 function DataPanel({ title, subtitle, icon: Icon, children }: { title: string; subtitle?: string; icon: typeof BarChart3; children: React.ReactNode }) {
@@ -104,6 +109,13 @@ export function AnalyticsWorkspace({ request, csrfToken }: { request: Request; c
 
   const updateDraft = (field: keyof Filters, value: string) => setDraft((current) => ({ ...current, [field]: value }));
   const applyFilters = (event: React.FormEvent) => { event.preventDefault(); setNotice(''); setApplied({ ...draft }); };
+  const setPeriod = (days: number) => {
+    const end = new Date(); const start = new Date(end);
+    start.setDate(start.getDate() - days + 1);
+    const toIso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const next = { ...draft, dateFrom: toIso(start), dateTo: toIso(end) };
+    setDraft(next); setApplied(next); setNotice('');
+  };
 
   const saveView = async () => {
     const name = viewName.trim();
@@ -142,11 +154,12 @@ export function AnalyticsWorkspace({ request, csrfToken }: { request: Request; c
   return <main className="analytics-workspace">
     <div className="analytics-heading">
       <div><div className="analytics-eyebrow"><BarChart3 size={15} /> Inteligencia de mercado</div><h1>Analítica para decidir</h1><p>Entiende quién compra, qué categorías se mueven y cómo avanza tu equipo. Cada cifra indica su cobertura y fuente.</p></div>
-      <button className="analytics-export" type="button" title="Exporta hasta 20.000 fichas que cumplen los filtros actuales" onClick={() => void exportCsv()} disabled={exporting || loading}><ArrowDownToLine size={16} />{exporting ? 'Preparando CSV…' : 'Exportar CSV'}</button>
+      <div className="analytics-heading-actions"><button className="analytics-refresh" type="button" onClick={() => { setError(''); setApplied((current) => ({ ...current })); }} disabled={loading}><RefreshCw size={15} className={loading ? 'analytics-spin' : ''} />{loading ? 'Actualizando…' : 'Actualizar'}</button><button className="analytics-export" type="button" title="Exporta hasta 20.000 fichas que cumplen los filtros actuales" onClick={() => void exportCsv()} disabled={exporting || loading}><ArrowDownToLine size={16} />{exporting ? 'Preparando CSV…' : 'Exportar CSV'}</button></div>
     </div>
 
     <form className="analytics-filter-card" onSubmit={applyFilters}>
       <div className="analytics-filter-title"><div><h2>Filtrar análisis</h2><p>El período usa la fecha de publicación; si no está disponible, usa la última sincronización local.</p></div><button type="button" className="analytics-reset" onClick={() => { const fresh = initialFilters(); setDraft(fresh); setApplied(fresh); }}>Restablecer</button></div>
+      <div className="analytics-period-presets" aria-label="Períodos rápidos"><span>Período rápido</span><button type="button" onClick={() => setPeriod(30)}>30 días</button><button type="button" onClick={() => setPeriod(90)}>90 días</button><button type="button" onClick={() => setPeriod(365)}>12 meses</button><button type="button" onClick={() => { const fresh = initialFilters(); setDraft(fresh); setApplied(fresh); }}>Año actual</button></div>
       <div className="analytics-filters-grid">
         <label>Desde<input type="date" value={draft.dateFrom} max={draft.dateTo} onChange={(event) => updateDraft('dateFrom', event.target.value)} /></label>
         <label>Hasta<input type="date" value={draft.dateTo} min={draft.dateFrom} onChange={(event) => updateDraft('dateTo', event.target.value)} /></label>
@@ -172,10 +185,15 @@ export function AnalyticsWorkspace({ request, csrfToken }: { request: Request; c
         <article><span>Procesos publicados abiertos</span><strong>{fmt(data.summary.openListings)}</strong><small>Estado publicado y cierre vigente o sin fecha.</small></article>
         <article><span>Presupuesto estimado en CLP</span><strong className={data.summary.amountComparable ? '' : 'is-muted'}>{amountHeadline}</strong><small>{fmt(data.summary.amountClpRecords)} de {fmt(data.summary.total)} fichas con monto CLP explícito; no se convierten monedas.</small></article>
       </div>
+      <section className="analytics-coverage-card" aria-label="Cobertura del índice">
+        <div className="analytics-coverage-heading"><div><h2>Cobertura de los datos</h2><p>Cuántas fichas del período tienen información suficiente para cada análisis.</p></div><span>{fmt(data.coverage.total)} fichas analizadas</span></div>
+        <div className="analytics-coverage-grid"><CoverageMeter label="Comprador identificado" value={data.coverage.withBuyer} total={data.coverage.total} /><CoverageMeter label="Región identificable" value={data.coverage.withRegion} total={data.coverage.total} /><CoverageMeter label="Monto en CLP" value={data.coverage.amountClpRecords} total={data.coverage.total} /><CoverageMeter label="Con partidas indexadas" value={data.coverage.listingsWithItems} total={data.coverage.total} /></div>
+        {(data.coverage.withBuyer === 0 || data.coverage.withRegion === 0 || data.coverage.listingsWithItems === 0) && <p className="analytics-coverage-note">Algunos campos no vienen informados en las fichas indexadas. Los paneles que dependen de ellos pueden aparecer vacíos; el total no significa que no existan compradores o actividad en el mercado.</p>}
+      </section>
       <div className="analytics-source-line"><span><DatabaseIcon /> Datos indexados por Oportuna · {applied.dateFrom} a {applied.dateTo}</span><span>Actualizado {new Intl.DateTimeFormat('es-CL',{dateStyle:'short',timeStyle:'short'}).format(new Date(data.generatedAt))}</span></div>
 
       {tab === 'market' && <div className="analytics-dashboard-grid">
-        <DataPanel title="Actividad del mercado" subtitle={`Fichas observadas por mes · ${monthCoverageText}`} icon={CalendarDays}><TrendChart rows={data.trend} /><p className="analytics-caption">Cuenta procesos publicados; si falta esa fecha se toma la última sincronización. No es una serie de ventas.</p></DataPanel>
+        <DataPanel title="Actividad del mercado" subtitle={`Fichas observadas por mes · ${monthCoverageText}`} icon={CalendarDays}><TrendChart rows={data.trend} />{data.trend.length < 2 ? <div className="analytics-trend-insight"><b>{data.trend.length ? data.trend[0].month : 'Sin actividad registrada'}</b><span>{data.trend.length ? `${fmt(data.trend[0].listings)} fichas en el único mes con datos. Aún no hay meses suficientes para comparar una tendencia.` : 'Prueba ampliar el período o quitar filtros para ver actividad.'}</span></div> : <p className="analytics-caption">Comparación mensual de fichas por fecha de publicación; si no está disponible, se usa la última sincronización local. No es una serie de ventas.</p>}</DataPanel>
         <DataPanel title="Modalidades observadas" subtitle="Cantidad de fichas por modalidad informada o código del proceso" icon={Layers3}><BarList rows={data.modalities} /><p className="analytics-caption">El código de modalidad se extrae del identificador si la fuente no entrega un nombre.</p></DataPanel>
         <DataPanel title="Estados oficiales" subtitle="Distribución de las fichas del período filtrado" icon={Activity}><BarList rows={currentStateRows} /></DataPanel>
         <DataPanel title="Actividad por región" subtitle={`${fmt(data.coverage.withRegion)} fichas con región identificable`} icon={MapPin}><BarList rows={data.regions} /></DataPanel>
@@ -205,7 +223,7 @@ export function AnalyticsWorkspace({ request, csrfToken }: { request: Request; c
       </div>}
 
       {tab === 'performance' && <div className="analytics-dashboard-grid analytics-dashboard-grid-single">
-        <DataPanel title="Pipeline de Andes Organics" subtitle="Oportunidades guardadas por la empresa activa, filtradas por el período y los criterios de arriba" icon={Activity}>
+        <DataPanel title="Pipeline de tu empresa" subtitle="Oportunidades guardadas por la empresa activa, filtradas por el período y los criterios de arriba" icon={Activity}>
           <div className="analytics-pipeline">{Object.entries(pipelineNames).map(([key,label]) => { const value=data.pipeline[key]?.total ?? 0; const max=Math.max(1,...Object.values(data.pipeline).map((entry) => entry.total)); return <div className="analytics-pipeline-row" key={key}><div><span>{label}</span><b>{fmt(value)}</b></div><div className="analytics-bar-track"><span style={{width:`${value ? Math.max(3,value/max*100) : 0}%`}} /></div></div>; })}</div>
           <div className="analytics-limit-note"><CircleHelp size={16} /><p>Este es un embudo operativo de Seguimiento, no una tasa de éxito ni una proyección de ventas. Oportuna todavía no mide adjudicaciones rentables ni margen real en esta vista.</p></div>
         </DataPanel>
