@@ -12,6 +12,7 @@ import {
   Search,
   Sparkles,
   Trash2,
+  ThumbsDown,
   X,
 } from 'lucide-react';
 
@@ -1112,9 +1113,18 @@ export function CompanyOpportunities({
                         <td className="summary-match-amount">{amount}</td>
                         <td><span className="summary-match-score">{Number(item.score || 0)} / 100</span></td>
                         <td>
-                          <div className="flex flex-wrap items-center gap-1.5">
+                          <div className="summary-match-actions">
                             {onOpenListing ? (
-                              <button className="summary-match-action" onClick={() => onOpenListing(item.codigo_externo)}>{actionLabel}</button>
+                              <button
+                                type="button"
+                                className="summary-match-action"
+                                onClick={() => onOpenListing(item.codigo_externo)}
+                                aria-label={`${actionLabel}: ${item.nombre || item.codigo_externo}`}
+                                title={actionLabel}
+                              >
+                                <Search size={16} aria-hidden="true" />
+                                <span className="sr-only">{actionLabel}</span>
+                              </button>
                             ) : null}
                             <button
                               type="button"
@@ -1122,10 +1132,10 @@ export function CompanyOpportunities({
                               disabled={Boolean(dismissingCode)}
                               onClick={() => void dismissMatch(item.codigo_externo)}
                               aria-label={`Descartar ${item.nombre || item.codigo_externo} y mostrar la siguiente coincidencia`}
-                              title="No me sirve: descartar y cargar la siguiente"
+                              title="Descartar y ver la siguiente"
                             >
-                              {dismissingCode === item.codigo_externo ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                              <span>{dismissingCode === item.codigo_externo ? 'Actualizando…' : 'No me sirve'}</span>
+                              {dismissingCode === item.codigo_externo ? <LoaderCircle size={16} className="animate-spin" aria-hidden="true" /> : <ThumbsDown size={16} aria-hidden="true" />}
+                              <span className="sr-only">{dismissingCode === item.codigo_externo ? 'Actualizando coincidencias' : 'No me sirve; descartar y ver la siguiente'}</span>
                             </button>
                           </div>
                         </td>
