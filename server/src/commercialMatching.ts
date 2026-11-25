@@ -148,6 +148,14 @@ export function hasCommercialPhrase(text: string, phrase: string): boolean {
   return normalized.length >= 5 && ` ${normalizeCommercialText(text)} `.includes(` ${normalized} `);
 }
 
+/** Profile keywords are complete commercial phrases; matching only one shared word creates unrelated leads. */
+export function hasProfileKeywordEvidence(keyword: string, title: string, description: string, items: string): boolean {
+  const meaningfulTerms = [...new Set(commercialTerms(keyword, true).filter(term => !genericWords.has(term)))];
+  if (!meaningfulTerms.length) return false;
+  const sources = [title, description, items];
+  return sources.some(source => meaningfulTerms.every(term => hasCommercialTerm(source, term)));
+}
+
 export function matchesCommercialExclusion(text: string, exclusion: string): boolean {
   const meaningfulTerms = commercialTerms(exclusion, true);
   if (!meaningfulTerms.length) return false;
