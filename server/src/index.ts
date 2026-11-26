@@ -284,7 +284,8 @@ app.delete('/api/company/catalog/:id',requireDb,requestLimit(30,60_000),async(re
 app.post('/api/company/catalog/suggestions',requireDb,requestLimit(10,60_000),async(req,res,next)=>{try{const body=z.object({nombre:z.string().trim().min(2).max(255),categoria:nullableText(160),descripcion:nullableText(1000)}).parse(req.body);res.json(await suggestCommercialTerms(body));}catch(error){if(error instanceof Error&&error.message.startsWith('Groq'))return res.status(502).json({error:error.message});next(error);}});
 app.get('/api/company/matches', requireDb, requestLimit(30, 60_000), async (req, res, next) => {
   try {
-    res.json(await getCompanyMatches({ board: req.query.view === 'board' }));
+    // Limita el cálculo interactivo para evitar que el escaneo completo deje la vista sin responder.
+    res.json(await getCompanyMatches({ board: req.query.view === 'board', evaluationLimit: 800 }));
   } catch (error) {
     next(error);
   }
@@ -444,7 +445,8 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
       }
     }
   }
-  return res.status(status).json({ error: message, ...(status>=500||isOfferDraft?{requestId}:{}) });
+  const safeDiagnosticCode=/^[A-Z0-9_]+$/.test(dbCode)?dbCode:'INTERNAL';
+  return res.status(status).json({ error: message, ...(status>=500||isOfferDraft?{requestId}:{}), ...(status>=500&&req.path==='/api/company/matches'?{diagnosticCode:safeDiagnosticCode}:{}) });
 });
 async function initializeWorker() {
   await pool.query('SELECT 1');

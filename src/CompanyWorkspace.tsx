@@ -58,10 +58,14 @@ type FieldErrors = Record<string, string>;
 
 class RequestError extends Error {
   fieldErrors: FieldErrors;
-  constructor(message: string, fieldErrors: unknown) {
+  requestId: string;
+  diagnosticCode: string;
+  constructor(message: string, fieldErrors: unknown, requestId = '', diagnosticCode = '') {
     super(message);
     this.name = 'RequestError';
     this.fieldErrors = fieldErrors && typeof fieldErrors === 'object' ? fieldErrors as FieldErrors : {};
+    this.requestId = requestId;
+    this.diagnosticCode = diagnosticCode;
   }
 }
 
@@ -120,7 +124,7 @@ async function request<T>(url: string, options?: RequestInit, csrfToken = ''): P
   }
   const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
   const data = await response.json();
-  if (!response.ok) throw new RequestError(data.error || 'No fue posible completar la solicitud.', data.fieldErrors);
+  if (!response.ok) throw new RequestError(data.error || 'No fue posible completar la solicitud.', data.fieldErrors, typeof data.requestId === 'string' ? data.requestId : '', typeof data.diagnosticCode === 'string' ? data.diagnosticCode : '');
   return data as T;
 }
 
@@ -991,6 +995,7 @@ export function CompanyOpportunities({
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [errorReference, setErrorReference] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [dismissingCode, setDismissingCode] = useState('');
   const [actionNotice, setActionNotice] = useState('');
@@ -1020,6 +1025,7 @@ export function CompanyOpportunities({
     const timeout = window.setTimeout(() => controller.abort(), 45_000);
     setLoading(true);
     setError('');
+    setErrorReference('');
     request<any>(board ? '/api/company/matches?view=board' : '/api/company/matches', { signal: controller.signal })
       .then((val) => {
         if (live) setData(val);
@@ -1029,6 +1035,9 @@ export function CompanyOpportunities({
         setError(e?.name === 'AbortError'
           ? 'La búsqueda está tardando más de lo esperado. Puedes volver a intentarlo.'
           : e instanceof Error ? e.message : 'No se pudieron cargar las oportunidades. Puedes volver a intentarlo.');
+        if (e instanceof RequestError && (e.requestId || e.diagnosticCode)) {
+          setErrorReference([e.requestId && `Referencia ${e.requestId}`, e.diagnosticCode && `código ${e.diagnosticCode}`].filter(Boolean).join(' · '));
+        }
       })
       .finally(() => {
         window.clearTimeout(timeout);
@@ -1074,9 +1083,13 @@ export function CompanyOpportunities({
       {loading ? (
         <MatchLoadingSkeleton />
       ) : error ? (
-        <div role="alert" className="py-4 flex items-center justify-between gap-3 text-xs text-red-600">
-          <span>{error}</span>
-          <button onClick={() => setReloadKey((key) => key + 1)} className="shrink-0 rounded-lg border border-[#E1E4EA] px-3 py-2 font-semibold text-[#5636D9] hover:bg-[#f0edff]">Reintentar</button>
+        <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900">
+          <div className="space-y-1">
+            <p className="font-semibold">No se pudieron calcular las coincidencias.</p>
+            <p>{error} Las demás secciones de Oportuna siguen disponibles.</p>
+            {errorReference && <p className="font-mono text-[11px] text-amber-800">{errorReference}</p>}
+          </div>
+          <button onClick={() => setReloadKey((key) => key + 1)} className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-2 font-semibold text-[#5636D9] hover:bg-[#f0edff]">Reintentar</button>
         </div>
       ) : !data?.configured ? (
         <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472] space-y-2">
