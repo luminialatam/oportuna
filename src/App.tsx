@@ -241,9 +241,11 @@ function ListingDetailModal({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<'resumen' | 'items' | 'requisitos' | 'cronograma' | 'analisis' | 'oferta'>('resumen');
+  const [titleExpanded, setTitleExpanded] = useState(false);
   useEffect(() => {
     if (analysis && !analysis.error) setTab('analisis');
   }, [analysis]);
+  const listingTitle = String(listing.Nombre || listing.nombre || listing.CodigoExterno || 'Licitación');
   const buyer = listing.Comprador ?? {};
   const dates = listing.Fechas ?? {};
   const listedItems = Array.isArray(listing.Items?.Listado) ? listing.Items.Listado : [];
@@ -295,9 +297,14 @@ function ListingDetailModal({
             <div className="text-[11px] font-bold text-[#5636D9] uppercase tracking-wider">
               Buscar oportunidades / Ficha
             </div>
-            <h2 className="font-bold text-lg text-[#171A24] leading-snug">
-              {listing.Nombre || listing.nombre || listing.CodigoExterno || 'Licitación'}
+            <h2 className={`font-bold text-lg text-[#171A24] leading-snug ${titleExpanded ? '' : 'line-clamp-2'}`}>
+              {listingTitle}
             </h2>
+            {listingTitle.length > 110 && (
+              <button type="button" onClick={() => setTitleExpanded((expanded) => !expanded)} className="text-xs font-semibold text-[#5636D9] hover:underline">
+                {titleExpanded ? 'Mostrar título resumido' : 'Ver título completo'}
+              </button>
+            )}
             <div className="flex items-center gap-2 flex-wrap text-xs text-[#5D6472]">
               <span className="font-mono font-semibold text-[#171A24]">{listing.CodigoExterno}</span>
               <span>•</span>
@@ -641,7 +648,7 @@ function ListingDetailModal({
 
                   {(analysis.interpretation?.technicalNotes?.length > 0 || analysis.interpretation?.administrativeNotes?.length > 0) && (
                     <details className="rounded-xl border border-[#E1E4EA] bg-white p-4">
-                      <summary className="cursor-pointer cursor-pointer font-semibold text-[#344054]">Detalle técnico y administrativo</summary>
+                      <summary className="cursor-pointer font-semibold text-[#344054]">Detalle técnico y administrativo</summary>
                       {analysis.interpretation?.technicalNotes?.length > 0 && <div className="mt-3"><strong>Aspectos técnicos</strong><ul className="mt-1 list-disc space-y-1 pl-4 text-[#5D6472]">{analysis.interpretation.technicalNotes.map((note: string, idx: number) => <li key={`t-${idx}`}>{note}</li>)}</ul></div>}
                       {analysis.interpretation?.administrativeNotes?.length > 0 && <div className="mt-3"><strong>Aspectos administrativos</strong><ul className="mt-1 list-disc space-y-1 pl-4 text-[#5D6472]">{analysis.interpretation.administrativeNotes.map((note: string, idx: number) => <li key={`a-${idx}`}>{note}</li>)}</ul></div>}
                     </details>
