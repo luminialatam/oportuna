@@ -240,10 +240,10 @@ function ListingDetailModal({
   onGoToCompany: () => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<'resumen' | 'items' | 'requisitos' | 'cronograma' | 'analisis' | 'oferta'>('resumen');
+  const [tab, setTab] = useState<'resumen' | 'items' | 'requisitos' | 'cronograma' | 'oferta'>('resumen');
   const [titleExpanded, setTitleExpanded] = useState(false);
   useEffect(() => {
-    if (analysis && !analysis.error) setTab('analisis');
+    if (analysis && !analysis.error) setTab('resumen');
   }, [analysis]);
   const listingTitle = String(listing.Nombre || listing.nombre || listing.CodigoExterno || 'Licitación');
   const buyer = listing.Comprador ?? {};
@@ -286,26 +286,29 @@ function ListingDetailModal({
         : 'Monto no informado';
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121826]/45 p-3 backdrop-blur-sm sm:p-6 lg:p-8" onClick={onClose}>
       <div
-        className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="listing-detail-title"
+        className="flex h-[min(92vh,1000px)] max-h-[92dvh] min-h-0 w-full max-w-[1440px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-5 border-b border-[#E1E4EA] flex items-start justify-between gap-4 bg-white">
+        <div className="flex items-start justify-between gap-4 border-b border-[#E1E4EA] bg-white px-6 py-5 md:px-8 md:py-6">
           <div className="space-y-1 min-w-0">
-            <div className="text-[11px] font-bold text-[#5636D9] uppercase tracking-wider">
+            <div className="text-xs font-bold uppercase tracking-wider text-[#5636D9]">
               Buscar oportunidades / Ficha
             </div>
-            <h2 className={`font-bold text-lg text-[#171A24] leading-snug ${titleExpanded ? '' : 'line-clamp-2'}`}>
+            <h2 id="listing-detail-title" className={`text-xl font-bold leading-snug text-[#171A24] md:text-2xl ${titleExpanded ? '' : 'line-clamp-2'}`}>
               {listingTitle}
             </h2>
             {listingTitle.length > 110 && (
-              <button type="button" onClick={() => setTitleExpanded((expanded) => !expanded)} className="text-xs font-semibold text-[#5636D9] hover:underline">
+              <button type="button" onClick={() => setTitleExpanded((expanded) => !expanded)} className="text-sm font-semibold text-[#5636D9] hover:underline">
                 {titleExpanded ? 'Mostrar título resumido' : 'Ver título completo'}
               </button>
             )}
-            <div className="flex items-center gap-2 flex-wrap text-xs text-[#5D6472]">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-[#5D6472]">
               <span className="font-mono font-semibold text-[#171A24]">{listing.CodigoExterno}</span>
               <span>•</span>
               <span className="truncate max-w-xs">{buyer.NombreOrganismo || listing.organismo || listing.NombreOrganismo || listing.OrganismoComprador || 'Organismo no informado'}</span>
@@ -314,27 +317,28 @@ function ListingDetailModal({
             </div>
           </div>
           <button
+            type="button"
+            aria-label="Cerrar ficha"
             onClick={onClose}
-            className="w-8 h-8 rounded-lg text-[#5D6472] hover:bg-gray-100 flex items-center justify-center shrink-0"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[#5D6472] hover:bg-gray-100"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Modal Navigation Tabs */}
-        <div className="flex items-center gap-1 px-5 border-b border-[#E1E4EA] bg-[#F8F9FA] overflow-x-auto">
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-[#E1E4EA] bg-[#F8F9FA] px-5 md:px-8">
           {[
-            { id: 'resumen', label: 'Resumen' },
+            { id: 'resumen', label: 'Resumen inteligente' },
             { id: 'items', label: `Partidas (${listedItems.length})` },
             { id: 'requisitos', label: 'Requisitos & Docs' },
             { id: 'cronograma', label: 'Cronograma' },
-            { id: 'analisis', label: 'Compatibilidad IA' },
             { id: 'oferta', label: 'Preparar oferta' },
           ].map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id as any)}
-              className={`py-3 px-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${
+              className={`whitespace-nowrap border-b-2 px-4 py-4 text-sm font-semibold transition-colors ${
                 tab === t.id
                   ? 'border-[#5636D9] text-[#5636D9]'
                   : 'border-transparent text-[#5D6472] hover:text-[#171A24]'
@@ -346,11 +350,22 @@ function ListingDetailModal({
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="min-h-0 flex-1 space-y-7 overflow-y-auto p-5 sm:p-7 lg:p-9">
           {loading ? (
-            <div className="py-20 text-center text-sm text-[#5D6472]">
-              <LoaderCircle size={24} className="spin mx-auto text-[#5636D9] mb-2" />
-              Cargando información oficial…
+            <div className="space-y-5" role="status" aria-live="polite">
+              <div className="flex items-center justify-center gap-3 py-3 text-base font-medium text-[#5D6472]">
+                <LoaderCircle size={22} className="spin text-[#5636D9]" />
+                Consultando la ficha oficial de Mercado Público…
+              </div>
+              <div className="animate-pulse space-y-4">
+                <div className="h-36 rounded-2xl bg-[#F1F2F5]" />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div className="h-28 rounded-2xl bg-[#F1F2F5]" />
+                  <div className="h-28 rounded-2xl bg-[#F1F2F5]" />
+                  <div className="h-28 rounded-2xl bg-[#F1F2F5]" />
+                </div>
+                <div className="h-40 rounded-2xl bg-[#F1F2F5]" />
+              </div>
             </div>
           ) : (
             <>
@@ -361,54 +376,54 @@ function ListingDetailModal({
                 </div>
               )}
               {tab === 'resumen' && (
-            <div className="space-y-5 text-xs">
-              <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA] space-y-2">
+            <div className="space-y-5 text-sm">
+              <div className="space-y-3 rounded-2xl border border-[#E1E4EA] bg-[#F8F9FA] p-5 md:p-6">
                 <span className="font-bold text-[#5D6472] uppercase text-[10px] tracking-wider">
                   Descripción Oficial
                 </span>
-                <p className="text-[#171A24] leading-relaxed text-xs">
+                <p className="text-sm leading-relaxed text-[#171A24] md:text-base">
                   {listing.Descripcion || 'Mercado Público no informó una descripción para esta licitación.'}
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3.5 rounded-xl border border-[#E1E4EA] space-y-1">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2 rounded-2xl border border-[#E1E4EA] p-5">
                   <span className="text-[#8A92A6]">Monto Estimado</span>
-                  <div className="font-bold text-sm text-[#171A24]">
+                  <div className="text-base font-bold text-[#171A24]">
                     {amountDisplay}
                   </div>
                   {listing.MontoEstimado == null && procurementRange && (
-                    <small className="block text-xs leading-relaxed text-[#5D6472]">
+                    <small className="block text-sm leading-relaxed text-[#5D6472]">
                       Tramo del proceso {procurementCode}: {procurementRange}. No equivale a un monto publicado.
                     </small>
                   )}
                 </div>
-                <div className="p-3.5 rounded-xl border border-[#E1E4EA] space-y-1">
+                <div className="space-y-2 rounded-2xl border border-[#E1E4EA] p-5">
                   <span className="text-[#8A92A6]">Fecha de Cierre</span>
-                  <div className="font-bold text-sm text-[#171A24]">
+                  <div className="text-base font-bold text-[#171A24]">
                     {dateFmt(dates.FechaCierre ?? listing.FechaCierre)}
                   </div>
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl border border-[#E1E4EA] space-y-3">
+              <div className="space-y-4 rounded-2xl border border-[#E1E4EA] p-5 md:p-6">
                 <h4 className="font-bold text-[#171A24]">Organismo Comprador</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <span className="text-[#8A92A6] block">Organismo</span>
-                    <b className="text-[#171A24]">{buyer.NombreOrganismo || listing.organismo || listing.NombreOrganismo || listing.OrganismoComprador || 'No informado'}</b>
+                    <b className="block text-sm text-[#171A24] md:text-base">{buyer.NombreOrganismo || listing.organismo || listing.NombreOrganismo || listing.OrganismoComprador || 'No informado'}</b>
                   </div>
                   <div>
                     <span className="text-[#8A92A6] block">Unidad de Compra</span>
-                    <b className="text-[#171A24]">{buyer.NombreUnidad || listing.NombreUnidad || 'No informado'}</b>
+                    <b className="block text-sm text-[#171A24] md:text-base">{buyer.NombreUnidad || listing.NombreUnidad || 'No informado'}</b>
                   </div>
                   <div>
                     <span className="text-[#8A92A6] block">Región</span>
-                    <b className="text-[#171A24]">{buyer.RegionUnidad || 'No informada'}</b>
+                    <b className="block text-sm text-[#171A24] md:text-base">{buyer.RegionUnidad || 'No informada'}</b>
                   </div>
                   <div>
                     <span className="text-[#8A92A6] block">Comuna</span>
-                    <b className="text-[#171A24]">{buyer.ComunaUnidad || 'No informada'}</b>
+                    <b className="block text-sm text-[#171A24] md:text-base">{buyer.ComunaUnidad || 'No informada'}</b>
                   </div>
                 </div>
               </div>
@@ -505,7 +520,7 @@ function ListingDetailModal({
             </div>
           )}
 
-          {tab === 'analisis' && (
+          {tab === 'resumen' && (
             <div className="space-y-4 text-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -624,7 +639,7 @@ function ListingDetailModal({
                           <strong className="block text-[#171A24]">Siguiente paso recomendado</strong>
                           <span className="mt-0.5 block text-sm leading-relaxed text-[#5D6472]">{analysis.decision.nextAction.reason}</span>
                         </div>
-                        <button type="button" onClick={() => analysis.decision.nextAction.tab === 'catalogo' ? onGoToCompany() : setTab(analysis.decision.nextAction.tab)} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 font-semibold text-white hover:bg-[#4b2ec7]">
+                        <button type="button" onClick={() => analysis.decision.nextAction.tab === 'catalogo' ? onGoToCompany() : setTab(analysis.decision.nextAction.tab === 'analisis' ? 'resumen' : analysis.decision.nextAction.tab)} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 font-semibold text-white hover:bg-[#4b2ec7]">
                           {analysis.decision.nextAction.label}<ArrowRight size={15} />
                         </button>
                       </div>
@@ -689,11 +704,11 @@ function ListingDetailModal({
         </div>
 
         {/* Modal Bottom Actions Fixed (Stitch 3) */}
-        <div className="p-4 border-t border-[#E1E4EA] bg-white flex items-center justify-between gap-3">
+        <div className="flex flex-col-reverse items-stretch justify-between gap-3 border-t border-[#E1E4EA] bg-white px-5 py-4 sm:flex-row sm:items-center md:px-8">
           <button
             onClick={onSave}
             disabled={saved === true || saving}
-            className={`h-10 px-4 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+            className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors sm:w-auto ${
               saved
                 ? 'bg-[#f0edff] text-[#5636D9] border border-[#5636D9]/30'
                 : 'bg-white border border-[#E1E4EA] text-[#171A24] hover:bg-gray-50'
@@ -711,7 +726,7 @@ function ListingDetailModal({
             href={`https://www.mercadopublico.cl/fichaLicitacion.html?idLicitacion=${encodeURIComponent(listing.CodigoExterno || '')}`}
             target="_blank"
             rel="noreferrer"
-            className="h-10 px-4 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#5636D9] px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4b2ec7] sm:w-auto"
           >
             Ver en Mercado Público <ExternalLink size={14} />
           </a>
