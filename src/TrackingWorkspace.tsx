@@ -165,6 +165,8 @@ export function TrackingWorkspace({
         error={error}
         onRetry={() => void load()}
         onOpen={onOpen}
+        onExplore={exploreOpportunities}
+        csrfToken={csrfToken}
       />
     );
   }
