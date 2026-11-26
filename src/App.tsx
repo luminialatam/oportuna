@@ -659,13 +659,13 @@ function ListingDetailModal({
                   )}
                 </div>
               ) : (
-                <div className="rounded-xl border border-dashed border-[#D0D5DD] bg-[#F8F9FC] p-8 text-center">
-                  <Sparkles size={22} className="mx-auto text-[#5636D9]" />
-                  <h5 className="mt-2 font-semibold text-[#171A24]">Evalúa el encaje antes de invertir tiempo</h5>
-                  <p className="mx-auto mt-1 max-w-md text-sm text-[#667085]">Oportuna comparará esta oportunidad con tu catálogo, resumirá la información disponible y sugerirá el próximo paso.</p>
-                  <button onClick={onAnalyze} disabled={analysisLoading} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 font-semibold text-white disabled:opacity-60">
-                    <Sparkles size={15} /> Evaluar esta oportunidad
-                  </button>
+                <div className="space-y-3 rounded-xl border border-[#E1E4EA] bg-[#F8F9FC] p-5" role="status" aria-live="polite">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-[#344054]">
+                    <LoaderCircle size={17} className="spin text-[#5636D9]" />
+                    Preparando el resumen de esta oportunidad…
+                  </div>
+                  <div className="h-2 animate-pulse rounded-full bg-[#E7E9F0]" />
+                  <div className="h-2 w-3/4 animate-pulse rounded-full bg-[#E7E9F0]" />
                 </div>
               )}
             </div>
@@ -1023,6 +1023,8 @@ function App() {
       ]);
       setSelected({ ...data.listing, _source: data.source, _detailError: (data as any).detailError });
       setSelectedSaved(tracking.saved);
+      // Start the commercial evaluation automatically once the official detail is ready.
+      void analyzeListing(code);
     } catch (e) {
       setSelected({ error: e instanceof Error ? e.message : 'No se encontró el detalle local.' });
     } finally {
@@ -2153,7 +2155,7 @@ function App() {
               csrfToken={auth.csrfToken}
               companyName={auth.memberships.find((membership) => membership.companyId === auth.activeCompanyId)?.companyName ?? 'tu empresa'}
               onConfigure={() => goToSection('Mi empresa')}
-              onAnalyzeListing={(code) => { void openDetail(code); void analyzeListing(code); }}
+              onAnalyzeListing={(code) => void openDetail(code)}
             />
           )}
 
