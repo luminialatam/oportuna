@@ -304,7 +304,7 @@ function ListingDetailModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="listing-detail-title"
-        className="flex h-[min(92vh,1000px)] max-h-[92dvh] min-h-0 w-[min(94vw,760px)] max-w-[760px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        className="flex h-[min(90vh,1120px)] max-h-[92dvh] min-h-0 w-[min(92vw,1440px)] max-w-[1440px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
