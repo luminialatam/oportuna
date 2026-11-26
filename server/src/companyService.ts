@@ -312,7 +312,10 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
     const textClauses = keywords.map(() => "LOWER(CONCAT_WS(' ',COALESCE(l.nombre,''),COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Descripcion')),''))) COLLATE utf8mb4_0900_ai_ci LIKE ?");
     const legacyValues = [...filterValues,...keywords.map(term => `%${term}%`),...keywords.map(term => `%${term}%`)];
     const itemClause = `EXISTS (SELECT 1 FROM licitacion_items li WHERE li.codigo_externo=l.codigo_externo AND (${keywords.map(() => "LOWER(COALESCE(li.search_text,'')) COLLATE utf8mb4_0900_ai_ci LIKE ?").join(' OR ')}))`;
-    const [candidateRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.fecha_publicacion,l.organismo,l.monto_estimado,l.moneda,
+    const [candidateRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.fecha_publicacion,
+      COALESCE(l.organismo,JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.NombreOrganismo')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.NombreOrganismo'))) organismo,
+      CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.VisibilidadMonto')) IN ('0','false') THEN NULL
+        ELSE COALESCE(l.monto_estimado,CAST(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.MontoEstimado')) AS DECIMAL(20,4))) END monto_estimado,l.moneda,
       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.RegionUnidad')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.Region'))) region,
       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Descripcion')),'') official_description,
       COALESCE((SELECT GROUP_CONCAT(DISTINCT CONCAT_WS(' ',li.nombre,li.descripcion,li.categoria,li.search_text) SEPARATOR ' ') FROM licitacion_items li WHERE li.codigo_externo=l.codigo_externo),'') item_text
@@ -323,7 +326,10 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
   } else {
     while (true) {
       if (Date.now() - startedAt > MATCH_MAX_DURATION_MS) throw new Error('El Match completo superó el límite de 30 segundos. Vuelve a intentarlo cuando haya menos carga.');
-      const [batchRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.fecha_publicacion,l.organismo,l.monto_estimado,l.moneda,
+      const [batchRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.fecha_publicacion,
+      COALESCE(l.organismo,JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.NombreOrganismo')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.NombreOrganismo'))) organismo,
+      CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.VisibilidadMonto')) IN ('0','false') THEN NULL
+        ELSE COALESCE(l.monto_estimado,CAST(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.MontoEstimado')) AS DECIMAL(20,4))) END monto_estimado,l.moneda,
         COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.RegionUnidad')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.Region'))) region,
         COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Descripcion')),'') official_description,
         COALESCE(GROUP_CONCAT(DISTINCT CONCAT_WS(' ',li.nombre,li.descripcion,li.categoria,li.search_text) SEPARATOR ' '),'') item_text
