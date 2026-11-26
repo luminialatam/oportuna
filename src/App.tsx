@@ -241,9 +241,11 @@ function ListingDetailModal({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<'resumen' | 'items' | 'requisitos' | 'cronograma' | 'analisis' | 'oferta'>('resumen');
+  const [titleExpanded, setTitleExpanded] = useState(false);
   useEffect(() => {
     if (analysis && !analysis.error) setTab('analisis');
   }, [analysis]);
+  const listingTitle = String(listing.Nombre || listing.nombre || listing.CodigoExterno || 'Licitación');
   const buyer = listing.Comprador ?? {};
   const dates = listing.Fechas ?? {};
   const listedItems = Array.isArray(listing.Items?.Listado) ? listing.Items.Listado : [];
@@ -295,9 +297,14 @@ function ListingDetailModal({
             <div className="text-[11px] font-bold text-[#5636D9] uppercase tracking-wider">
               Buscar oportunidades / Ficha
             </div>
-            <h2 className="font-bold text-lg text-[#171A24] leading-snug">
-              {listing.Nombre || listing.nombre || listing.CodigoExterno || 'Licitación'}
+            <h2 className={`font-bold text-lg text-[#171A24] leading-snug ${titleExpanded ? '' : 'line-clamp-2'}`}>
+              {listingTitle}
             </h2>
+            {listingTitle.length > 110 && (
+              <button type="button" onClick={() => setTitleExpanded((expanded) => !expanded)} className="text-xs font-semibold text-[#5636D9] hover:underline">
+                {titleExpanded ? 'Mostrar título resumido' : 'Ver título completo'}
+              </button>
+            )}
             <div className="flex items-center gap-2 flex-wrap text-xs text-[#5D6472]">
               <span className="font-mono font-semibold text-[#171A24]">{listing.CodigoExterno}</span>
               <span>•</span>
@@ -499,124 +506,171 @@ function ListingDetailModal({
           )}
 
           {tab === 'analisis' && (
-            <div className="space-y-4 text-xs">
-              <div className="flex items-center justify-between">
+            <div className="space-y-4 text-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h4 className="font-bold text-[#171A24] flex items-center gap-2">
-                    <Sparkles size={16} className="text-[#5636D9]" /> Asistente comercial Oportuna
+                  <h4 className="flex items-center gap-2 font-bold text-[#171A24]">
+                    <Sparkles size={17} className="text-[#5636D9]" /> Evaluación comercial
                   </h4>
-                  <p className="text-[#5D6472]">Cruza el catálogo con la ficha disponible y propone el siguiente paso comercial.</p>
+                  <p className="mt-1 text-[#667085]">Entiende el encaje, la información disponible y el paso recomendado.</p>
                 </div>
                 <button
                   onClick={onAnalyze}
                   disabled={analysisLoading}
-                  className="h-8 px-3 bg-[#5636D9] hover:bg-[#4b2ec7] text-white font-semibold rounded-lg flex items-center gap-1.5"
+                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 font-semibold text-white hover:bg-[#4b2ec7] disabled:cursor-wait disabled:opacity-70"
                 >
-                  {analysisLoading ? <LoaderCircle size={13} className="spin" /> : <Sparkles size={13} />}
-                  {analysisLoading ? 'Evaluando…' : 'Evaluar oportunidad'}
+                  {analysisLoading ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />}
+                  {analysisLoading ? 'Actualizando…' : analysis ? 'Actualizar evaluación' : 'Evaluar oportunidad'}
                 </button>
               </div>
 
               {analysisLoading ? (
-                <div className="p-8 text-center text-[#5D6472] bg-[#F8F9FA] rounded-xl border border-[#E1E4EA]">
-                  <LoaderCircle size={20} className="spin mx-auto text-[#5636D9] mb-2" />
-                  Revisando coincidencia del catálogo, plazo y datos disponibles…
+                <div className="space-y-3 rounded-xl border border-[#E1E4EA] bg-[#F8F9FC] p-5" role="status" aria-live="polite">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-[#344054]">
+                    <LoaderCircle size={17} className="spin text-[#5636D9]" />
+                    Consultando Mercado Público y comparando con tu catálogo…
+                  </div>
+                  <div className="h-2 animate-pulse rounded-full bg-[#E7E9F0]" />
+                  <div className="h-2 w-3/4 animate-pulse rounded-full bg-[#E7E9F0]" />
                 </div>
               ) : analysis?.error ? (
-                <div role="alert" className="p-4 text-red-800 bg-red-50 rounded-xl border border-red-200">
-                  {analysis.error}
+                <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
+                  <strong>No pudimos completar la evaluación</strong>
+                  <p className="mt-1">{analysis.error}</p>
                 </div>
               ) : analysis ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 rounded-xl bg-[#f0edff]/30 border border-[#5636D9]/20">
-                      <span className="text-[#5D6472] block">Puntaje de coincidencia textual</span>
-                      <b className="text-xl text-[#5636D9] font-bold">{analysis.commercialRelevance?.score ?? '—'}{analysis.commercialRelevance?.score != null ? ' / 100' : ''}</b>
-                      <small className="text-[#5D6472] block mt-0.5">
-                        {relevanceLabels[relevanceLevel] ?? (relevanceLevel || 'No evaluado')} · no es probabilidad de adjudicación
-                      </small>
-                    </div>
-                    <div className="p-3 rounded-xl bg-gray-50 border border-[#E1E4EA]">
-                      <span className="text-[#5D6472] block">Cobertura de la ficha</span>
-                      <b className="text-xl text-[#171A24] font-bold">
-                        {analysis.coverage?.score ?? 0}%
-                      </b>
-                      <small className="text-[#5D6472] block mt-0.5">
-                        {analysis.coverage?.present ?? 0} de {analysis.coverage?.total ?? 0} campos
-                      </small>
-                    </div>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <section className="rounded-xl border border-[#DCD5FF] bg-[#F8F6FF] p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-[#475467]">Coincidencia con tu catálogo</span>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#5636D9]">
+                          {relevanceLabels[relevanceLevel] ?? relevanceLevel ?? 'Sin nivel'}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-baseline gap-2">
+                        <strong className="text-3xl leading-none text-[#5636D9]">{analysis.commercialRelevance?.score ?? '—'}</strong>
+                        <span className="text-sm text-[#667085]">/ 100</span>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white" role="progressbar" aria-label="Coincidencia con el catálogo" aria-valuemin={0} aria-valuemax={100} aria-valuenow={analysis.commercialRelevance?.score ?? 0}>
+                        <div className="h-full rounded-full bg-[#6941C6] transition-all" style={{ width: `${Math.max(0,Math.min(100,Number(analysis.commercialRelevance?.score)||0))}%` }} />
+                      </div>
+                      <p className="mt-2 text-xs leading-relaxed text-[#667085]">Similitud textual; no representa probabilidad de adjudicación.</p>
+                    </section>
+
+                    <section className="rounded-xl border border-[#E1E4EA] bg-white p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-[#475467]">Información de la ficha</span>
+                        <span className="text-xs font-medium text-[#667085]">{analysis.coverage?.present ?? 0} de {analysis.coverage?.total ?? 0} campos</span>
+                      </div>
+                      <div className="mt-2 flex items-baseline gap-2">
+                        <strong className="text-3xl leading-none text-[#171A24]">{analysis.coverage?.present ?? 0}</strong>
+                        <span className="text-sm text-[#667085]">datos disponibles</span>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#EAECF0]" role="progressbar" aria-label="Campos con información en la ficha" aria-valuemin={0} aria-valuemax={analysis.coverage?.total ?? 11} aria-valuenow={analysis.coverage?.present ?? 0}>
+                        <div className="h-full rounded-full bg-[#98A2B3] transition-all" style={{ width: `${Math.max(0,Math.min(100,Number(analysis.coverage?.score)||0))}%` }} />
+                      </div>
+                      <p className="mt-2 text-xs text-[#667085]">
+                        {analysis.source === 'mercadopublico' ? 'Ficha oficial consultada al evaluar' : 'Información del índice local'}
+                      </p>
+                    </section>
                   </div>
+
+                  {analysis.coverage?.missing?.length > 0 && (
+                    <details className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+                      <summary className="cursor-pointer font-semibold text-amber-950">
+                        {analysis.coverage.missing.length} campos sin informar en la fuente
+                      </summary>
+                      <ul className="mt-2 grid grid-cols-1 gap-1 text-sm text-amber-900 sm:grid-cols-2">
+                        {analysis.coverage.missing.map((field: string) => <li key={field}>• {field}</li>)}
+                      </ul>
+                    </details>
+                  )}
 
                   {analysis.decision && (
                     <section className={`rounded-xl border p-4 ${analysis.decision.tone === 'positive' ? 'border-emerald-200 bg-emerald-50/60' : analysis.decision.tone === 'caution' ? 'border-amber-200 bg-amber-50/70' : 'border-[#E1E4EA] bg-[#F8F9FA]'}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h5 className="font-bold text-[#171A24]">Decisión comercial sugerida</h5>
-                        <span className="rounded-full bg-white/80 px-2.5 py-1 font-semibold text-[#344054]">{analysis.decision.label}</span>
-                      </div>
-                      <p className="mt-2 text-[#344054] leading-relaxed">{analysis.decision.summary}</p>
-
-                      {analysis.decision.evidence?.length > 0 && <div className="mt-3">
-                        <h6 className="font-bold text-[#171A24]">Evidencia utilizada</h6>
-                        <ul className="mt-1 list-disc space-y-1 pl-4 text-[#475467]">
-                          {analysis.decision.evidence.map((item: string, idx: number) => <li key={idx}>{item}</li>)}
-                        </ul>
-                      </div>}
-
-                      {analysis.decision.toConfirm?.length > 0 && <div className="mt-3">
-                        <h6 className="font-bold text-[#171A24]">Antes de decidir, confirma</h6>
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                          {analysis.decision.toConfirm.slice(0, 8).map((item: string) => <span key={item} className="rounded-full border border-amber-200 bg-white px-2 py-1 text-amber-900">{item}</span>)}
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">Qué hacer ahora</span>
+                          <h5 className="mt-1 text-base font-bold text-[#171A24]">{analysis.decision.label}</h5>
                         </div>
-                      </div>}
+                        <span className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-[#344054]">Recomendación orientativa</span>
+                      </div>
+                      <p className="mt-2 leading-relaxed text-[#344054]">{analysis.decision.summary}</p>
+
+                      {analysis.decision.evidence?.length > 0 && (
+                        <div className="mt-4 border-t border-black/5 pt-3">
+                          <h6 className="font-semibold text-[#171A24]">Por qué aparece esta oportunidad</h6>
+                          <ul className="mt-1.5 space-y-1.5 text-sm leading-relaxed text-[#475467]">
+                            {analysis.decision.evidence.map((item: string, idx: number) => <li key={idx}>{item}</li>)}
+                          </ul>
+                        </div>
+                      )}
+
+                      {analysis.decision.toConfirm?.length > 0 && (
+                        <details className="mt-3 rounded-lg border border-amber-200/80 bg-white/70 px-3 py-2.5">
+                          <summary className="cursor-pointer font-semibold text-[#344054]">
+                            Checklist previo a cotizar <span className="ml-1 text-xs font-normal text-[#667085]">({analysis.decision.toConfirm.length} verificaciones)</span>
+                          </summary>
+                          <p className="mt-2 text-xs leading-relaxed text-[#667085]">Son comprobaciones recomendadas en las bases; no significa que esos datos estén ausentes de la ficha.</p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {analysis.decision.toConfirm.slice(0, 8).map((item: string) => <span key={item} className="rounded-full border border-[#E4E7EC] bg-white px-2.5 py-1 text-xs text-[#475467]">{item}</span>)}
+                          </div>
+                        </details>
+                      )}
 
                       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-3">
                         <div className="min-w-0 flex-1">
                           <strong className="block text-[#171A24]">Siguiente paso recomendado</strong>
-                          <span className="mt-0.5 block text-[#5D6472]">{analysis.decision.nextAction.reason}</span>
+                          <span className="mt-0.5 block text-sm leading-relaxed text-[#5D6472]">{analysis.decision.nextAction.reason}</span>
                         </div>
-                        <button type="button" onClick={() => analysis.decision.nextAction.tab === 'catalogo' ? onGoToCompany() : setTab(analysis.decision.nextAction.tab)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#5636D9] px-3 py-2 font-semibold text-white hover:bg-[#4b2ec7]">
-                          {analysis.decision.nextAction.label}<ArrowRight size={14} />
+                        <button type="button" onClick={() => analysis.decision.nextAction.tab === 'catalogo' ? onGoToCompany() : setTab(analysis.decision.nextAction.tab)} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 font-semibold text-white hover:bg-[#4b2ec7]">
+                          {analysis.decision.nextAction.label}<ArrowRight size={15} />
                         </button>
                       </div>
                     </section>
                   )}
 
                   {analysis.interpretation?.executiveSummary && (
-                    <div className="p-3.5 rounded-xl bg-white border border-[#E1E4EA] space-y-1">
+                    <section className="rounded-xl border border-[#E1E4EA] bg-white p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-bold text-[#171A24]">Resumen de la ficha</span>
-                        <small className="rounded-full bg-[#F2F0FF] px-2 py-1 text-[#5636D9]">{analysis.provider === 'groq' ? 'Redactado con IA' : 'Resumen local automático'}</small>
+                        <h5 className="font-semibold text-[#171A24]">Resumen de la ficha</h5>
+                        <span className="rounded-full bg-[#F2F0FF] px-2.5 py-1 text-xs font-medium text-[#5636D9]">{analysis.provider === 'groq' ? 'Resumen asistido por IA' : 'Resumen automático'}</span>
                       </div>
-                      <p className="text-[#5D6472] leading-relaxed">{analysis.interpretation.executiveSummary}</p>
-                    </div>
+                      <p className="mt-2 leading-relaxed text-[#475467]">{analysis.interpretation.executiveSummary}</p>
+                    </section>
                   )}
 
-                  <div className="rounded-lg border border-[#E1E4EA] bg-white px-3.5 py-3 text-[#5D6472] leading-relaxed">
-                    El puntaje proviene de reglas de coincidencia entre el catálogo y el texto de la ficha. El resumen puede usar IA generativa; las bases y anexos no se consideran revisados por Oportuna.
-                  </div>
+                  <details className="rounded-xl border border-[#E1E4EA] bg-white px-4 py-3">
+                    <summary className="cursor-pointer font-semibold text-[#344054]">Alcance y criterios de esta evaluación</summary>
+                    <p className="mt-2 text-sm leading-relaxed text-[#667085]">La coincidencia compara texto del catálogo con la licitación y no estima la probabilidad de adjudicación. El resumen puede usar IA generativa. Oportuna no revisa las bases ni sus anexos; valida requisitos y condiciones en la fuente oficial antes de cotizar.</p>
+                  </details>
 
                   {(analysis.interpretation?.technicalNotes?.length > 0 || analysis.interpretation?.administrativeNotes?.length > 0) && (
-                    <details className="rounded-lg border border-[#E1E4EA] bg-white p-3.5">
-                      <summary className="cursor-pointer font-bold text-[#171A24]">Notas técnicas y administrativas de la ficha</summary>
+                    <details className="rounded-xl border border-[#E1E4EA] bg-white p-4">
+                      <summary className="cursor-pointer font-semibold text-[#344054]">Detalle técnico y administrativo</summary>
                       {analysis.interpretation?.technicalNotes?.length > 0 && <div className="mt-3"><strong>Aspectos técnicos</strong><ul className="mt-1 list-disc space-y-1 pl-4 text-[#5D6472]">{analysis.interpretation.technicalNotes.map((note: string, idx: number) => <li key={`t-${idx}`}>{note}</li>)}</ul></div>}
                       {analysis.interpretation?.administrativeNotes?.length > 0 && <div className="mt-3"><strong>Aspectos administrativos</strong><ul className="mt-1 list-disc space-y-1 pl-4 text-[#5D6472]">{analysis.interpretation.administrativeNotes.map((note: string, idx: number) => <li key={`a-${idx}`}>{note}</li>)}</ul></div>}
                     </details>
                   )}
 
                   {analysis.interpretation?.risks?.length > 0 && (
-                    <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 space-y-1">
-                      <span className="font-bold text-amber-900">Riesgos y Consideraciones</span>
-                      <ul className="list-disc pl-4 text-amber-800 space-y-0.5">
-                        {analysis.interpretation.risks.map((r: string, idx: number) => (
-                          <li key={idx}>{r}</li>
-                        ))}
+                    <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <h5 className="font-semibold text-amber-950">Riesgos a revisar</h5>
+                      <ul className="mt-2 list-disc space-y-1 pl-4 text-sm leading-relaxed text-amber-900">
+                        {analysis.interpretation.risks.map((risk: string, idx: number) => <li key={idx}>{risk}</li>)}
                       </ul>
-                    </div>
+                    </section>
                   )}
                 </div>
               ) : (
-                <div className="p-8 text-center text-[#8A92A6] bg-[#F8F9FA] rounded-xl border border-[#E1E4EA]">
-                  Evalúa el encaje con el catálogo, los datos de la ficha y qué conviene revisar antes de cotizar.
+                <div className="rounded-xl border border-dashed border-[#D0D5DD] bg-[#F8F9FC] p-8 text-center">
+                  <Sparkles size={22} className="mx-auto text-[#5636D9]" />
+                  <h5 className="mt-2 font-semibold text-[#171A24]">Evalúa el encaje antes de invertir tiempo</h5>
+                  <p className="mx-auto mt-1 max-w-md text-sm text-[#667085]">Oportuna comparará esta oportunidad con tu catálogo, resumirá la información disponible y sugerirá el próximo paso.</p>
+                  <button onClick={onAnalyze} disabled={analysisLoading} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 font-semibold text-white disabled:opacity-60">
+                    <Sparkles size={15} /> Evaluar esta oportunidad
+                  </button>
                 </div>
               )}
             </div>
@@ -1767,6 +1821,32 @@ function App() {
                   ))}
                 </div>
 
+                <div className="opportunity-filter-presets" aria-label="Filtros rápidos de fecha de cierre">
+                  <span>Atajos:</span>
+                  {[7, 30].map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => {
+                        const start = new Date();
+                        start.setHours(0, 0, 0, 0);
+                        const end = new Date(start);
+                        end.setDate(end.getDate() + days);
+                        const toISO = (date: Date) => {
+                          const offset = date.getTimezoneOffset();
+                          return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 10);
+                        };
+                        setCloseAfterFilter(toISO(start));
+                        setCloseBeforeFilter(toISO(end));
+                        setStateFilter('5');
+                      }}
+                      className="opportunity-preset-chip"
+                    >
+                      Cierres en {days} días
+                    </button>
+                  ))}
+                </div>
+
                 <div className="opportunity-filter-heading">
                   <div className="opportunity-filter-title">
                     <strong>Filtros</strong>
@@ -1849,6 +1929,18 @@ function App() {
                     <input id="opportunity-close-before" type="date" value={closeBeforeFilter} onChange={(e) => setCloseBeforeFilter(e.target.value)} />
                   </div>
                 </div>
+
+                {(matchLevelFilter || stateFilter || regionFilter.trim() || modalityFilter || closeAfterFilter || closeBeforeFilter) && (
+                  <div className="opportunity-active-chips" aria-label="Filtros activos">
+                    <span>Aplicados</span>
+                    {matchLevelFilter && <button type="button" onClick={() => setMatchLevelFilter('')}>Coincidencia: {matchLevelFilter === 'high' ? 'Alta' : matchLevelFilter === 'medium' ? 'Media' : 'Exploratoria'} <X size={14} /></button>}
+                    {stateFilter && <button type="button" onClick={() => setStateFilter('')}>Estado: {stateFilter === '5' ? 'Publicada' : stateFilter === '6' ? 'Cerrada' : stateFilter === '8' ? 'Adjudicada' : 'Desierta'} <X size={14} /></button>}
+                    {regionFilter.trim() && <button type="button" onClick={() => setRegionFilter('')}>Región: {regionFilter.trim()} <X size={14} /></button>}
+                    {modalityFilter && <button type="button" onClick={() => setModalityFilter('')}>Tipo: {modalityFilter === 'agile' ? 'Compra Ágil' : modalityFilter === 'private' ? 'Privada' : 'Pública'} <X size={14} /></button>}
+                    {closeAfterFilter && <button type="button" onClick={() => setCloseAfterFilter('')}>Desde: {closeAfterFilter} <X size={14} /></button>}
+                    {closeBeforeFilter && <button type="button" onClick={() => setCloseBeforeFilter('')}>Hasta: {closeBeforeFilter} <X size={14} /></button>}
+                  </div>
+                )}
 
                 <div className="opportunity-filter-footer">
                   <span><span className="opportunity-info-mark">i</span> El tipo de proceso y el rango de cierre se aplican al buscar.</span>

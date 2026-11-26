@@ -286,14 +286,23 @@ function localAnalysis(row:any,itemRows:any[],companyMatch:any){
     items:officialItems,requirements:officialRequirementFields(data),
     documents:{fields:documentKeys,present:documentKeys.length>0},
   };
-  const evidenceFlags=[
-    Boolean(title),Boolean(description),Boolean(buyer),Boolean(publishedAt),Boolean(closeAt),official.stateCode!=null,
-    officialItems.length>0,officialItems.some(item=>item.quantity!=null),officialItems.some(item=>Boolean(item.description||item.category)),amount!=null,documentKeys.length>0,
+  const evidenceFields=[
+    {label:'Título',present:Boolean(title)},
+    {label:'Descripción oficial',present:Boolean(description)},
+    {label:'Organismo comprador',present:Boolean(buyer)},
+    {label:'Fecha de publicación',present:Boolean(publishedAt)},
+    {label:'Fecha de cierre',present:Boolean(closeAt)},
+    {label:'Estado oficial',present:official.stateCode!=null},
+    {label:'Partidas',present:officialItems.length>0},
+    {label:'Cantidades',present:officialItems.some(item=>item.quantity!=null)},
+    {label:'Detalle o categoría de partidas',present:officialItems.some(item=>Boolean(item.description||item.category))},
+    {label:'Monto estimado',present:amount!=null},
+    {label:'Documentos y bases',present:documentKeys.length>0},
   ];
-  const present=evidenceFlags.filter(Boolean).length;
-  const coverage={score:Math.round(present/evidenceFlags.length*100),present,total:evidenceFlags.length,level:present>=9?'Amplia':present>=6?'Parcial':'Limitada',missing:[
-    ...(!description?['Descripción oficial']:[]),...(!buyer?['Organismo comprador']:[]),...(!publishedAt?['Fecha de publicación']:[]),...(!closeAt?['Fecha de cierre']:[]),...(!officialItems.length?['Partidas']:[]),...(!officialItems.some(item=>item.quantity!=null)?['Cantidades']:[]),...(amount==null?['Monto estimado']:[]),...(!documentKeys.length?['Documentos y bases']:[]),
-  ]};
+  const present=evidenceFields.filter(field=>field.present).length;
+  const coverage={score:Math.round(present/evidenceFields.length*100),present,total:evidenceFields.length,level:present>=9?'Amplia':present>=6?'Parcial':'Limitada',
+    presentFields:evidenceFields.filter(field=>field.present).map(field=>field.label),
+    missing:evidenceFields.filter(field=>!field.present).map(field=>field.label)};
   const productNames=officialItems.map(item=>item.name).filter(Boolean);
   const executiveSummary=productNames.length
     ?`La ficha solicita ${productNames.slice(0,3).join(', ')}${buyer?` para ${buyer}`:''}.`

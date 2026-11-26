@@ -364,7 +364,14 @@ app.post('/api/buscador/enrichment/pilot/pause',requireDb,requestLimit(3,60_000)
 app.post('/api/buscador/enrichment/pilot/resume',requireDb,requestLimit(3,60_000),async(_req,res,next)=>{try{res.json({...await resumeEnrichmentPilot(),pilot:await enrichmentPilotStatus()});}catch(error){next(error);}});
 app.post('/api/buscador/enrichment/pilot/retry',requireDb,requestLimit(2,60_000),async(_req,res,next)=>{try{res.status(202).json({...await retryEnrichmentPilotFailures(),pilot:await enrichmentPilotStatus()});}catch(error){next(error);}});
 app.get('/api/buscador/enrichment/status',requireDb,async(req,res,next)=>{try{const raw=String(req.query.codes??'').trim();const codes=raw?raw.split(',').map(code=>z.string().trim().min(1).max(100).parse(code)).slice(0,50):undefined;res.json(await enrichmentStatus(codes));}catch(error){next(error);}});
-app.post('/api/buscador/analysis/:codigo',requireDb,requireAuth,requireCsrf,requireActiveCompany,requestLimit(8,60_000),async(req,res,next)=>{try{const codigo=z.string().trim().min(1).max(100).parse(req.params.codigo);res.json(await analyzeListing(codigo));}catch(error){next(error);}});
+app.post('/api/buscador/analysis/:codigo',requireDb,requireAuth,requireCsrf,requireActiveCompany,requestLimit(8,60_000),async(req,res,next)=>{try{
+  const codigo=z.string().trim().min(1).max(100).parse(req.params.codigo);
+  // Use the same current Mercado Público record shown in the detail panel, not
+  // an older local snapshot, when calculating listing coverage and match evidence.
+  const officialListing=await getByCode(codigo);
+  await indexOfficialDetail(codigo,officialListing as unknown as Record<string,any>);
+  res.set('Cache-Control','no-store').json({...await analyzeListing(codigo),source:'mercadopublico',refreshedAt:new Date().toISOString()});
+}catch(error){next(error);}});
 app.use('/api/sync',requireServiceOrAdmin);
 app.post('/api/sync/licitaciones', requireDb, requestLimit(1,60_000,'sync'), async (req, res, next) => {
   try {

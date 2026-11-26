@@ -503,3 +503,21 @@ body { overflow-x: clip; }
   .summary-matches-table td:nth-child(6)::before{content:"Acción"}
   .summary-matches-table td:not(:first-child)::before{color:#687286;font-size:11px;font-weight:700}
 }
+
+
+/* Refinamiento visual e interacción de filtros de búsqueda */
+.opportunity-query-wrap input{border:2px solid #6545e8;box-shadow:0 0 0 4px #6545e814}
+.opportunity-query-wrap>svg{color:#6545e8}
+.opportunity-query-wrap input:hover{box-shadow:0 0 0 4px #6545e822}
+.opportunity-query-wrap input:focus{border-color:#5636d9;box-shadow:0 0 0 5px #6545e829}
+.opportunity-filter-presets{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:-5px;color:#71809a;font-size:13px}
+.opportunity-filter-presets>span,.opportunity-active-chips>span{font-weight:700;color:#46556e}
+.opportunity-preset-chip{min-height:34px;padding:0 12px;border:1px solid #ded7ff;border-radius:999px;background:#f7f5ff;color:#5636d9;font-size:13px;font-weight:650;transition:background .15s,border-color .15s,transform .15s}
+.opportunity-preset-chip:hover{background:#eee9ff;border-color:#b9aaff;transform:translateY(-1px)}
+.opportunity-active-chips{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:-5px}
+.opportunity-active-chips button{min-height:32px;padding:0 10px;border:1px solid #dcd4ff;border-radius:999px;background:#f6f3ff;color:#5134c8;display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;transition:background .15s,border-color .15s}
+.opportunity-active-chips button:hover{background:#ece7ff;border-color:#aa98ff}
+.opportunity-preset-chip:focus-visible,.opportunity-active-chips button:focus-visible{outline:3px solid #a797ff;outline-offset:2px}
+.opportunity-filter-field{transition:border-color .15s,background .15s,box-shadow .15s}
+.opportunity-filter-field:focus-within{border-color:#c7baff;background:#fbfaff;box-shadow:0 0 0 3px #6545e80c}
+@media(max-width:640px){.opportunity-filter-presets{margin-top:0}.opportunity-active-chips{margin-top:0}.opportunity-active-chips button{min-height:36px}}
