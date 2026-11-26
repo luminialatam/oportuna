@@ -444,7 +444,8 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
       }
     }
   }
-  return res.status(status).json({ error: message, ...(status>=500||isOfferDraft?{requestId}:{}) });
+  const safeDiagnosticCode=/^[A-Z0-9_]+$/.test(dbCode)?dbCode:'INTERNAL';
+  return res.status(status).json({ error: message, ...(status>=500||isOfferDraft?{requestId}:{}), ...(status>=500&&req.path==='/api/company/matches'?{diagnosticCode:safeDiagnosticCode}:{}) });
 });
 async function initializeWorker() {
   await pool.query('SELECT 1');
