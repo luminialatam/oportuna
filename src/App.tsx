@@ -249,6 +249,19 @@ function ListingDetailModal({
   const buyer = listing.Comprador ?? {};
   const dates = listing.Fechas ?? {};
   const listedItems = Array.isArray(listing.Items?.Listado) ? listing.Items.Listado : [];
+  const officialAvailability = analysis?.official?.availability ?? null;
+  const closingValue = dates.FechaCierre ?? listing.FechaCierre ?? analysis?.official?.closeAt ?? null;
+  const closingDate = closingValue ? new Date(closingValue) : null;
+  const remainingDays = closingDate && Number.isFinite(closingDate.getTime())
+    ? Math.ceil((new Date(closingDate.getFullYear(), closingDate.getMonth(), closingDate.getDate()).getTime() - new Date().setHours(0, 0, 0, 0)) / 86_400_000)
+    : null;
+  const buyerNeedSummary = (() => {
+    const names = listedItems.map((item: any) => String(item.NombreProducto ?? item.Nombre ?? item.nombre ?? '').trim()).filter(Boolean);
+    const uniqueNames = [...new Map(names.map((name: string) => [name.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(), name])).values()];
+    return uniqueNames.length
+      ? `La ficha contempla ${uniqueNames.slice(0, 5).join('; ')}. Revisa cantidades y especificaciones en las partidas y bases oficiales.`
+      : analysis?.interpretation?.executiveSummary || listing.Descripcion || 'La ficha no incluye una descripción suficiente. Abre la fuente oficial y revisa las bases.';
+  })();
   const knownRequirements = [
     ['Prohibición de contratación', listing.ProhibicionContratacion],
     ['Subcontratación', listing.SubContratacion],
@@ -291,7 +304,7 @@ function ListingDetailModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="listing-detail-title"
-        className="flex h-[min(92vh,1000px)] max-h-[92dvh] min-h-0 w-full max-w-[1440px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        className="flex h-[min(92vh,1000px)] max-h-[92dvh] min-h-0 w-[min(94vw,760px)] max-w-[760px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -375,61 +388,6 @@ function ListingDetailModal({
                   {listing._detailError ? <span className="block mt-1 text-amber-800">{listing._detailError}</span> : null}
                 </div>
               )}
-              {tab === 'resumen' && (
-            <div className="space-y-5 text-sm">
-              <div className="space-y-3 rounded-2xl border border-[#E1E4EA] bg-[#F8F9FA] p-5 md:p-6">
-                <span className="font-bold text-[#5D6472] uppercase text-[10px] tracking-wider">
-                  Descripción Oficial
-                </span>
-                <p className="text-sm leading-relaxed text-[#171A24] md:text-base">
-                  {listing.Descripcion || 'Mercado Público no informó una descripción para esta licitación.'}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2 rounded-2xl border border-[#E1E4EA] p-5">
-                  <span className="text-[#8A92A6]">Monto Estimado</span>
-                  <div className="text-base font-bold text-[#171A24]">
-                    {amountDisplay}
-                  </div>
-                  {listing.MontoEstimado == null && procurementRange && (
-                    <small className="block text-sm leading-relaxed text-[#5D6472]">
-                      Tramo del proceso {procurementCode}: {procurementRange}. No equivale a un monto publicado.
-                    </small>
-                  )}
-                </div>
-                <div className="space-y-2 rounded-2xl border border-[#E1E4EA] p-5">
-                  <span className="text-[#8A92A6]">Fecha de Cierre</span>
-                  <div className="text-base font-bold text-[#171A24]">
-                    {dateFmt(dates.FechaCierre ?? listing.FechaCierre)}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4 rounded-2xl border border-[#E1E4EA] p-5 md:p-6">
-                <h4 className="font-bold text-[#171A24]">Organismo Comprador</h4>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <span className="text-[#8A92A6] block">Organismo</span>
-                    <b className="block text-sm text-[#171A24] md:text-base">{buyer.NombreOrganismo || listing.organismo || listing.NombreOrganismo || listing.OrganismoComprador || 'No informado'}</b>
-                  </div>
-                  <div>
-                    <span className="text-[#8A92A6] block">Unidad de Compra</span>
-                    <b className="block text-sm text-[#171A24] md:text-base">{buyer.NombreUnidad || listing.NombreUnidad || 'No informado'}</b>
-                  </div>
-                  <div>
-                    <span className="text-[#8A92A6] block">Región</span>
-                    <b className="block text-sm text-[#171A24] md:text-base">{buyer.RegionUnidad || 'No informada'}</b>
-                  </div>
-                  <div>
-                    <span className="text-[#8A92A6] block">Comuna</span>
-                    <b className="block text-sm text-[#171A24] md:text-base">{buyer.ComunaUnidad || 'No informada'}</b>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {tab === 'items' && (
             <div className="space-y-3 text-xs">
               <span className="font-bold text-[#5D6472] uppercase text-[10px] tracking-wider block">
@@ -525,9 +483,9 @@ function ListingDetailModal({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h4 className="flex items-center gap-2 font-bold text-[#171A24]">
-                    <Sparkles size={17} className="text-[#5636D9]" /> Evaluación comercial
+                    <Sparkles size={17} className="text-[#5636D9]" /> Evaluación de oportunidad
                   </h4>
-                  <p className="mt-1 text-[#667085]">Entiende el encaje, la información disponible y el paso recomendado.</p>
+                  <p className="mt-1 text-[#667085]">Resumen oficial, encaje comercial y qué revisar ahora.</p>
                 </div>
                 <button
                   onClick={onAnalyze}
@@ -555,7 +513,7 @@ function ListingDetailModal({
                 </div>
               ) : analysis ? (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <section className="rounded-xl border border-[#DCD5FF] bg-[#F8F6FF] p-4">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold text-[#475467]">Evidencia de coincidencia</span>
@@ -593,10 +551,14 @@ function ListingDetailModal({
                     <section className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
                       <div className="text-sm font-semibold text-[#475467]">Plazo para investigar</div>
                       <strong className={`mt-2 block text-2xl leading-none ${analysis.decision?.tone === 'muted' ? 'text-[#667085]' : 'text-emerald-700'}`}>
-                        {analysis.decision?.tone === 'muted' ? 'Cerrada' : dates.FechaCierre || listing.FechaCierre ? dateFmt(dates.FechaCierre ?? listing.FechaCierre) : 'Sin fecha'}
+                        {officialAvailability?.isOpen === false
+                          ? officialAvailability.status === 'expired' ? 'Plazo vencido' : officialAvailability.label
+                          : officialAvailability?.isOpen === true && remainingDays != null
+                            ? `${remainingDays === 0 ? 'Hoy' : `${remainingDays} ${remainingDays === 1 ? 'día' : 'días'}`}`
+                            : officialAvailability?.isOpen === true ? 'Abierta' : 'Por confirmar'}
                       </strong>
                       <p className="mt-3 text-xs leading-relaxed text-[#667085]">
-                        {analysis.decision?.tone === 'muted' ? 'Confirma el estado en Mercado Público antes de invertir tiempo.' : 'Confirma la hora límite y revisa las bases en la ficha oficial.'}
+                        {closingValue ? `Cierre informado: ${dateFmt(closingValue)}. ` : ''}{officialAvailability?.isOpen === false ? 'Verifica el estado actualizado antes de invertir tiempo.' : officialAvailability?.isOpen === true ? 'Confirma la hora límite y revisa las bases oficiales.' : 'Confirma el estado y el cierre en Mercado Público.'}
                       </p>
                     </section>
                   </div>
@@ -610,7 +572,7 @@ function ListingDetailModal({
                         </div>
                         <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-[#8A92A6]">{analysis.source === 'mercadopublico' ? 'Fuente oficial' : 'Índice local'}</span>
                       </div>
-                      <p className="leading-relaxed text-[#475467]">{analysis.interpretation?.executiveSummary || listing.Descripcion || 'La ficha no incluye una descripción suficiente. Abre la fuente oficial y revisa las bases.'}</p>
+                      <p className="leading-relaxed text-[#475467]">{buyerNeedSummary}</p>
                       {listing.Descripcion && (
                         <details className="rounded-lg border border-[#E1E4EA] bg-[#F8F9FC] px-3 py-2">
                           <summary className="cursor-pointer text-sm font-semibold text-[#5636D9]">Ver descripción oficial completa</summary>
@@ -623,6 +585,7 @@ function ListingDetailModal({
                           ['Unidad de compra', buyer.NombreUnidad || listing.UnidadCompra || 'No informada'],
                           ['Región', buyer.RegionUnidad || buyer.Region || 'No informada'],
                           ['Comuna', buyer.Comuna || buyer.NombreComuna || 'No informada'],
+                          ['Monto estimado', amountDisplay],
                         ].map(([label, value]) => (
                           <div key={label} className="rounded-lg bg-[#F8F9FC] p-3">
                             <span className="block text-[11px] text-[#667085]">{label}</span>
@@ -640,7 +603,7 @@ function ListingDetailModal({
                               <span className="text-[10px] font-bold uppercase tracking-wide text-[#667085]">Recomendación orientativa</span>
                               <h5 className="mt-1 text-base font-bold text-[#171A24]">{analysis.decision.label}</h5>
                             </div>
-                            <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-[#344054]">{analysis.availability?.label || 'Estado por confirmar'}</span>
+                            <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-[#344054]">{officialAvailability?.label || 'Estado por confirmar'}</span>
                           </div>
                           <p className="mt-2 leading-relaxed text-[#344054]">{analysis.decision.summary}</p>
                           {analysis.decision.toConfirm?.length > 0 && (
