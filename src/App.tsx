@@ -555,7 +555,7 @@ function ListingDetailModal({
                 </div>
               ) : analysis ? (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     <section className="rounded-xl border border-[#DCD5FF] bg-[#F8F6FF] p-4">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold text-[#475467]">Coincidencia con tu catálogo</span>
@@ -589,72 +589,89 @@ function ListingDetailModal({
                         {analysis.source === 'mercadopublico' ? 'Ficha oficial consultada al evaluar' : 'Información del índice local'}
                       </p>
                     </section>
+
+                    <section className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+                      <div className="text-sm font-semibold text-[#475467]">Plazo para investigar</div>
+                      <strong className={`mt-2 block text-2xl leading-none ${analysis.decision?.tone === 'muted' ? 'text-[#667085]' : 'text-emerald-700'}`}>
+                        {analysis.decision?.tone === 'muted' ? 'Cerrada' : dates.FechaCierre || listing.FechaCierre ? dateFmt(dates.FechaCierre ?? listing.FechaCierre) : 'Sin fecha'}
+                      </strong>
+                      <p className="mt-3 text-xs leading-relaxed text-[#667085]">
+                        {analysis.decision?.tone === 'muted' ? 'Confirma el estado en Mercado Público antes de invertir tiempo.' : 'Confirma la hora límite y revisa las bases en la ficha oficial.'}
+                      </p>
+                    </section>
                   </div>
 
-                  {analysis.coverage?.missing?.length > 0 && (
-                    <details className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
-                      <summary className="cursor-pointer font-semibold text-amber-950">
-                        {analysis.coverage.missing.length} campos sin informar en la fuente
-                      </summary>
-                      <ul className="mt-2 grid grid-cols-1 gap-1 text-sm text-amber-900 sm:grid-cols-2">
-                        {analysis.coverage.missing.map((field: string) => <li key={field}>• {field}</li>)}
-                      </ul>
-                    </details>
-                  )}
-
-                  {analysis.decision && (
-                    <section className={`rounded-xl border p-4 ${analysis.decision.tone === 'positive' ? 'border-emerald-200 bg-emerald-50/60' : analysis.decision.tone === 'caution' ? 'border-amber-200 bg-amber-50/70' : 'border-[#E1E4EA] bg-[#F8F9FA]'}`}>
-                      <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12">
+                    <section className="space-y-4 rounded-xl border border-[#E1E4EA] bg-white p-5 lg:col-span-7">
+                      <div className="flex items-center justify-between gap-3">
                         <div>
-                          <span className="text-xs font-bold uppercase tracking-wide text-[#667085]">Qué hacer ahora</span>
-                          <h5 className="mt-1 text-base font-bold text-[#171A24]">{analysis.decision.label}</h5>
+                          <h5 className="font-bold text-[#171A24]">Qué necesita el comprador</h5>
+                          <p className="mt-1 text-xs text-[#667085]">Lectura rápida basada en la información oficial disponible</p>
                         </div>
-                        <span className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-[#344054]">Recomendación orientativa</span>
+                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-[#8A92A6]">{analysis.source === 'mercadopublico' ? 'Fuente oficial' : 'Índice local'}</span>
                       </div>
-                      <p className="mt-2 leading-relaxed text-[#344054]">{analysis.decision.summary}</p>
-
-                      {analysis.decision.evidence?.length > 0 && (
-                        <div className="mt-4 border-t border-black/5 pt-3">
-                          <h6 className="font-semibold text-[#171A24]">Por qué aparece esta oportunidad</h6>
-                          <ul className="mt-1.5 space-y-1.5 text-sm leading-relaxed text-[#475467]">
-                            {analysis.decision.evidence.map((item: string, idx: number) => <li key={idx}>{item}</li>)}
-                          </ul>
-                        </div>
-                      )}
-
-                      {analysis.decision.toConfirm?.length > 0 && (
-                        <details className="mt-3 rounded-lg border border-amber-200/80 bg-white/70 px-3 py-2.5">
-                          <summary className="cursor-pointer font-semibold text-[#344054]">
-                            Checklist previo a cotizar <span className="ml-1 text-xs font-normal text-[#667085]">({analysis.decision.toConfirm.length} verificaciones)</span>
-                          </summary>
-                          <p className="mt-2 text-xs leading-relaxed text-[#667085]">Son comprobaciones recomendadas en las bases; no significa que esos datos estén ausentes de la ficha.</p>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {analysis.decision.toConfirm.slice(0, 8).map((item: string) => <span key={item} className="rounded-full border border-[#E4E7EC] bg-white px-2.5 py-1 text-xs text-[#475467]">{item}</span>)}
-                          </div>
+                      <p className="leading-relaxed text-[#475467]">{analysis.interpretation?.executiveSummary || listing.Descripcion || 'La ficha no incluye una descripción suficiente. Abre la fuente oficial y revisa las bases.'}</p>
+                      {listing.Descripcion && (
+                        <details className="rounded-lg border border-[#E1E4EA] bg-[#F8F9FC] px-3 py-2">
+                          <summary className="cursor-pointer text-sm font-semibold text-[#5636D9]">Ver descripción oficial completa</summary>
+                          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-[#475467]">{listing.Descripcion}</p>
                         </details>
                       )}
-
-                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-3">
-                        <div className="min-w-0 flex-1">
-                          <strong className="block text-[#171A24]">Siguiente paso recomendado</strong>
-                          <span className="mt-0.5 block text-sm leading-relaxed text-[#5D6472]">{analysis.decision.nextAction.reason}</span>
-                        </div>
-                        <button type="button" onClick={() => analysis.decision.nextAction.tab === 'catalogo' ? onGoToCompany() : setTab(analysis.decision.nextAction.tab === 'analisis' ? 'resumen' : analysis.decision.nextAction.tab)} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 font-semibold text-white hover:bg-[#4b2ec7]">
-                          {analysis.decision.nextAction.label}<ArrowRight size={15} />
-                        </button>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {[
+                          ['Organismo', buyer.NombreOrganismo || listing.organismo || listing.NombreOrganismo || 'No informado'],
+                          ['Unidad de compra', buyer.NombreUnidad || listing.UnidadCompra || 'No informada'],
+                          ['Región', buyer.RegionUnidad || buyer.Region || 'No informada'],
+                          ['Comuna', buyer.Comuna || buyer.NombreComuna || 'No informada'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-lg bg-[#F8F9FC] p-3">
+                            <span className="block text-[11px] text-[#667085]">{label}</span>
+                            <strong className="mt-1 block text-sm leading-snug text-[#171A24]">{value}</strong>
+                          </div>
+                        ))}
                       </div>
                     </section>
-                  )}
 
-                  {analysis.interpretation?.executiveSummary && (
-                    <section className="rounded-xl border border-[#E1E4EA] bg-white p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h5 className="font-semibold text-[#171A24]">Resumen de la ficha</h5>
-                        <span className="rounded-full bg-[#F2F0FF] px-2.5 py-1 text-xs font-medium text-[#5636D9]">{analysis.provider === 'groq' ? 'Resumen asistido por IA' : 'Resumen automático'}</span>
-                      </div>
-                      <p className="mt-2 leading-relaxed text-[#475467]">{analysis.interpretation.executiveSummary}</p>
-                    </section>
-                  )}
+                    <div className="space-y-4 lg:col-span-5">
+                      {analysis.decision && (
+                        <section className={`rounded-xl border p-5 ${analysis.decision.tone === 'positive' ? 'border-emerald-200 bg-emerald-50/60' : analysis.decision.tone === 'caution' ? 'border-amber-200 bg-amber-50/70' : 'border-[#E1E4EA] bg-[#F8F9FA]'}`}>
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-[#667085]">Recomendación orientativa</span>
+                              <h5 className="mt-1 text-base font-bold text-[#171A24]">{analysis.decision.label}</h5>
+                            </div>
+                            <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-[#344054]">{analysis.availability?.label || 'Estado por confirmar'}</span>
+                          </div>
+                          <p className="mt-2 leading-relaxed text-[#344054]">{analysis.decision.summary}</p>
+                          {analysis.decision.toConfirm?.length > 0 && (
+                            <details className="mt-4 rounded-lg border border-amber-200 bg-white/80 px-3 py-2.5">
+                              <summary className="cursor-pointer font-semibold text-[#344054]">Qué falta revisar <span className="ml-1 text-xs font-normal text-[#667085]">({analysis.decision.toConfirm.length})</span></summary>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {analysis.decision.toConfirm.slice(0, 8).map((item: string) => <span key={item} className="rounded-full border border-[#E4E7EC] bg-white px-2.5 py-1 text-xs text-[#475467]">{item}</span>)}
+                              </div>
+                            </details>
+                          )}
+                          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-3">
+                            <div className="min-w-0 flex-1">
+                              <strong className="block text-sm text-[#171A24]">Siguiente paso</strong>
+                              <span className="mt-0.5 block text-xs leading-relaxed text-[#5D6472]">{analysis.decision.nextAction.reason}</span>
+                            </div>
+                            <button type="button" onClick={() => analysis.decision.nextAction.tab === 'catalogo' ? onGoToCompany() : setTab(analysis.decision.nextAction.tab === 'analisis' ? 'resumen' : analysis.decision.nextAction.tab)} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-3 py-2 text-sm font-semibold text-white hover:bg-[#4b2ec7]">
+                              {analysis.decision.nextAction.label}<ArrowRight size={15} />
+                            </button>
+                          </div>
+                        </section>
+                      )}
+                      {analysis.coverage?.missing?.length > 0 && (
+                        <details className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+                          <summary className="cursor-pointer font-semibold text-amber-950">Datos que faltan · {analysis.coverage.missing.length}</summary>
+                          <ul className="mt-2 grid grid-cols-1 gap-1 text-sm text-amber-900 sm:grid-cols-2">
+                            {analysis.coverage.missing.map((field: string) => <li key={field}>• {field}</li>)}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  </div>
 
                   <details className="rounded-xl border border-[#E1E4EA] bg-white px-4 py-3">
                     <summary className="cursor-pointer font-semibold text-[#344054]">Alcance y criterios de esta evaluación</summary>
