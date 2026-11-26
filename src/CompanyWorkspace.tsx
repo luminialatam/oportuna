@@ -993,6 +993,7 @@ export function CompanyOpportunities({
   csrfToken: string;
 }) {
   const [data, setData] = useState<any>(null);
+  const [visibleCount, setVisibleCount] = useState(board ? 30 : 6);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [errorReference, setErrorReference] = useState('');
@@ -1026,9 +1027,12 @@ export function CompanyOpportunities({
     setLoading(true);
     setError('');
     setErrorReference('');
-    request<any>(board ? '/api/company/matches?view=board' : '/api/company/matches', { signal: controller.signal })
+    request<any>('/api/company/matches?view=board', { signal: controller.signal })
       .then((val) => {
-        if (live) setData(val);
+        if (live) {
+          setData(val);
+          setVisibleCount(board ? 30 : 6);
+        }
       })
       .catch((e) => {
         if (!live) return;
@@ -1120,7 +1124,7 @@ export function CompanyOpportunities({
               <table className="summary-matches-table">
                 <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Puntaje / 100</th><th>Acción</th></tr></thead>
                 <tbody>
-                  {data.items.map((item: any) => {
+                  {data.items.slice(0, visibleCount).map((item: any) => {
                     const closing = item.fecha_cierre ? new Date(item.fecha_cierre) : null;
                     const closingLabel = closing && Number.isFinite(closing.getTime())
                       ? new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }).format(closing)
@@ -1176,8 +1180,13 @@ export function CompanyOpportunities({
               No hay coincidencias en las licitaciones activas del índice local para los criterios comerciales guardados. La búsqueda evaluó {Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones.
             </div>
           )}
-          {board && data.total > data.items?.length && (
-            <p className="text-xs text-[#5D6472]">Mostrando las {data.items.length} coincidencias con mayor relevancia de {data.total} encontradas.</p>
+          {data.items?.length > 0 && <p className="text-xs text-[#5D6472]">{board ? 'Primero aparecen las coincidencias con evidencia más directa; las basadas en términos relacionados quedan al final. ' : ''}Mostrando {Math.min(visibleCount, data.items.length)} de {data.total} oportunidades.</p>}
+          {data.items?.length > 0 && visibleCount < data.items.length && (
+            <div className="flex justify-center pt-1">
+              <button type="button" onClick={() => setVisibleCount((count) => Math.min(count + 10, data.items.length))} className="rounded-lg border border-[#DCD6FF] bg-white px-4 py-2 text-xs font-semibold text-[#5636D9] hover:bg-[#F7F5FF]">
+                Cargar más ({data.items.length - visibleCount} restantes)
+              </button>
+            </div>
           )}
           {data.disclaimer && <p className="summary-match-disclaimer">{data.disclaimer}</p>}
         </>
