@@ -1821,6 +1821,32 @@ function App() {
                   ))}
                 </div>
 
+                <div className="opportunity-filter-presets" aria-label="Filtros rápidos de fecha de cierre">
+                  <span>Atajos:</span>
+                  {[7, 30].map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => {
+                        const start = new Date();
+                        start.setHours(0, 0, 0, 0);
+                        const end = new Date(start);
+                        end.setDate(end.getDate() + days);
+                        const toISO = (date: Date) => {
+                          const offset = date.getTimezoneOffset();
+                          return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 10);
+                        };
+                        setCloseAfterFilter(toISO(start));
+                        setCloseBeforeFilter(toISO(end));
+                        setStateFilter('5');
+                      }}
+                      className={`opportunity-preset-chip${closeBeforeFilter && closeAfterFilter ? '' : ''}`}
+                    >
+                      Cierres en {days} días
+                    </button>
+                  ))}
+                </div>
+
                 <div className="opportunity-filter-heading">
                   <div className="opportunity-filter-title">
                     <strong>Filtros</strong>
@@ -1903,6 +1929,18 @@ function App() {
                     <input id="opportunity-close-before" type="date" value={closeBeforeFilter} onChange={(e) => setCloseBeforeFilter(e.target.value)} />
                   </div>
                 </div>
+
+                {(matchLevelFilter || stateFilter || regionFilter.trim() || modalityFilter || closeAfterFilter || closeBeforeFilter) && (
+                  <div className="opportunity-active-chips" aria-label="Filtros activos">
+                    <span>Aplicados</span>
+                    {matchLevelFilter && <button type="button" onClick={() => setMatchLevelFilter('')}>Coincidencia: {matchLevelFilter === 'high' ? 'Alta' : matchLevelFilter === 'medium' ? 'Media' : 'Exploratoria'} <X size={14} /></button>}
+                    {stateFilter && <button type="button" onClick={() => setStateFilter('')}>Estado: {stateFilter === '5' ? 'Publicada' : stateFilter === '6' ? 'Cerrada' : stateFilter === '8' ? 'Adjudicada' : 'Desierta'} <X size={14} /></button>}
+                    {regionFilter.trim() && <button type="button" onClick={() => setRegionFilter('')}>Región: {regionFilter.trim()} <X size={14} /></button>}
+                    {modalityFilter && <button type="button" onClick={() => setModalityFilter('')}>Tipo: {modalityFilter === 'agile' ? 'Compra Ágil' : modalityFilter === 'private' ? 'Privada' : 'Pública'} <X size={14} /></button>}
+                    {closeAfterFilter && <button type="button" onClick={() => setCloseAfterFilter('')}>Desde: {closeAfterFilter} <X size={14} /></button>}
+                    {closeBeforeFilter && <button type="button" onClick={() => setCloseBeforeFilter('')}>Hasta: {closeBeforeFilter} <X size={14} /></button>}
+                  </div>
+                )}
 
                 <div className="opportunity-filter-footer">
                   <span><span className="opportunity-info-mark">i</span> El tipo de proceso y el rango de cierre se aplican al buscar.</span>
