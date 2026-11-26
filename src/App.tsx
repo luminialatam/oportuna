@@ -775,7 +775,7 @@ function App() {
   // Alerts State
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [alertOverview, setAlertOverview] = useState<AlertOverview | null>(null);
-  const [alertCounts, setAlertCounts] = useState({ total: 0, unread: 0 });
+  const [alertCounts, setAlertCounts] = useState({ total: 0, unread: 0, pendingMatches: 0 });
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsError, setAlertsError] = useState('');
@@ -943,7 +943,7 @@ function App() {
     try {
       await api('/api/alerts/evaluate', { method: 'POST' });
       const [res, overview] = await Promise.all([
-        api<{ items: AlertItem[]; counts: { total: number; unread: number } }>(`/api/alerts?filter=${f}`),
+        api<{ items: AlertItem[]; counts: { total: number; unread: number; pendingMatches: number } }>(`/api/alerts?filter=${f}`),
         api<AlertOverview>('/api/alerts/overview'),
       ]);
       setAlerts(res.items);
@@ -965,7 +965,7 @@ function App() {
   const refreshAlertCounts = useCallback(async () => {
     if (authState !== 'authenticated' || !auth?.activeCompanyId) return;
     try {
-      const counts = await api<{ total: number; unread: number }>('/api/alerts/count');
+      const counts = await api<{ total: number; unread: number; pendingMatches: number }>('/api/alerts/count');
       setAlertCounts(counts);
     } catch {
       /* ignore */
@@ -1151,7 +1151,7 @@ function App() {
       csrfToken = next.csrfToken;
       setAuth(next);
       setAlerts([]);
-      setAlertCounts({ total: 0, unread: 0 });
+      setAlertCounts({ total: 0, unread: 0, pendingMatches: 0 });
       setAlertsOpen(false);
       goToSection('Resumen');
       void refreshAlertCounts();
@@ -1474,6 +1474,7 @@ function App() {
             <AlertNotificationPanel
               items={alerts}
               unread={alertCounts.unread}
+              pendingMatches={alertCounts.pendingMatches}
               open={alertsOpen}
               loading={alertsLoading}
               error={alertsError}
@@ -1487,9 +1488,14 @@ function App() {
                 setAlertsFilter('all');
                 goToSection('Alertas');
               }}
+              onPending={() => {
+                setAlertsOpen(false);
+                setAlertsFilter('pending');
+                goToSection('Alertas');
+              }}
               onRead={(id) => {
                 void api(`/api/alerts/${id}/read`, { method: 'POST' }).then(() => {
-                  setAlerts((curr) => alertsFilter === 'unread'
+                  setAlerts((curr) => alertsFilter === 'unread' || alertsFilter === 'pending'
                     ? curr.filter((item) => item.id !== id)
                     : curr.map((item) => (item.id === id ? { ...item, readAt: new Date().toISOString() } : item)));
                   void refreshAlertCounts();
@@ -2200,7 +2206,7 @@ function App() {
               onFilter={(val) => setAlertsFilter(val)}
               onRead={(id) => {
                 void api(`/api/alerts/${id}/read`, { method: 'POST' }).then(() => {
-                  setAlerts((curr) => alertsFilter === 'unread'
+                  setAlerts((curr) => alertsFilter === 'unread' || alertsFilter === 'pending'
                     ? curr.filter((item) => item.id !== id)
                     : curr.map((item) => (item.id === id ? { ...item, readAt: new Date().toISOString() } : item)));
                   void refreshAlertCounts();
@@ -2212,7 +2218,15 @@ function App() {
                   void refreshAlertCounts();
                 });
               }}
-              onOpen={(item) => void openDetail(item.code)}
+              onOpen={(item) => {
+                if (item.type === 'new_match' && !item.readAt) {
+                  void api(`/api/alerts/${item.id}/read`, { method: 'POST' }).then(() => {
+                    setAlerts((curr) => curr.filter((entry) => entry.id !== item.id));
+                    void refreshAlertCounts();
+                  });
+                }
+                void openDetail(item.code);
+              }}
               onGoToTracking={() => goToSection('Seguimiento')}
               onRunSearch={async () => {
                 const result = await api<{ evaluated: number; created: number; configured: boolean; locked: boolean }>('/api/company/proactive-search/run', { method: 'POST' });
