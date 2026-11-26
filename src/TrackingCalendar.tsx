@@ -88,11 +88,14 @@ export function TrackingCalendar({ items, total, loading, error, onRetry, onOpen
   const monthInternal = monthEvents.length - monthClosings;
   const nextEvent = events.find((event) => event.date.getTime() >= new Date().getTime());
   const suggestedOpportunity = actionableItems.find((item) => !['submitted'].includes(item.estado));
-  const suggestedStep = suggestedOpportunity ? ({
+  const recommendedSteps: Record<string, string> = {
     saved: 'Revisar requisitos y decidir si la empresa puede participar',
     evaluating: 'Validar partidas, cantidades y condiciones de las bases',
     preparing_offer: 'Cerrar costos, documentos y revisión de la oferta',
-  }[suggestedOpportunity.estado] ?? 'Revisar el siguiente hito de esta oportunidad') : '';
+  };
+  const suggestedStep = suggestedOpportunity
+    ? recommendedSteps[suggestedOpportunity.estado] ?? 'Revisar el siguiente hito de esta oportunidad'
+    : '';
 
   const firstDay = new Date(`${month}-01T00:00:00Z`);
   const year = firstDay.getUTCFullYear();
