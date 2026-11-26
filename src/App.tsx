@@ -558,19 +558,19 @@ function ListingDetailModal({
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     <section className="rounded-xl border border-[#DCD5FF] bg-[#F8F6FF] p-4">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-[#475467]">Coincidencia con tu catálogo</span>
+                        <span className="font-semibold text-[#475467]">Evidencia de coincidencia</span>
                         <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#5636D9]">
                           {relevanceLabels[relevanceLevel] ?? relevanceLevel ?? 'Sin nivel'}
                         </span>
                       </div>
                       <div className="mt-2 flex items-baseline gap-2">
                         <strong className="text-3xl leading-none text-[#5636D9]">{analysis.commercialRelevance?.score ?? '—'}</strong>
-                        <span className="text-sm text-[#667085]">/ 100</span>
+                        <span className="text-sm text-[#667085]">puntos</span>
                       </div>
                       <div className="mt-3 h-2 overflow-hidden rounded-full bg-white" role="progressbar" aria-label="Coincidencia con el catálogo" aria-valuemin={0} aria-valuemax={100} aria-valuenow={analysis.commercialRelevance?.score ?? 0}>
                         <div className="h-full rounded-full bg-[#6941C6] transition-all" style={{ width: `${Math.max(0,Math.min(100,Number(analysis.commercialRelevance?.score)||0))}%` }} />
                       </div>
-                      <p className="mt-2 text-xs leading-relaxed text-[#667085]">Similitud textual; no representa probabilidad de adjudicación.</p>
+                      <p className="mt-2 text-xs leading-relaxed text-[#667085]">Puntaje de evidencia según frase y fuente; no es porcentaje ni probabilidad de adjudicación.</p>
                     </section>
 
                     <section className="rounded-xl border border-[#E1E4EA] bg-white p-4">
