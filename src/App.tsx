@@ -544,6 +544,14 @@ function ListingDetailModal({
                       <small className="text-[#5D6472] block mt-0.5">
                         {analysis.coverage?.present ?? 0} de {analysis.coverage?.total ?? 0} campos
                       </small>
+                      {analysis.source === 'mercadopublico' && (
+                        <small className="text-emerald-700 block mt-1">Ficha oficial consultada al evaluar</small>
+                      )}
+                      {analysis.coverage?.missing?.length > 0 && (
+                        <small className="text-[#667085] block mt-1 leading-relaxed">
+                          Sin dato en la fuente: {analysis.coverage.missing.join(' · ')}
+                        </small>
+                      )}
                     </div>
                   </div>
 
