@@ -79,19 +79,19 @@ export async function evaluateAlertsForCompany(companyId:number,at = new Date())
   return {created,evaluatedAt:now.toISOString(),timezone:ZONE};
 }
 
-export async function listAlerts(options:{filter?:'all'|'unread'|'closing'|'followup'|'matches';limit?:number}){
+export async function listAlerts(options:{filter?:'all'|'unread'|'closing'|'followup'|'matches'|'pending';limit?:number}){
   const companyId=await resolveCurrentCompanyId();const where=['a.company_id=?','a.dismissed_at IS NULL'];const values:any[]=[companyId];
   if(options.filter==='unread')where.push('a.read_at IS NULL');if(options.filter==='closing')where.push("a.alert_type LIKE 'closing_%'");if(options.filter==='followup')where.push("a.alert_type LIKE 'followup_%'");
   const limit=Math.max(1,Math.min(200,options.limit??100));
   let rows:any[]=[];
-  if(options.filter!=='matches')[rows]=await pool.query<any[]>(`SELECT a.id,a.opportunity_id,a.alert_type,a.alert_key,a.title,a.message,a.due_at,a.read_at,a.dismissed_at,a.created_at,t.codigo_externo,t.estado,l.nombre
+  if(options.filter!=='matches'&&options.filter!=='pending')[rows]=await pool.query<any[]>(`SELECT a.id,a.opportunity_id,a.alert_type,a.alert_key,a.title,a.message,a.due_at,a.read_at,a.dismissed_at,a.created_at,t.codigo_externo,t.estado,l.nombre
     FROM company_alerts a JOIN company_opportunity_tracking t ON t.id=a.opportunity_id AND t.company_id=a.company_id JOIN licitaciones l ON l.codigo_externo=t.codigo_externo
     WHERE ${where.join(' AND ')} ORDER BY a.read_at IS NULL DESC,a.due_at ASC,a.created_at DESC LIMIT ?`,[...values,limit]);
   const items=rows.map(row=>({id:Number(row.id),opportunityId:Number(row.opportunity_id),type:row.alert_type,key:row.alert_key,title:row.title,message:row.message,dueAt:row.due_at,readAt:row.read_at,createdAt:row.created_at,code:row.codigo_externo,opportunityStatus:row.estado,listingName:row.nombre}));
-  const matches=options.filter==='closing'||options.filter==='followup'?[]:await listProactiveMatches({filter:options.filter==='unread'?'unread':options.filter==='matches'?'matches':'all',limit});
+  const matches=options.filter==='closing'||options.filter==='followup'?[]:await listProactiveMatches({filter:options.filter==='unread'?'unread':options.filter==='matches'?'matches':options.filter==='pending'?'pending':'all',limit});
   return [...items,...matches].sort((a,b)=>new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime()).slice(0,limit);
 }
-export async function alertCounts(){const companyId=await resolveCurrentCompanyId();const [[[row]],matches]=await Promise.all([pool.query<any[]>('SELECT COUNT(*) total,SUM(read_at IS NULL) unread FROM company_alerts WHERE company_id=? AND dismissed_at IS NULL',[companyId]),proactiveMatchCounts()]);return {total:Number(row.total??0)+matches.total,unread:Number(row.unread??0)+matches.unread};}
+export async function alertCounts(){const companyId=await resolveCurrentCompanyId();const [[[row]],matches]=await Promise.all([pool.query<any[]>('SELECT COUNT(*) total,SUM(read_at IS NULL) unread FROM company_alerts WHERE company_id=? AND dismissed_at IS NULL',[companyId]),proactiveMatchCounts()]);return {total:Number(row.total??0)+matches.total,unread:Number(row.unread??0)+matches.unread,pendingMatches:matches.unread};}
 
 export async function getAlertOverview(){
   const companyId=await resolveCurrentCompanyId();

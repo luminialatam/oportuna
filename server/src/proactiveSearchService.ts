@@ -98,9 +98,9 @@ export async function runProactiveSearchPass(now=new Date()){
   }finally{if(locked)await connection.query("SELECT RELEASE_LOCK('oportuna_proactive_search')");connection.release();}
 }
 
-export async function listProactiveMatches(options:{filter?:'all'|'unread'|'matches';limit:number}){
+export async function listProactiveMatches(options:{filter?:'all'|'unread'|'matches'|'pending';limit:number}){
   const companyId=await resolveCurrentCompanyId();const clauses=['company_id=?','dismissed_at IS NULL'];
-  if(options.filter==='unread')clauses.push('read_at IS NULL');
+  if(options.filter==='unread'||options.filter==='pending')clauses.push('read_at IS NULL');
   const [rows]=await pool.query<any[]>(`SELECT id,listing_code code,listing_name listingName,match_level matchLevel,match_score matchScore,match_reasons matchReasons,read_at readAt,created_at createdAt FROM company_proactive_matches WHERE ${clauses.join(' AND ')} ORDER BY read_at IS NULL DESC,created_at DESC LIMIT ?`,[companyId,Math.max(1,Math.min(200,options.limit))]);
   return rows.map(row=>({id:-Number(row.id),opportunityId:0,type:'new_match',title:`Nueva coincidencia: ${row.listingName??row.code}`,message:jsonList(row.matchReasons).join(' '),dueAt:row.createdAt,readAt:row.readAt,createdAt:row.createdAt,code:row.code,listingName:row.listingName,matchLevel:row.matchLevel,matchScore:row.matchScore==null?null:Number(row.matchScore)}));
 }

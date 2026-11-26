@@ -58,22 +58,26 @@ const timeLabel = (value: string) => {
 export function AlertNotificationPanel({
   items,
   unread,
+  pendingMatches,
   open,
   loading,
   error,
   onToggle,
   onNavigate,
+  onPending,
   onRead,
   onDismiss,
   onOpen,
 }: {
   items: AlertItem[];
   unread: number;
+  pendingMatches: number;
   open: boolean;
   loading: boolean;
   error: string;
   onToggle: () => void;
   onNavigate: () => void;
+  onPending: () => void;
   onRead: (id: number) => void;
   onDismiss: (id: number) => void;
   onOpen: (item: AlertItem) => void;
@@ -130,8 +134,16 @@ export function AlertNotificationPanel({
                 <div className="p-6 text-center text-xs text-[#5D6472]">
                   Actualizando alertas…
                 </div>
-              ) : items.length ? (
-                items.slice(0, 5).map((item) => (
+              ) : items.some((item) => item.type !== 'new_match') || pendingMatches > 0 ? (
+                <>
+                {pendingMatches > 0 && (
+                  <button type="button" onClick={onPending} className="m-3 mb-1 w-[calc(100%-1.5rem)] rounded-xl border border-[#D9D1FF] bg-[#F6F3FF] p-3 text-left hover:bg-[#F0EDFF] transition-colors">
+                    <span className="flex items-center justify-between gap-2"><span className="inline-flex items-center gap-2 text-xs font-bold text-[#5636D9]"><Sparkles size={14}/> Nuevas licitaciones encontradas</span><span className="rounded-full bg-[#5636D9] px-2 py-0.5 text-[11px] font-bold text-white">{pendingMatches}</span></span>
+                    <span className="mt-1 block text-[11px] leading-4 text-[#5D6472]">El Calificador comercial IA encontró oportunidades para revisar.</span>
+                    <span className="mt-2 block text-[11px] font-semibold text-[#5636D9]">Abrir pendientes de revisión →</span>
+                  </button>
+                )}
+                {items.filter((item) => item.type !== 'new_match').slice(0, 5).map((item) => (
                   <div
                     key={item.id}
                     className={`p-3.5 flex items-start gap-3 hover:bg-gray-50 transition-colors ${
@@ -176,7 +188,8 @@ export function AlertNotificationPanel({
                       </button>
                     </div>
                   </div>
-                ))
+                ))}
+                </>
               ) : (
                 <div className="p-6 text-center text-xs text-[#5D6472] space-y-1">
                   <CheckCircle2 size={24} className="mx-auto text-[#5636D9] mb-2 opacity-80" />
@@ -294,6 +307,7 @@ export function AlertsPage({
               <Filter size={14} /> Filtro:
             </span>
             {[
+              { id: 'pending', label: 'Pendientes de revisar' },
               { id: 'all', label: 'Todas' },
               { id: 'unread', label: 'Sin leer' },
               { id: 'closing', label: 'Cierres próximos' },
@@ -313,6 +327,13 @@ export function AlertsPage({
               </button>
             ))}
           </div>
+
+          {filter === 'pending' && (
+            <div className="rounded-xl border border-[#D9D1FF] bg-[#F6F3FF] px-4 py-3 text-sm text-[#4C5568]">
+              <div className="flex items-center gap-2 font-semibold text-[#5636D9]"><Sparkles size={16}/> Licitaciones nuevas para revisar</div>
+              <p className="mt-1 text-xs leading-5">El agente Calificador comercial compara tu perfil y catálogo con las fichas disponibles en el índice local. Abre cada resultado para revisar sus antecedentes y marcarlo como revisado.</p>
+            </div>
+          )}
 
           {error && (
             <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
