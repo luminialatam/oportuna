@@ -201,7 +201,17 @@ export async function suggestCommercialTerms(input: { nombre: string; categoria:
       { role: 'user', content: JSON.stringify(input) },
     ] }),
   });
-  if (!response.ok) { await response.body?.cancel(); throw new Error(`Groq no disponible (HTTP ${response.status}).`); }
+  if (!response.ok) {
+    let providerMessage = '';
+    try {
+      const errorPayload = await response.json() as any;
+      providerMessage = typeof errorPayload?.error?.message === 'string' ? errorPayload.error.message.trim() : '';
+    } catch {
+      // Some upstream errors are not returned as JSON.
+    }
+    const detail = providerMessage ? `: ${providerMessage.slice(0, 240)}` : '';
+    throw new Error(`Groq no disponible (HTTP ${response.status})${detail}.`);
+  }
   const payload = await response.json() as any; const content = payload?.choices?.[0]?.message?.content;
   if (typeof content !== 'string') throw new Error('Groq no devolvió sugerencias válidas.');
   let parsed: any; try { parsed = JSON.parse(content); } catch { throw new Error('Groq devolvió un formato inválido.'); }
