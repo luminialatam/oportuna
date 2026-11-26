@@ -241,7 +241,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
   const keywords = [...new Set([...nameKeywords, ...products.flatMap(product => [...terms(product.nombre), ...terms(product.categoria ?? ''), ...product.palabrasClave.flatMap(terms), ...product.sinonimos.flatMap(terms), ...product.terminosRelacionados.flatMap(terms), ...product.aplicaciones.flatMap(terms)]), ...profileTerms].flatMap(commercialTermVariants))].slice(0, 90);
   if (!keywords.length) return empty;
   const evaluationLimit = options.evaluationLimit == null ? null : Math.max(1, Math.min(800, Math.trunc(options.evaluationLimit) || 800));
-  const key = createHash('sha256').update(JSON.stringify({ companyId, products, profileUpdated: profile?.updated_at, preferenceUpdated: preference?.updated_at, listingVersion: listingVersion[0]?.version, trackingVersion: trackingVersion[0]?.version, states, regions, includeAllItems: Boolean(options.includeAllItems), evaluationLimit, commercialClassification: options.commercialClassification !== false })).digest('hex');
+  const key = createHash('sha256').update(JSON.stringify({ companyId, products, profileUpdated: profile?.updated_at, preferenceUpdated: preference?.updated_at, listingVersion: listingVersion[0]?.version, trackingVersion: trackingVersion[0]?.version, states, regions, board: Boolean(options.board), includeAllItems: Boolean(options.includeAllItems), evaluationLimit, commercialClassification: options.commercialClassification !== false })).digest('hex');
   const visibleMatches = (result: CacheValue['value']) =>
     options.board || options.includeAllItems ? result : { ...result, items: result.items.slice(0, 6) };
   const cached = matchCache.get(key);
@@ -299,9 +299,12 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
       if (best.level === 'high') high++; else if (best.level === 'medium') medium++; else exploratory++;
       if (daysToClose != null && daysToClose >= 0 && daysToClose <= 14) closingSoon++;
       if (items.trim()) indexed++; else limited++;
-      topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, fecha_publicacion: row.fecha_publicacion, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
-      topResults.sort((a, b) => b.score - a.score || (a.daysToClose ?? 9999) - (b.daysToClose ?? 9999) || String(a.codigo_externo).localeCompare(String(b.codigo_externo)));
-      if (!options.includeAllItems && topResults.length > MATCH_BOARD_LIMIT) topResults.pop();
+      const evidenceStrength = best.exactPhrase ? 2 : best.nameTerms.length ? 1 : 0;
+      topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, fecha_publicacion: row.fecha_publicacion, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, evidenceStrength, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
+      // Prioriza frase exacta y términos del nombre del producto. Las coincidencias
+      // basadas solo en términos relacionados siguen disponibles al final.
+      topResults.sort((a, b) => b.evidenceStrength - a.evidenceStrength || b.score - a.score || (a.daysToClose ?? 9999) - (b.daysToClose ?? 9999) || String(a.codigo_externo).localeCompare(String(b.codigo_externo)));
+      if (!options.board && !options.includeAllItems && topResults.length > MATCH_BOARD_LIMIT) topResults.pop();
     }
   };
 
