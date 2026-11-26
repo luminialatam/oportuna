@@ -1840,7 +1840,7 @@ function App() {
                         setCloseBeforeFilter(toISO(end));
                         setStateFilter('5');
                       }}
-                      className={`opportunity-preset-chip${closeBeforeFilter && closeAfterFilter ? '' : ''}`}
+                      className="opportunity-preset-chip"
                     >
                       Cierres en {days} días
                     </button>
