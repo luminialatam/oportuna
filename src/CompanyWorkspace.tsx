@@ -1122,7 +1122,7 @@ export function CompanyOpportunities({
           {data.items?.length ? (
             <div className="summary-matches-table-wrap">
               <table className="summary-matches-table">
-                <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Puntaje / 100</th><th>Acción</th></tr></thead>
+                <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Evidencia</th><th>Acción</th></tr></thead>
                 <tbody>
                   {data.items.slice(0, visibleCount).map((item: any) => {
                     const closing = item.fecha_cierre ? new Date(item.fecha_cierre) : null;
@@ -1141,7 +1141,7 @@ export function CompanyOpportunities({
                         <td><span className="summary-match-buyer">{item.organismo || 'No informado'}</span></td>
                         <td className="summary-match-nowrap">{closingLabel}</td>
                         <td className="summary-match-amount">{amount}</td>
-                        <td><span className="summary-match-score">{Number(item.score || 0)} / 100</span></td>
+                        <td><span className="summary-match-score" title="Puntaje de evidencia textual; no es porcentaje ni probabilidad de adjudicación">{Number(item.score || 0)} pts</span></td>
                         <td>
                           <div className="summary-match-actions">
                             {onOpenListing ? (
