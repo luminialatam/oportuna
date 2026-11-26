@@ -148,6 +148,7 @@ export function CompanyWorkspace({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [suggestionError, setSuggestionError] = useState('');
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -241,6 +242,7 @@ export function CompanyWorkspace({
     setProduct(blankProduct);
     setEditingId(null);
     setSuggestions(null);
+    setSuggestionError('');
     setShowProductForm(false);
   };
 
@@ -248,6 +250,9 @@ export function CompanyWorkspace({
     setProduct((current) => ({ ...current, [key]: value }));
 
   const editProduct = (item: Product) => {
+    setError('');
+    setNotice('');
+    setSuggestionError('');
     setEditingId(item.id ?? null);
     setProduct({ ...item });
     setSuggestions(null);
@@ -271,8 +276,8 @@ export function CompanyWorkspace({
         csrfToken
       );
       setProducts(saved.items);
-      setNotice(editingId ? 'Producto actualizado.' : 'Producto agregado al catálogo.');
       resetProduct();
+      setNotice(editingId ? 'Producto actualizado.' : 'Producto agregado al catálogo.');
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar el producto.');
@@ -324,11 +329,11 @@ export function CompanyWorkspace({
 
   const suggest = async () => {
     if (product.nombre.trim().length < 2) {
-      setError('Ingresa el nombre del producto para pedir sugerencias de IA.');
+      setSuggestionError('Ingresa un nombre de al menos 2 caracteres para pedir sugerencias de IA.');
       return;
     }
     setSuggesting(true);
-    setError('');
+    setSuggestionError('');
     setSuggestions(null);
     try {
       setSuggestions(
@@ -347,7 +352,7 @@ export function CompanyWorkspace({
         )
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudieron generar sugerencias.');
+      setSuggestionError(e instanceof Error ? e.message : 'No se pudieron generar sugerencias.');
     } finally {
       setSuggesting(false);
     }
@@ -699,6 +704,8 @@ export function CompanyWorkspace({
               <button
                 onClick={() => {
                   resetProduct();
+                  setError('');
+                  setNotice('');
                   setShowProductForm(true);
                 }}
                 className="h-10 px-4 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm"
@@ -803,6 +810,12 @@ export function CompanyWorkspace({
                   </button>
                 </div>
               </div>
+
+              {suggestionError && (
+                <p role="status" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  No se pudieron sugerir términos con IA: {suggestionError} Puedes completar las palabras manualmente y guardar el producto igual.
+                </p>
+              )}
 
               {suggestions && (
                 <div className="p-3.5 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA] space-y-2 text-xs">
