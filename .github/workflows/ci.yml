@@ -62,6 +62,7 @@ jobs:
             test:sharkasp-runtime-config \
             test:sharkasp-artifact \
             test:matching \
+            test:company-matches \
             test:search-relevance \
             test:chilean-rut \
             test:listing-status \

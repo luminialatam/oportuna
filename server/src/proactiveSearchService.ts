@@ -37,7 +37,7 @@ export async function saveProactiveSearchPreferences(input:{enabled:boolean;freq
 }
 
 async function evaluateCompany(companyId:number,cutoff:Date|null){
-  const result=await runWithCompanyContext({userId:0,companyId,role:'admin',platformRole:'user'},()=>getCompanyMatches({includeAllItems:true,evaluationLimit:800}));
+  const result=await runWithCompanyContext({userId:0,companyId,role:'admin',platformRole:'user'},()=>getCompanyMatches({includeAllItems:true}));
   let created=0;const newMatches:OpportunityEmailItem[]=[];
   for(const item of result.items??[]){
     const code=String(item.codigo_externo??'').trim();if(!code)continue;

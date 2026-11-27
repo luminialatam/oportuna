@@ -17,12 +17,18 @@ const rows = [
   { id: 3, codigo_externo: 'SIM-DISH-SERVICE', nombre: 'Servicio de mantención de lavavajillas industriales', codigo_estado: 5, fecha_cierre: '2026-12-01', organismo: 'Test', monto_estimado: null, moneda: null, region: null, official_description: '', item_text: '' },
   { id: 4, codigo_externo: 'SIM-DISH-COMBINED', nombre: 'Suministro e instalación de lavavajillas industrial', codigo_estado: 5, fecha_cierre: '2026-12-01', organismo: 'Test', monto_estimado: null, moneda: null, region: null, official_description: '', item_text: '' },
   { id: 5, codigo_externo: 'SIM-OVEN-BARE', nombre: 'Horno combinado', codigo_estado: 5, fecha_cierre: '2026-12-01', organismo: 'Test', monto_estimado: null, moneda: null, region: null, official_description: '', item_text: '' },
+  { id: 6, codigo_externo: 'SIM-NO-MATCH', nombre: 'Adquisición de papel para oficina', codigo_estado: 5, fecha_cierre: '2026-12-01', organismo: 'Test', monto_estimado: null, moneda: null, region: null, official_description: '', item_text: '' },
+  { id: 7, codigo_externo: 'SIM-EXCLUDED', nombre: 'Suministro de lavavajillas industriales', codigo_estado: 5, fecha_cierre: '2026-12-01', organismo: 'Test', monto_estimado: null, moneda: null, region: null, official_description: 'Equipo para esterilización clínica', item_text: '' },
 ];
 (pool as any).query = async (sql: string, values: unknown[] = []): Promise<[any[], unknown]> => {
-  if (sql.includes('FROM commercial_profiles')) return [[{ actividad: '', rubros: '[]', regiones: '[]', palabras_clave: '[]', terminos_excluidos: '[]', updated_at: '2026-11-02' }], undefined];
+  if (sql.includes('FROM commercial_profiles')) return [[{ actividad: '', rubros: '[]', regiones: '[]', palabras_clave: '[]', terminos_excluidos: '["esterilización"]', updated_at: '2026-11-02' }], undefined];
   if (sql.includes('FROM company_search_preferences')) return [[{ estados: '[5]', regiones: '[]', updated_at: '2026-11-02' }], undefined];
   if (sql.includes('FROM company_products')) return [Number(values[0]) === 1 ? [] : products, undefined];
   if (sql.includes('MAX(last_synced_at)')) return [[{ version: '2026-11-02' }], undefined];
+  if (sql.includes('MAX(updated_at) version FROM company_opportunity_tracking')) return [[{ version: '2026-11-02' }], undefined];
+  if (sql.includes('SELECT COUNT(*) total FROM licitaciones')) return [[{ total: rows.length }], undefined];
+  if (sql.includes('SELECT COUNT(*) total FROM company_opportunity_tracking')) return [[{ total: 0 }], undefined];
+  if (sql.includes('FROM sync_runs WHERE estado=\'completada\'')) return [[{ finishedAt: '2026-11-02T08:00:00.000Z', checkedDate: '2026-11-02' }], undefined];
   if (sql.includes('FROM (SELECT l.id FROM licitaciones l')) {
     const cursor = Number(values[values.length - 2]);
     return [rows.filter(row => row.id > cursor).slice(0, 250), undefined];
@@ -40,6 +46,8 @@ try {
   assert.equal(byCode.has('SIM-BUILDING'), true, 'the valid building maintenance opportunity remains');
   assert.equal(byCode.has('SIM-DISH-COMBINED'), true, 'a compatible supply plus installation opportunity remains');
   assert.equal(byCode.has('SIM-OVEN-BARE'), true, 'a bare title remains visible as exploratory, not confirmed');
+  assert.equal(byCode.has('SIM-NO-MATCH'), false, 'unrelated listings remain absent when there is no evidence');
+  assert.equal(byCode.has('SIM-EXCLUDED'), false, 'profile exclusions remove otherwise exact matches');
   assert.equal((byCode.get('SIM-OVEN-BARE') as any).level, 'exploratory');
   assert.equal((byCode.get('SIM-OVEN-BARE') as any).score, 94, 'the score remains unchanged when evidence modality is unknown');
   assert.ok((byCode.get('SIM-DISH-COMBINED') as any).contractingTypes.includes('Compra o suministro'));
@@ -50,4 +58,5 @@ try {
 } finally {
   (pool as any).query = originalQuery;
   globalThis.fetch = originalFetch;
+  await pool.end();
 }

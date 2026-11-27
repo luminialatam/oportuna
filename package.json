@@ -26,6 +26,7 @@
     "test:sharkasp-runtime-config": "node server/test/sharkaspRuntimeConfig.unit.mjs",
     "test:sharkasp-staging-config": "node server/test/sharkaspStagingPackage.unit.mjs",
     "test:matching": "tsx server/test/commercialMatching.unit.ts",
+    "test:company-matches": "tsx server/test/companyMatchProfileKeywords.simulated.ts && tsx server/test/companyMatchBatches.simulated.ts && tsx server/test/companyCommercialIntent.simulated.ts",
     "test:commercial-intent": "tsx server/test/companyCommercialIntent.simulated.ts",
     "test:commercial-decision": "node --import tsx server/test/commercialDecision.unit.ts",
     "test:analytics-filters": "node --import tsx server/test/analyticsFilters.unit.ts",
