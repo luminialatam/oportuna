@@ -32,6 +32,7 @@ const smtpSocket=createServer();smtpSocket.listen(0,'127.0.0.1');await once(smtp
 
 try{
   const [company]=await pool.execute<any>('INSERT INTO companies (nombre_comercial) VALUES (?)',[`TEMP SMTP FAILURE ${suffix}`]);companyId=Number(company.insertId);
+  await pool.execute("INSERT INTO company_subscriptions (company_id,plan) VALUES (?,'vuela')",[companyId]);
   adminId=await createUser(adminEmail,password,'user','QA','SMTP');
   platformAdminId=await createUser(platformAdminEmail,password,'admin','QA','SMTP');
   await pool.execute("INSERT INTO company_memberships (user_id,company_id,role,status) VALUES (?,?,'admin','active')",[adminId,companyId]);
