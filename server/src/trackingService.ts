@@ -59,6 +59,16 @@ export async function saveTrackedOpportunity(codigo: string) {
   return { ...item!, created };
 }
 
+export async function dismissTrackedOpportunity(codigo: string) {
+  const companyId = await resolveCurrentCompanyId();
+  const [listings] = await pool.query<any[]>('SELECT codigo_externo FROM licitaciones WHERE codigo_externo=? LIMIT 1', [codigo]);
+  if (!listings.length) return false;
+  await pool.execute('INSERT IGNORE INTO company_opportunity_tracking (company_id,codigo_externo) VALUES (?,?)', [companyId, codigo]);
+  const [result] = await pool.execute<any>("UPDATE company_opportunity_tracking SET estado='discarded' WHERE company_id=? AND codigo_externo=?", [companyId, codigo]);
+  if (result.affectedRows) await evaluateAlerts();
+  return true;
+}
+
 export async function updateTrackedOpportunity(id: number, input: { estado?: string; notes?: string | null }) {
   const companyId = await resolveCurrentCompanyId();
   const fields: string[] = []; const values: any[] = [];

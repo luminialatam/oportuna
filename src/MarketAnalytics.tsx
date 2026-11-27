@@ -41,6 +41,7 @@ type Props = {
   error?: string;
   onOpenListing: (code: string) => void;
   onViewListings: () => void;
+  onOpenAnalytics: () => void;
   onRetry: () => void;
 };
 
@@ -62,6 +63,7 @@ export function MarketAnalytics({
   error,
   onOpenListing: _onOpenListing,
   onViewListings,
+  onOpenAnalytics,
   onRetry,
 }: Props) {
   const [topBuyers, setTopBuyers] = useState<{ buyer: string; total: number }[]>([]);
@@ -100,6 +102,9 @@ export function MarketAnalytics({
             Consulta la distribución actual del índice y una muestra de compradores recientes.
           </p>
         </div>
+        <button type="button" onClick={onOpenAnalytics} className="market-open-analytics">
+          <BarChart3 size={16} /> Abrir analítica <ArrowRight size={15} />
+        </button>
 
       </div>
 

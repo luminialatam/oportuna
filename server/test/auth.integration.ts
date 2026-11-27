@@ -26,16 +26,17 @@ const suffix=randomUUID();const emailA=`qa-auth-a-${suffix}@invalid.example`;con
 let companyA=0,companyB=0,userA=0,userB=0,userAdminB=0,platformUser=0,trackingB=0,listingCode='';
 let originalContext:number|null=null,contextChanged=false,legacyClaimed=false;
 let jarA:CookieJar|undefined,jarB:CookieJar|undefined,jarAdminB:CookieJar|undefined,jarPlatform:CookieJar|undefined;
-const checks:string[]=[];let initialListingCount=0;
+const checks:string[]=[];let initialListingCount=0,baselineCaptured=false;
 try{
   const preflight=await fetch(`${base}/api/auth/login`,{method:'OPTIONS',headers:{Origin:origin,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type'}});
   assert.equal(preflight.status,204);assert.equal(preflight.headers.get('access-control-allow-origin'),origin);assert.equal(preflight.headers.get('access-control-allow-credentials'),'true');checks.push('CORS permite únicamente origen configurado con credenciales');
   const rejectedOrigin=await fetch(`${base}/api/auth/login`,{method:'POST',headers:{Origin:'https://untrusted.invalid','Content-Type':'application/json'},body:JSON.stringify({email:'qa@invalid.example',password:'not-a-real-password'})});
   assert.equal(rejectedOrigin.status,403);checks.push('login rechaza Origin no configurado');
   const [[listings],[contexts],[inventory]] = await Promise.all([pool.query<any[]>('SELECT codigo_externo FROM licitaciones LIMIT 1'),pool.query<any[]>('SELECT company_id FROM company_local_context WHERE singleton_id=1'),pool.query<any[]>('SELECT COUNT(*) total FROM licitaciones')]);
-  assert.ok(listings[0]?.codigo_externo,'an existing listing is available for isolated FK tests');listingCode=String(listings[0].codigo_externo);initialListingCount=Number(inventory[0].total);originalContext=contexts[0]?.company_id==null?null:Number(contexts[0].company_id);
+  assert.ok(listings[0]?.codigo_externo,'an existing listing is available for isolated FK tests');listingCode=String(listings[0].codigo_externo);initialListingCount=Number(inventory[0].total);baselineCaptured=true;originalContext=contexts[0]?.company_id==null?null:Number(contexts[0].company_id);
   const [ca]=await pool.execute<any>('INSERT INTO companies (nombre_comercial) VALUES (?)',[`TEMP QA AUTH A ${suffix}`]);companyA=Number(ca.insertId);
   const [cb]=await pool.execute<any>('INSERT INTO companies (nombre_comercial) VALUES (?)',[`TEMP QA AUTH B ${suffix}`]);companyB=Number(cb.insertId);
+  await pool.execute("INSERT INTO company_subscriptions (company_id,plan) VALUES (?,'vuela')",[companyB]);
   userA=await createUser(emailA,password);userB=await createUser(emailB,password);userAdminB=await createUser(emailAdminB,password);platformUser=await createUser(emailPlatform,password,'admin');
   await pool.execute("INSERT INTO company_memberships (user_id,company_id,role,status) VALUES (?,?,'admin','active'),(?,?,'collaborator','active'),(?,?,'admin','active')",[userA,companyA,userB,companyB,userAdminB,companyB]);
   const [tracking]=await pool.execute<any>('INSERT INTO company_opportunity_tracking (company_id,codigo_externo) VALUES (?,?)',[companyB,listingCode]);trackingB=Number(tracking.insertId);
@@ -70,8 +71,8 @@ finally{
     if(userA||userB||userAdminB||platformUser)await pool.execute('DELETE FROM app_users WHERE id IN (?,?,?,?)',[userA||-1,userB||-1,userAdminB||-1,platformUser||-1]);
     const [[remaining],[counts]] = await Promise.all([pool.query<any[]>('SELECT COUNT(*) total FROM companies WHERE nombre_comercial LIKE \'TEMP QA AUTH %\''),pool.query<any[]>('SELECT COUNT(*) total,COUNT(DISTINCT codigo_externo) unique_codes FROM licitaciones')]);
     assert.equal(Number(remaining[0].total),0,'temporary company fixtures removed');
-    assert.equal(Number(counts[0].total),initialListingCount,'listing count remains intact');assert.equal(Number(counts[0].unique_codes),initialListingCount,'listing codes remain unique');
-    console.log(`CLEANUP OK: fixtures removed; existing listings remain ${initialListingCount} unique.`);
+    if(baselineCaptured){assert.equal(Number(counts[0].total),initialListingCount,'listing count remains intact');assert.equal(Number(counts[0].unique_codes),initialListingCount,'listing codes remain unique');console.log(`CLEANUP OK: fixtures removed; existing listings remain ${initialListingCount} unique.`);}
+    else console.log('CLEANUP OK: no temporary fixtures were created before the auth API preflight completed.');
   }catch(error){console.error('ATENCIÓN: no se pudo completar la limpieza temporal:',error instanceof Error?error.message:'error desconocido');process.exitCode=1;}
   await pool.end();
 }

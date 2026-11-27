@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 import { loadRuntimeConfig } from './runtimeConfig.js';
 import { checkRateLimit, consumeRateLimit } from './rateLimitStore.js';
 import pool from './db.js';
@@ -14,8 +15,12 @@ import { searchListings, analyzeListing, findEnrichmentCandidates, groqConfigure
 import { parseTenderAmount, tenderAmountStatus, tenderAmountUpsertSql } from './tenderAmount.js';
 import { previewEnrichmentCandidates, enqueueEnrichment, enrichmentMetrics, enrichmentPilotStatus, enrichmentStatus, findPriorityCandidates, indexOfficialDetail, pauseEnrichmentPilot, resumeEnrichmentPilot, retryEnrichmentPilotFailures, startEnrichmentPilotBatch, recoverEnrichmentQueue, startEnrichmentWorker } from './listingEnrichment.js';
 import { deleteCompanyProduct, getCompanyMatches, getCompanyWorkspace, saveCompanyProfile, saveCompanyProduct, searchCompanyProducts, suggestCommercialTerms } from './companyService.js';
-import { addTrackedDate, deleteTrackedDate, deleteTrackedOpportunity, getTrackedCounts, getTrackedStatus, listTrackedOpportunities, saveTrackedOpportunity, trackingStates, updateTrackedDate, updateTrackedOpportunity } from './trackingService.js';
-import { alertCounts, dismissAlert, evaluateAlerts, listAlerts, markAlertRead } from './alertService.js';
+import { addTrackedDate, deleteTrackedDate, deleteTrackedOpportunity, dismissTrackedOpportunity, getTrackedCounts, getTrackedStatus, listTrackedOpportunities, saveTrackedOpportunity, trackingStates, updateTrackedDate, updateTrackedOpportunity } from './trackingService.js';
+import { deleteOfferDraft, getOfferDraft, saveOfferDraft } from './offerPreparationService.js';
+import { offerDraftSchema } from './offerDraftValidation.js';
+import { deleteAnalyticsView, exportAnalyticsCsv, getAnalytics, listAnalyticsViews, saveAnalyticsView } from './analyticsService.js';
+import { normalizeAnalyticsFilters } from './analyticsFilters.js';
+import { alertCounts, dismissAlert, evaluateAlerts, getAlertOverview, listAlerts, markAlertRead } from './alertService.js';
 import { startAlertScheduler } from './alertScheduler.js';
 import type { ApiListing } from './types.js';
 import { acceptInvitationForUser, changePasswordForSession, createInvitation, createPasswordReset, createSession, createUser, registerPendingUser, issueEmailVerification, issueEmailVerificationForAddress, completeEmailVerification, consumePasswordReset, getSession, login, normalizeEmail, revokeSession, rotateCsrf, setActiveCompany, updatePersonalProfile } from './authService.js';
@@ -27,14 +32,19 @@ import { logMysqlFailure } from './mysqlDiagnostics.js';
 import { runSmtpStartupProbeOnce } from './smtpStartupProbe.js';
 import { assertCanActivateMember, changeCompanyPlan, getCompanyPlan, getCompanyPlanSummary, isPlanId, listCompanySubscriptions, listCompanyPlanRequests, listPendingCompanyPlanRequests, planCatalog, requestCompanyPlanChange, reviewCompanyPlanRequest, runLimitedListingAnalysis, SubscriptionLimitError, PendingPlanRequestError, PlanRequestConflictError, type BillingPeriod } from './subscriptionService.js';
 import { dismissOpportunity, getOpportunityFeed, markOpportunityRead, restoreOpportunity } from './opportunityFeedService.js';
+import { dismissProactiveMatch, getProactiveSearchPreferences, runCurrentCompanyProactiveSearch, runProactiveSearchPass, saveProactiveSearchPreferences, setProactiveMatchRead } from './proactiveSearchService.js';
+import { getAlertEmailPreference, saveAlertEmailPreference } from './alertEmailService.js';
+import { deletePriceBookItem, listPriceBookItems, savePriceBookItems } from './priceBookService.js';
 
 const app = express();
 const runtime = loadRuntimeConfig();
 app.disable('x-powered-by');
 app.set('trust proxy',runtime.trustProxyHops || false);
 app.use(cors({ origin: (origin, callback) => callback(null, !origin || runtime.allowedOrigins.includes(origin)), credentials: true, optionsSuccessStatus: 204 }));
-app.use(express.json({ limit: '32kb' }));
+app.use(express.json({ limit: '1mb' }));
 app.use(requireSecureTransport);
+app.use((_req,res,next)=>{res.locals.requestId=randomUUID().replace(/-/g,'').slice(0,12).toUpperCase();next();});
+app.use('/api/platform/test-center',requireAuth,requirePlatformAdmin);
 const backendDirectory = dirname(fileURLToPath(import.meta.url));
 const frontendDirectory = [
   join(process.cwd(), 'dist'),
@@ -110,13 +120,15 @@ app.get('/api/platform/users',requireDb,requireAuth,requirePlatformAdmin,async(r
     const limit=Math.min(100,Math.max(1,Number(req.query.limit)||50));
     const offset=Math.max(0,Number(req.query.offset)||0);
     const term=`%${query}%`;
-    const where=query?`WHERE email_normalized LIKE ? OR first_name LIKE ? OR last_name LIKE ?`:'';
+    const where=query?`WHERE u.email_normalized LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?`:'';
     const values=query?[term,term,term]:[];
     const [[rows],[counts]]=await Promise.all([
-      pool.query<any[]>(`SELECT id,email_normalized email,first_name firstName,last_name lastName,platform_role platformRole,status,email_verified_at emailVerifiedAt,created_at createdAt FROM app_users ${where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`,[...values,limit,offset]),
-      pool.query<any[]>(`SELECT COUNT(*) total FROM app_users ${where}`,values),
+      pool.query<any[]>(`SELECT u.id,u.email_normalized email,u.first_name firstName,u.last_name lastName,u.platform_role platformRole,u.status,u.email_verified_at emailVerifiedAt,u.created_at createdAt,
+        COALESCE((SELECT GROUP_CONCAT(DISTINCT m.role ORDER BY m.role SEPARATOR ',') FROM company_memberships m WHERE m.user_id=u.id AND m.status='active'),'') companyRoles
+        FROM app_users u ${where} ORDER BY u.created_at DESC,u.id DESC LIMIT ? OFFSET ?`,[...values,limit,offset]),
+      pool.query<any[]>(`SELECT COUNT(*) total FROM app_users ${query?`WHERE email_normalized LIKE ? OR first_name LIKE ? OR last_name LIKE ?`:''}`,values),
     ]);
-    res.set('Cache-Control','no-store').json({users:rows,total:Number(counts[0]?.total??0),limit,offset});
+    res.set('Cache-Control','no-store').json({users:rows.map(row=>({...row,companyRoles:String(row.companyRoles??'').split(',').filter(Boolean)})),total:Number(counts[0]?.total??0),limit,offset});
   } catch(error) { next(error); }
 });
 app.post('/api/platform/users',requireDb,requireAuth,requireCsrf,requirePlatformAdmin,requestLimit(10,60*60_000,'platform-user-create'),async(req,res,next)=>{
@@ -182,7 +194,13 @@ app.get('/api/licitaciones/:codigo/local',requireDb,requestLimit(120,60_000),asy
     const [itemRows]=await pool.query<any[]>('SELECT nombre,descripcion,categoria,cantidad,unidad_medida FROM licitacion_items WHERE codigo_externo=? ORDER BY item_index',[codigo]);
     const payloadItems=Array.isArray(detail.Items?.Listado)?detail.Items.Listado:[];
     const items=payloadItems.length?payloadItems:itemRows.map(item=>({NombreProducto:item.nombre,Descripcion:item.descripcion,Categoria:item.categoria,Cantidad:item.cantidad,UnidadMedida:item.unidad_medida}));
-    const listing={...detail,CodigoExterno:detail.CodigoExterno??row.codigo_externo,Nombre:detail.Nombre??row.nombre,CodigoEstado:detail.CodigoEstado??row.codigo_estado,FechaCierre:detail.FechaCierre??row.fecha_cierre,Fechas:detail.Fechas??(row.fecha_publicacion?{FechaPublicacion:row.fecha_publicacion}:undefined),Comprador:detail.Comprador??(row.organismo?{NombreOrganismo:row.organismo}:undefined),MontoEstimado:detail.MontoEstimado??row.monto_estimado,Moneda:detail.Moneda??row.moneda,Items:payloadItems.length?detail.Items:(items.length?{Cantidad:items.length,Listado:items}:detail.Items)};
+    const officialBuyer=detail.Comprador&&typeof detail.Comprador==='object'&&!Array.isArray(detail.Comprador)?detail.Comprador:{};
+    const buyerName=[officialBuyer.NombreOrganismo,detail.NombreOrganismo,detail.OrganismoComprador,detail.Organismo,row.organismo].find(value=>typeof value==='string'&&value.trim());
+    const buyerUnit=[officialBuyer.NombreUnidad,detail.NombreUnidad,detail.UnidadCompra].find(value=>typeof value==='string'&&value.trim());
+    const localBuyer={...officialBuyer,NombreOrganismo:buyerName??null,NombreUnidad:buyerUnit??null};
+    const amountHidden=detail.VisibilidadMonto===0||detail.VisibilidadMonto==='0'||detail.VisibilidadMonto===false;
+    const detailAmount=detail.MontoEstimado;
+    const listing={...detail,CodigoExterno:detail.CodigoExterno??row.codigo_externo,Nombre:detail.Nombre??row.nombre,CodigoEstado:detail.CodigoEstado??row.codigo_estado,FechaCierre:detail.FechaCierre??row.fecha_cierre,Fechas:{...(row.fecha_publicacion?{FechaPublicacion:row.fecha_publicacion}:{}),...(detail.Fechas&&typeof detail.Fechas==='object'?detail.Fechas:{})},Comprador:localBuyer,MontoEstimado:amountHidden?null:(detailAmount!==undefined&&detailAmount!==null&&detailAmount!==''?detailAmount:row.monto_estimado),Moneda:detail.Moneda||row.moneda,Items:payloadItems.length?detail.Items:(items.length?{Cantidad:items.length,Listado:items}:detail.Items)};
     const buyer=detail.Comprador;
     const detailAvailable=Boolean(
       (typeof detail.Descripcion==='string'&&detail.Descripcion.trim())||
@@ -214,7 +232,7 @@ app.post('/api/licitaciones/:codigo/refresh',requireDb,requireAuth,requireCsrf,r
 });
 app.get('/api/buscador/status', (_req,res)=>res.json({groqConfigured:groqConfigured(),mode:groqConfigured()?'groq':'mysql'}));
 app.post('/api/buscador/search',requireDb,requireAuth,requireCsrf,requireActiveCompany,requestLimit(30,60_000),async(req,res,next)=>{
-  try{const body=z.object({query:z.string().trim().min(2).max(500),page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(50).default(10),states:z.array(z.number().int().min(0).max(999)).max(12).optional(),region:z.string().trim().max(80).nullable().optional(),budgetMin:z.number().nonnegative().nullable().optional(),budgetMax:z.number().nonnegative().nullable().optional(),closeAfter:z.string().date().nullable().optional(),closeBefore:z.string().date().nullable().optional(),matchLevel:z.enum(['high','medium','exploratory']).optional()}).parse(req.body);if(body.budgetMin!=null&&body.budgetMax!=null&&body.budgetMin>body.budgetMax)return res.status(400).json({error:'El presupuesto mínimo no puede superar el máximo.'});res.json(await searchListings(body));}catch(error){next(error);}
+  try{const body=z.object({query:z.string().trim().min(2).max(500),page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(50).default(10),states:z.array(z.number().int().min(0).max(999)).max(12).optional(),region:z.string().trim().max(80).nullable().optional(),modality:z.enum(['public','private','agile']).nullable().optional(),budgetMin:z.number().nonnegative().nullable().optional(),budgetMax:z.number().nonnegative().nullable().optional(),closeAfter:z.string().date().nullable().optional(),closeBefore:z.string().date().nullable().optional(),matchLevel:z.enum(['high','medium','exploratory']).optional()}).parse(req.body);if(body.budgetMin!=null&&body.budgetMax!=null&&body.budgetMin>body.budgetMax)return res.status(400).json({error:'El presupuesto mínimo no puede superar el máximo.'});res.json(await searchListings(body));}catch(error){next(error);}
 });
 const authLoginSchema=z.object({email:z.string().trim().min(3).max(320),password:z.string().min(1).max(1024)});
 app.get('/api/auth/session',requireDb,async(req,res,next)=>{res.set('Cache-Control','no-store');try{const sessionToken=getRequestSessionToken(req);const session=await getSession(sessionToken,getRequestCsrfToken(req));if(!session){const sessionExpired=Boolean(sessionToken);if(sessionExpired)clearSessionCookies(res);return res.json({authenticated:false,sessionExpired});}const {csrfToken,...safe}=session;res.json({authenticated:true,...safe,csrfToken});}catch(error){next(error);}});
@@ -230,8 +248,15 @@ app.post('/api/auth/password-reset/complete',requireDb,requestLimit(10,60*60_000
 app.post('/api/auth/logout',requireDb,requireAuth,requireCsrf,async(req,res,next)=>{try{await revokeSession(getRequestSessionToken(req));clearSessionCookies(res);res.json({ok:true});}catch(error){next(error);}});
 const onboardingOptionalText=(max:number)=>z.string().trim().max(max).nullable().optional().transform(value=>value?.trim()||null);
 const companyOnboardingSchema=z.object({rut:z.string().trim().min(3).max(30).refine(value=>Boolean(normalizeChileanRut(value)),'El RUT no es válido.'),razonSocial:z.string().trim().min(2).max(255),nombreComercial:z.string().trim().min(2).max(255),rubroPrincipal:z.string().trim().min(2).max(160),region:z.string().trim().min(2).max(120),emailContacto:z.string().trim().email().max(320),telefono:onboardingOptionalText(40),sitioWeb:z.string().trim().max(500).nullable().optional().refine(value=>!value||/^https?:\/\//i.test(value),'URL inválida.'),direccion:onboardingOptionalText(255),comuna:onboardingOptionalText(120),descripcionComercial:onboardingOptionalText(3000),regionesOperacion:z.array(z.string().trim().min(2).max(120)).max(16).default([]),productosPrincipales:z.array(z.string().trim().min(2).max(255)).max(20).default([])});
-app.post('/api/onboarding/company',requireDb,requireAuth,requireVerifiedEmail,requireCsrf,requestLimit(6,60*60_000,'company-registration'),async(req,res,next)=>{try{if(typeof req.body?.rut!=='string'||!normalizeChileanRut(req.body.rut))return res.status(400).json({error:'El RUT de empresa no es válido.'});const input=companyOnboardingSchema.parse(req.body);const company=await registerCompanyForCurrentUser(input);if(!await setActiveCompany(req.auth!.id,req.auth!.userId,company.companyId))return res.status(500).json({error:'No se pudo activar la nueva empresa.'});const csrf=await rotateCsrf(req.auth!.id,req.auth!.userId);res.setHeader('Set-Cookie',`${csrfCookieName}=${encodeURIComponent(csrf)}; Path=/; SameSite=Lax; Max-Age=1209600${runtime.secureCookies?'; Secure':''}`);const session=await getSession(getRequestSessionToken(req),csrf);if(!session)return res.status(401).json({error:'La sesión expiró.'});res.status(201).json({authenticated:true,...session,company:{id:company.companyId,representationStatus:company.representationStatus}});}catch(error){if((error as any)?.code==='ER_DUP_ENTRY'&&String((error as any)?.message).includes('uq_companies_rut_normalized'))return res.status(409).json({code:'COMPANY_ALREADY_REGISTERED',error:'Esta empresa ya está registrada. Puedes solicitar acceso a sus administradores.'});next(error);}});
-app.post('/api/onboarding/access-requests',requireDb,requireAuth,requireVerifiedEmail,requireCsrf,requestLimit(6,60*60_000,'company-access-request'),async(req,res,next)=>{try{const body=z.object({rut:z.string().trim().min(3).max(30).refine(value=>Boolean(normalizeChileanRut(value)),'El RUT no es válido.'),role:z.enum(['collaborator','read_only']).default('read_only'),message:nullableText(1000)}).parse(req.body);await requestCompanyAccess(body.rut,body.role,body.message??null);res.status(202).json({submitted:true,message:'Si encontramos una empresa con ese RUT, un administrador revisará tu solicitud.'});}catch(error){next(error);}});
+function onboardingFieldErrors(error:z.ZodError){
+ const labels:Record<string,string>={rut:'RUT de empresa',razonSocial:'Razón social',nombreComercial:'Nombre comercial',rubroPrincipal:'Rubro principal',region:'Región principal',emailContacto:'Email de contacto',telefono:'Teléfono',sitioWeb:'Sitio web',direccion:'Dirección',comuna:'Comuna',descripcionComercial:'Descripción comercial',regionesOperacion:'Regiones de operación',productosPrincipales:'Productos o servicios principales'};
+ const fieldErrors:Record<string,string[]>={};
+ for(const issue of error.issues){const key=String(issue.path[0]??'form');const detail=issue as typeof issue&{minimum?:number;maximum?:number;origin?:string};let message=issue.message;if(issue.code==='too_small')message=detail.origin==='array'?'No puede estar vacía.':`Escribe al menos ${detail.minimum??2} caracteres.`;else if(issue.code==='too_big')message=detail.origin==='array'?`Reduce la lista a ${detail.maximum??20} elementos o menos.`:`No puede superar ${detail.maximum??'el límite'} caracteres.`;else if(issue.code==='invalid_type')message='Revisa el formato de este campo.';if(key==='emailContacto')message='Ingresa un correo de contacto válido.';else if(key==='sitioWeb')message='Usa una dirección que comience con http:// o https://, o deja el campo vacío.';else if(key==='rut')message='Ingresa un RUT de empresa válido.';const label=labels[key]??'Formulario';(fieldErrors[label]??=[]).push(message);}
+ return Object.fromEntries(Object.entries(fieldErrors).map(([key,messages])=>[key,[...new Set(messages)].join(' ')]));
+}
+app.post('/api/onboarding/company',requireDb,requireAuth,requireVerifiedEmail,requireCsrf,requestLimit(6,60*60_000,'company-registration'),async(req,res,next)=>{try{if(typeof req.body?.rut!=='string'||!normalizeChileanRut(req.body.rut))return res.status(400).json({error:'Revisa los campos indicados.',fieldErrors:{'RUT de empresa':'Ingresa un RUT de empresa válido.'}});const parsed=companyOnboardingSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Revisa los campos indicados.',fieldErrors:onboardingFieldErrors(parsed.error)});const company=await registerCompanyForCurrentUser(parsed.data);if(!await setActiveCompany(req.auth!.id,req.auth!.userId,company.companyId))return res.status(500).json({error:'No se pudo activar la nueva empresa.'});const csrf=await rotateCsrf(req.auth!.id,req.auth!.userId);res.setHeader('Set-Cookie',`${csrfCookieName}=${encodeURIComponent(csrf)}; Path=/; SameSite=Lax; Max-Age=1209600${runtime.secureCookies?'; Secure':''}`);const session=await getSession(getRequestSessionToken(req),csrf);if(!session)return res.status(401).json({error:'La sesión expiró.'});res.status(201).json({authenticated:true,...session,company:{id:company.companyId,representationStatus:company.representationStatus}});}catch(error){if((error as any)?.code==='ER_DUP_ENTRY'&&String((error as any)?.message).includes('uq_companies_rut_normalized'))return res.status(409).json({code:'COMPANY_ALREADY_REGISTERED',error:'Esta empresa ya está registrada. Puedes solicitar acceso a sus administradores.'});next(error);}});
+app.post('/api/onboarding/access-requests',requireDb,requireAuth,requireVerifiedEmail,requireCsrf,requestLimit(6,60*60_000,'company-access-request'),async(req,res,next)=>{try{const schema=z.object({rut:z.string().trim().min(3).max(30).refine(value=>Boolean(normalizeChileanRut(value)),'El RUT no es válido.'),role:z.enum(['collaborator','read_only']).default('read_only'),message:nullableText(1000)});const parsed=schema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Revisa los campos indicados.',fieldErrors:onboardingFieldErrors(parsed.error)});const body=parsed.data;await requestCompanyAccess(body.rut,body.role,body.message??null);res.status(202).json({submitted:true,message:'Si encontramos una empresa con ese RUT, un administrador revisará tu solicitud.'});}catch(error){next(error);}});
+
 app.get('/api/onboarding/progress',requireDb,requireAuth,requireActiveCompany,async(_req,res,next)=>{try{const workspace=await getCompanyWorkspace();const profile=workspace.profile;const profileComplete=Boolean(profile.razonSocial&&profile.actividad&&profile.regiones.length&&profile.emailContacto);const activeProducts=workspace.products.filter(product=>product.activo).length;res.json({steps:[{id:'account',label:'Crear cuenta',complete:true},{id:'company',label:'Registrar empresa',complete:true},{id:'profile',label:'Completar perfil comercial',complete:profileComplete},{id:'catalog',label:'Configurar catálogo',complete:activeProducts>0},{id:'opportunities',label:'Revisar primeras oportunidades',complete:false}],completed:2+Number(profileComplete)+Number(activeProducts>0),total:5,activeProducts,profileComplete,representationStatus:workspace.representationStatus});}catch(error){next(error);}});
 app.post('/api/auth/invitations/accept',requireDb,requireAuth,requireVerifiedEmail,requireCsrf,requestLimit(6,60*60_000,'invitation-accept'),async(req,res,next)=>{try{const body=z.object({invitationToken:z.string().min(32).max(128)}).parse(req.body);const companyId=await acceptInvitationForUser(body.invitationToken,req.auth!.userId,req.auth!.email);if(!await setActiveCompany(req.auth!.id,req.auth!.userId,companyId))return res.status(403).json({error:'No fue posible activar la empresa invitada.'});const session=await getSession(getRequestSessionToken(req),getRequestCsrfToken(req));if(!session)return res.status(401).json({error:'La sesión expiró.'});res.json({authenticated:true,...session});}catch(error){next(error);}});
 app.post('/api/auth/company',requireDb,requireAuth,requireCsrf,async(req,res,next)=>{try{const body=z.object({companyId:z.coerce.number().int().positive()}).parse(req.body);if(!await setActiveCompany(req.auth!.id,req.auth!.userId,body.companyId))return res.status(403).json({error:'No tienes una membresía activa en esa empresa.'});const token=getRequestSessionToken(req);const session=await getSession(token,getRequestCsrfToken(req));if(!session)return res.status(401).json({error:'La sesión expiró.'});res.json({authenticated:true,...session});}catch(error){next(error);}});
@@ -287,6 +312,16 @@ app.get('/api/company/analytics/top-buyers',requireDb,requestLimit(30,60_000),as
     res.set('Cache-Control','private, no-store').json({periodDays:30,buyers:buyers.map(row=>({buyer:String(row.buyer),total:Number(row.total)}))});
   } catch(error) { next(error); }
 });
+
+const priceBookItemSchema=z.object({id:z.number().int().positive().optional(),name:z.string().trim().min(1).max(255),category:z.string().max(160).default(''),unit:z.string().max(40).default('unidad'),basePrice:z.number().min(0).max(1_000_000_000_000),baseCost:z.number().min(0).max(1_000_000_000_000),chargeUnit:z.enum(['unidad','m2','hora','kg','servicio','km']),widthM:z.number().min(0).max(100_000).nullable().default(null),heightM:z.number().min(0).max(100_000).nullable().default(null),specifications:z.string().max(3000).default(''),surcharges:z.array(z.object({name:z.string().trim().min(1).max(100),amount:z.number().min(0).max(1_000_000_000),kind:z.enum(['fixed','percent'])}).strict()).max(30).default([]),active:z.boolean().default(true)}).strict();
+app.get('/api/company/price-book',requireDb,requestLimit(60,60_000),async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json({items:await listPriceBookItems()});}catch(error){next(error);}});
+app.put('/api/company/price-book',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(20,60_000,'price-book'),async(req,res,next)=>{try{const body=z.object({items:z.array(priceBookItemSchema.omit({id:true})).min(1).max(1000)}).strict().parse(req.body);res.set('Cache-Control','no-store').json({items:await savePriceBookItems(body.items)});}catch(error){next(error);}});
+app.delete('/api/company/price-book/:id',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(30,60_000,'price-book-delete'),async(req,res,next)=>{try{const deleted=await deletePriceBookItem(z.coerce.number().int().positive().parse(req.params.id));if(!deleted)return res.status(404).json({error:'No se encontró ese precio base en esta empresa.'});res.json({ok:true});}catch(error){next(error);}});
+app.get('/api/company/proactive-search',requireDb,async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json(await getProactiveSearchPreferences());}catch(error){next(error);}});
+app.get('/api/company/alert-email',requireDb,async(req,res,next)=>{try{res.set('Cache-Control','no-store').json(await getAlertEmailPreference(req.auth!.activeCompanyId!,req.auth!.userId));}catch(error){next(error);}});
+app.put('/api/company/alert-email',requireDb,requestLimit(20,60_000,'alert-email-preference'),async(req,res,next)=>{try{const {enabled}=z.object({enabled:z.boolean()}).strict().parse(req.body);res.set('Cache-Control','no-store').json(await saveAlertEmailPreference(req.auth!.activeCompanyId!,req.auth!.userId,enabled));}catch(error){if(error instanceof Error&&error.message==='Verifica tu correo antes de activar los avisos por email.')return res.status(409).json({error:error.message});next(error);}});
+app.put('/api/company/proactive-search',requireDb,requireCompanyRole('admin'),requestLimit(20,60_000,'proactive-search-preferences'),async(req,res,next)=>{try{const body=z.object({enabled:z.boolean(),frequency:z.enum(['hourly','daily','weekly'])}).strict().parse(req.body);res.set('Cache-Control','no-store').json(await saveProactiveSearchPreferences(body));}catch(error){next(error);}});
+app.post('/api/company/proactive-search/run',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(3,60_000,'proactive-search-manual'),async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json(await runCurrentCompanyProactiveSearch());}catch(error){next(error);}});
 app.put('/api/company/profile',requireCompanyRole('admin'));
 app.post('/api/company/catalog',requireCompanyRole('admin'));
 app.patch('/api/company/catalog/:id',requireCompanyRole('admin'));
@@ -320,9 +355,10 @@ app.get('/api/company/access-requests',requireDb,requireCompanyRole('admin'),req
 app.patch('/api/company/access-requests/:id',requireDb,requireCompanyRole('admin'),requestLimit(40,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().positive().parse(req.params.id);const body=z.object({decision:z.enum(['approve','reject']),role:z.enum(['collaborator','read_only']).default('read_only')}).parse(req.body);const ok=await reviewCompanyAccessRequest(id,body.decision,body.role,req.auth!.userId);if(!ok)return res.status(404).json({error:'La solicitud ya fue resuelta o no pertenece a esta empresa.'});res.json({ok:true});}catch(error){next(error);}});
 app.post('/api/platform/legacy-company/claim',requireDb,requireAuth,requireCsrf,requirePlatformAdmin,async(req,res,next)=>{const conn=await pool.getConnection();let committed=false;try{const body=z.object({companyId:z.coerce.number().int().positive()}).parse(req.body);await conn.beginTransaction();const [contexts]=await conn.query<any[]>('SELECT company_id FROM company_local_context WHERE singleton_id=1 FOR UPDATE');if(Number(contexts[0]?.company_id)!==body.companyId){await conn.rollback();return res.status(409).json({error:'La empresa solicitada no coincide con el contexto local pendiente.'});}const [claims]=await conn.query<any[]>('SELECT singleton_id FROM legacy_company_claims WHERE singleton_id=1 FOR UPDATE');if(claims.length){await conn.rollback();return res.status(409).json({error:'La vinculación inicial ya fue consumida.'});}const [company]=await conn.query<any[]>('SELECT id FROM companies WHERE id=? LIMIT 1',[body.companyId]);if(!company.length){await conn.rollback();return res.status(404).json({error:'No se encontró la empresa local.'});}await conn.execute("INSERT INTO company_memberships (user_id,company_id,role,status) VALUES (?,?,'admin','active')",[req.auth!.userId,body.companyId]);await conn.execute('INSERT INTO legacy_company_claims (singleton_id,company_id,claimed_by) VALUES (1,?,?)',[body.companyId,req.auth!.userId]);await conn.commit();committed=true;if(!await setActiveCompany(req.auth!.id,req.auth!.userId,body.companyId))return res.status(500).json({error:'No se pudo activar la empresa vinculada.'});const csrf=await rotateCsrf(req.auth!.id,req.auth!.userId);res.setHeader('Set-Cookie',`${csrfCookieName}=${encodeURIComponent(csrf)}; Path=/; SameSite=Lax; Max-Age=1209600${runtime.secureCookies?'; Secure':''}`);res.json({ok:true,companyId:body.companyId,csrfToken:csrf});}catch(error){if(!committed)await conn.rollback();next(error);}finally{conn.release();}});
 app.get('/api/platform/legacy-company/pending',requireDb,requireAuth,requirePlatformAdmin,async(_req,res,next)=>{try{const [[context],[claim],[company]] = await Promise.all([pool.query<any[]>('SELECT company_id FROM company_local_context WHERE singleton_id=1'),pool.query<any[]>('SELECT singleton_id FROM legacy_company_claims WHERE singleton_id=1'),pool.query<any[]>('SELECT c.id,c.nombre_comercial FROM companies c JOIN company_local_context x ON x.company_id=c.id WHERE x.singleton_id=1')]);res.json({available:Boolean(context[0]?.company_id&&!claim.length),company:company[0]?{id:Number(company[0].id),name:company[0].nombre_comercial||'Empresa local'}:null});}catch(error){next(error);}});
-const textListSchema=z.array(z.string().trim().min(2).max(100)).max(40).default([]);
+const textListSchema=z.array(z.string().trim().min(2).max(100)).max(70).default([]);
+const keywordListSchema=z.array(z.string().trim().min(2).max(100)).default([]);
 const nullableText=(max:number)=>z.string().trim().max(max).nullable().optional().transform(value=>value?.trim()||null);
-const companyProfileSchema=z.object({nombreComercial:z.string().trim().min(2,'Ingresa un nombre comercial de al menos 2 caracteres.').max(255),razonSocial:nullableText(255),rut:nullableText(20).refine(value=>value===null||Boolean(normalizeChileanRut(value)),'El RUT de empresa no es válido.'),emailContacto:z.preprocess(value=>typeof value==='string'&&!value.trim()?null:value,z.string().trim().email('Ingresa un correo con formato válido.').max(320).nullable().optional()),telefono:nullableText(40),direccion:nullableText(255),comuna:nullableText(120),regionPrincipal:nullableText(120),descripcionComercial:nullableText(3000),actividad:nullableText(3000),rubros:textListSchema,regiones:textListSchema,sitioWeb:z.string().trim().max(500).nullable().optional().refine(value=>!value||/^https?:\/\//i.test(value),'Ingresa una URL válida que comience con http:// o https://.').transform(value=>value?.trim()||null),palabrasClave:textListSchema,terminosExcluidos:textListSchema,estados:z.array(z.number().int().min(0).max(999)).max(12).default([5])});
+const companyProfileSchema=z.object({nombreComercial:z.string().trim().min(2,'Ingresa un nombre comercial de al menos 2 caracteres.').max(255),razonSocial:nullableText(255),rut:nullableText(20).refine(value=>value===null||Boolean(normalizeChileanRut(value)),'El RUT de empresa no es válido.'),emailContacto:z.preprocess(value=>typeof value==='string'&&!value.trim()?null:value,z.string().trim().email('Ingresa un correo con formato válido.').max(320).nullable().optional()),telefono:nullableText(40),direccion:nullableText(255),comuna:nullableText(120),regionPrincipal:nullableText(120),descripcionComercial:nullableText(3000),actividad:nullableText(3000),rubros:textListSchema,regiones:textListSchema,sitioWeb:z.string().trim().max(500).nullable().optional().refine(value=>!value||/^https?:\/\//i.test(value),'Ingresa una URL válida que comience con http:// o https://.').transform(value=>value?.trim()||null),palabrasClave:keywordListSchema,terminosExcluidos:textListSchema,estados:z.array(z.number().int().min(0).max(999)).max(12).default([5])});
 function companyProfileFieldErrors(error:z.ZodError){
  const result:Record<string,string[]>={};
  for(const issue of error.issues){
@@ -335,22 +371,79 @@ function companyProfileFieldErrors(error:z.ZodError){
   else if(field==='sitioWeb')message='Ingresa una URL válida que comience con http:// o https://, o deja el campo vacío.';
   else if(field==='rut')message='Ingresa un RUT válido; este identificador no se puede borrar de una empresa registrada.';
   else if(issue.code==='too_small')message=detail.origin==='array'?'Agrega al menos un elemento.':`Escribe al menos ${detail.minimum??2} caracteres.`;
-  else if(issue.code==='too_big')message=detail.origin==='array'?`No puede superar ${detail.maximum??40} elementos.`:`No puede superar ${detail.maximum??'el límite'} caracteres.`;
+  else if(issue.code==='too_big')message=detail.origin==='array'?`No puede superar ${detail.maximum??70} elementos.`:`No puede superar ${detail.maximum??'el límite'} caracteres.`;
   else if(issue.code==='invalid_type')message='Revisa el formato de este campo.';
   const entry=`${line}${message}`;
   (result[field]??=[]).push(entry);
  }
  return Object.fromEntries(Object.entries(result).map(([field,messages])=>[field,messages.join(' ')]));
 }
-const companyProductSchema=z.object({nombre:z.string().trim().min(2).max(255),categoria:nullableText(160),descripcion:nullableText(3000),palabrasClave:textListSchema,sinonimos:textListSchema,terminosRelacionados:textListSchema,aplicaciones:textListSchema,exclusiones:textListSchema,tiposComerciales:z.array(z.enum(['product_supply','service','installation','maintenance_repair','rental','construction'])).max(6).default([]),activo:z.boolean().default(true)});
+const companyProductSchema=z.object({nombre:z.string().trim().min(2).max(255),categoria:nullableText(160),descripcion:nullableText(3000),palabrasClave:keywordListSchema,sinonimos:keywordListSchema,terminosRelacionados:keywordListSchema,aplicaciones:keywordListSchema,exclusiones:textListSchema,tiposComerciales:z.array(z.enum(['product_supply','service','installation','maintenance_repair','rental','construction'])).max(6).default([]),activo:z.boolean().default(true)});
 app.get('/api/company/profile',requireDb,requestLimit(60,60_000),async(_req,res,next)=>{try{res.json(await getCompanyWorkspace());}catch(error){next(error);}});
+app.get('/api/company/offer-drafts/:code',requireDb,requestLimit(60,60_000),async(req,res,next)=>{try{const code=z.string().trim().min(1).max(100).parse(req.params.code);res.set('Cache-Control','no-store').json(await getOfferDraft(code));}catch(error){next(error);}});
+app.put('/api/company/offer-drafts/:code',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(30,60_000),async(req,res,next)=>{try{const code=z.string().trim().min(1).max(100).parse(req.params.code);const draft=offerDraftSchema.parse(req.body);const result=await saveOfferDraft(code,draft);if(!result)return res.status(404).json({error:'La licitación no existe en el índice local.'});res.set('Cache-Control','no-store').json(result);}catch(error){next(error);}});
+app.delete('/api/company/offer-drafts/:code',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(20,60_000),async(req,res,next)=>{try{const code=z.string().trim().min(1).max(100).parse(req.params.code);const deleted=await deleteOfferDraft(code);res.json({ok:true,deleted});}catch(error){next(error);}});
 app.put('/api/company/profile',requireDb,requestLimit(20,60_000),async(req,res,next)=>{try{if(typeof req.body?.rut==='string'&&req.body.rut.trim()&&!normalizeChileanRut(req.body.rut))return res.status(400).json({error:'Corrige el RUT indicado.',fieldErrors:{rut:'Ingresa un RUT válido.'}});const parsed=companyProfileSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Revisa los campos indicados.',fieldErrors:companyProfileFieldErrors(parsed.error)});res.json(await saveCompanyProfile(parsed.data));}catch(error){if((error as any)?.code==='ER_DUP_ENTRY'&&String((error as any)?.message).includes('uq_companies_rut_normalized'))return res.status(409).json({code:'COMPANY_ALREADY_REGISTERED',error:'Este RUT ya está registrado para otra empresa.',fieldErrors:{rut:'Este RUT ya está registrado para otra empresa.'}});if(error instanceof Error&&error.message==='El RUT de una empresa registrada no se puede dejar vacío.')return res.status(400).json({error:error.message,fieldErrors:{rut:error.message}});if(error instanceof Error&&error.message==='No se encontró la empresa activa.')return res.status(400).json({error:error.message});next(error);}});
 app.get('/api/company/catalog',requireDb,requestLimit(60,60_000),async(req,res,next)=>{try{res.json({items:await searchCompanyProducts(String(req.query.q??''))});}catch(error){next(error);}});
 app.post('/api/company/catalog',requireDb,requestLimit(30,60_000),async(req,res,next)=>{try{res.status(201).json({items:await saveCompanyProduct(companyProductSchema.parse(req.body))});}catch(error){next(error);}});
 app.patch('/api/company/catalog/:id',requireDb,requestLimit(60,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().positive().parse(req.params.id);const items=await saveCompanyProduct(companyProductSchema.parse(req.body),id);if(!items)return res.status(404).json({error:'No se encontró el producto en el catálogo de esta empresa.'});res.json({items});}catch(error){next(error);}});
 app.delete('/api/company/catalog/:id',requireDb,requestLimit(30,60_000),async(req,res,next)=>{try{const deleted=await deleteCompanyProduct(z.coerce.number().int().positive().parse(req.params.id));if(!deleted)return res.status(404).json({error:'No se encontró el producto en el catálogo de esta empresa.'});res.json({ok:true});}catch(error){next(error);}});
 app.post('/api/company/catalog/suggestions',requireDb,requestLimit(10,60_000),async(req,res,next)=>{try{const body=z.object({nombre:z.string().trim().min(2).max(255),categoria:nullableText(160),descripcion:nullableText(1000)}).parse(req.body);res.json(await suggestCommercialTerms(body));}catch(error){if(error instanceof Error&&error.message.startsWith('Groq'))return res.status(502).json({error:error.message});next(error);}});
-app.get('/api/company/matches',requireDb,requestLimit(30,60_000),async(_req,res,next)=>{try{res.json(await getOpportunityFeed('recommended'));}catch(error){next(error);}});
+app.get('/api/company/matches', requireDb, requestLimit(30, 60_000), async (req, res, next) => {
+  try {
+    // Limita el cálculo interactivo para evitar que el escaneo completo deje la vista sin responder.
+    res.json(await getCompanyMatches({ board: req.query.view === 'board', evaluationLimit: 800 }));
+  } catch (error) {
+    next(error);
+  }
+});
+app.post('/api/company/matches/dismiss', requireDb, requireCompanyRole('admin','collaborator'), requestLimit(60, 60_000), async (req, res, next) => {
+  try {
+    const body = z.object({ codigo: z.string().trim().min(1).max(100) }).parse(req.body);
+    if (!await dismissTrackedOpportunity(body.codigo)) return res.status(404).json({ error: 'La licitación ya no está disponible en el índice local.' });
+    res.json({ ok: true, discarded: true });
+  } catch (error) {
+    next(error);
+  }
+});
+const analyticsFilterSchema=z.object({
+  dateFrom:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dateTo:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  modality:z.string().trim().max(80).optional(),
+  product:z.string().trim().max(120).optional(),
+  organism:z.string().trim().max(160).optional(),
+  region:z.string().trim().max(120).optional(),
+  state:z.string().trim().max(3).optional(),
+}).strict();
+const analyticsFiltersFrom = (value: unknown) => normalizeAnalyticsFilters(analyticsFilterSchema.parse(value));
+app.use('/api/analytics',requireAuth,requireCsrf,requireVerifiedEmail,requireActiveCompany);
+app.get('/api/analytics',requireDb,requestLimit(30,60_000),async(req,res,next)=>{try{
+  const filters=analyticsFiltersFrom(req.query);
+  const companyId=req.auth!.activeCompanyId!;
+  res.set('Cache-Control','no-store').json(await getAnalytics(filters,companyId));
+}catch(error){if(error instanceof Error&&error.message.startsWith('El período'))return res.status(400).json({error:error.message});next(error);}});
+app.get('/api/analytics/export.csv',requireDb,requestLimit(12,60_000),async(req,res,next)=>{try{
+  const filters=analyticsFiltersFrom(req.query);
+  const result=await exportAnalyticsCsv(filters);
+  res.setHeader('Content-Type','text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition','attachment; filename="oportuna-analitica.csv"');
+  res.setHeader('X-Oportuna-Exported-Rows',String(result.exported));
+  res.setHeader('X-Oportuna-Export-Limit',String(result.limit));
+  res.send(result.csv);
+}catch(error){if(error instanceof Error&&error.message.startsWith('El período'))return res.status(400).json({error:error.message});next(error);}});
+app.get('/api/analytics/views',requireDb,requestLimit(60,60_000),async(req,res,next)=>{try{
+  res.set('Cache-Control','no-store').json({items:await listAnalyticsViews(req.auth!.activeCompanyId!,req.auth!.userId)});
+}catch(error){next(error);}});
+app.post('/api/analytics/views',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(20,60_000),async(req,res,next)=>{try{
+  const body=z.object({name:z.string().trim().min(2).max(80),filters:analyticsFilterSchema}).strict().parse(req.body);
+  const filters=analyticsFiltersFrom(body.filters);
+  res.status(201).json(await saveAnalyticsView(req.auth!.activeCompanyId!,req.auth!.userId,body.name,filters));
+}catch(error){if(error instanceof Error&&error.message.startsWith('El período'))return res.status(400).json({error:error.message});next(error);}});
+app.delete('/api/analytics/views/:id',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(30,60_000),async(req,res,next)=>{try{
+  const id=z.coerce.number().int().positive().parse(req.params.id);
+  if(!await deleteAnalyticsView(req.auth!.activeCompanyId!,req.auth!.userId,id))return res.status(404).json({error:'No se encontró la vista guardada en esta cuenta.'});
+  res.json({ok:true});
+}catch(error){next(error);}});
 const trackedStateSchema=z.enum(trackingStates);
 app.get('/api/company/tracking/lookup',requireDb,requestLimit(120,60_000),async(req,res,next)=>{try{const codigo=z.string().trim().min(1).max(100).parse(req.query.codigo);res.json(await getTrackedStatus(codigo));}catch(error){next(error);}});
 app.get('/api/company/tracking',requireDb,requestLimit(60,60_000),async(req,res,next)=>{try{const estado=String(req.query.estado??'');const q=String(req.query.q??'').slice(0,120);const [items,counts]=await Promise.all([listTrackedOpportunities({estado,q}),getTrackedCounts()]);res.json({items,counts});}catch(error){next(error);}});
@@ -363,10 +456,12 @@ app.patch('/api/company/tracking/:id/dates/:dateId',requireDb,requireCompanyRole
 app.delete('/api/company/tracking/:id/dates/:dateId',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(40,60_000),async(req,res,next)=>{try{const trackingId=z.coerce.number().int().positive().parse(req.params.id);const dateId=z.coerce.number().int().positive().parse(req.params.dateId);if(!await deleteTrackedDate(trackingId,dateId))return res.status(404).json({error:'No se encontró la fecha en este espacio.'});res.json({ok:true});}catch(error){next(error);}});
 app.use('/api/alerts',requireAuth,requireCsrf,requireActiveCompany);
 app.get('/api/alerts/count',requireDb,requestLimit(120,60_000),async(_req,res,next)=>{try{res.json(await alertCounts());}catch(error){next(error);}});
-app.get('/api/alerts',requireDb,requestLimit(40,60_000),async(req,res,next)=>{try{const filter=z.enum(['all','unread','closing','followup']).default('all').parse(req.query.filter);const [items,counts]=await Promise.all([listAlerts({filter,limit:100}),alertCounts()]);res.json({items,counts});}catch(error){next(error);}});
+app.get('/api/alerts/overview',requireDb,requestLimit(60,60_000),async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json(await getAlertOverview());}catch(error){next(error);}});
+app.get('/api/alerts',requireDb,requestLimit(40,60_000),async(req,res,next)=>{try{const filter=z.enum(['all','unread','closing','followup','matches','pending']).default('all').parse(req.query.filter);const [items,counts]=await Promise.all([listAlerts({filter,limit:100}),alertCounts()]);res.json({items,counts});}catch(error){next(error);}});
 app.post('/api/alerts/evaluate',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(12,60_000),async(_req,res,next)=>{try{res.json({...await evaluateAlerts(),counts:await alertCounts()});}catch(error){next(error);}});
-app.post('/api/alerts/:id/read',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(120,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().positive().parse(req.params.id);if(!await markAlertRead(id))return res.status(404).json({error:'No se encontró la alerta activa en este espacio.'});res.json({ok:true,counts:await alertCounts()});}catch(error){next(error);}});
-app.post('/api/alerts/:id/dismiss',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(120,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().positive().parse(req.params.id);if(!await dismissAlert(id))return res.status(404).json({error:'No se encontró la alerta activa en este espacio.'});res.json({ok:true,counts:await alertCounts()});}catch(error){next(error);}});
+app.post('/api/alerts/:id/read',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(120,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().parse(req.params.id);const ok=id<0?await setProactiveMatchRead(Math.abs(id)):await markAlertRead(z.coerce.number().int().positive().parse(id));if(!ok)return res.status(404).json({error:'No se encontró la alerta activa en este espacio.'});res.json({ok:true,counts:await alertCounts()});}catch(error){next(error);}});
+app.post('/api/alerts/:id/dismiss',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(120,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().parse(req.params.id);const ok=id<0?await dismissProactiveMatch(Math.abs(id)):await dismissAlert(z.coerce.number().int().positive().parse(id));if(!ok)return res.status(404).json({error:'No se encontró la alerta activa en este espacio.'});res.json({ok:true,counts:await alertCounts()});}catch(error){next(error);}});
+app.post('/api/internal/proactive-search/run',requireDb,requireServiceOrAdmin,requestLimit(2,60_000,'proactive-search-run'),async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json(await runProactiveSearchPass());}catch(error){next(error);}});
 app.use('/api/buscador/enrichment',requireAuth,requireCsrf,requireActiveCompany,requireCompanyRole('admin'));
 app.post('/api/buscador/enrichment',requireDb,requestLimit(5,60_000),async(req,res,next)=>{try{const body=z.object({query:z.string().trim().min(2).max(500).optional(),codes:z.array(z.string().trim().min(1).max(100)).max(10).optional()}).refine(value=>Boolean(value.query||value.codes?.length)).parse(req.body);const chosen=[...(body.codes??[]).slice(0,5)];if(body.query)chosen.push(...await findEnrichmentCandidates(body.query,Math.max(1,10-chosen.length)));const unique=[...new Set(chosen)].slice(0,10);res.status(202).json({...await enqueueEnrichment(unique),candidatesSelected:unique.length});}catch(error){next(error);}});
 app.post('/api/buscador/enrichment/prioritized',requireDb,requestLimit(2,60_000),async(req,res,next)=>{try{const body=z.object({limit:z.coerce.number().int().min(1).max(10).default(5)}).parse(req.body??{});const codes=await findPriorityCandidates(body.limit);res.status(202).json({...await enqueueEnrichment(codes),candidatesSelected:codes.length,limit:body.limit});}catch(error){next(error);}});
@@ -378,7 +473,15 @@ app.post('/api/buscador/enrichment/pilot/pause',requireDb,requestLimit(3,60_000)
 app.post('/api/buscador/enrichment/pilot/resume',requireDb,requestLimit(3,60_000),async(_req,res,next)=>{try{res.json({...await resumeEnrichmentPilot(),pilot:await enrichmentPilotStatus()});}catch(error){next(error);}});
 app.post('/api/buscador/enrichment/pilot/retry',requireDb,requestLimit(2,60_000),async(_req,res,next)=>{try{res.status(202).json({...await retryEnrichmentPilotFailures(),pilot:await enrichmentPilotStatus()});}catch(error){next(error);}});
 app.get('/api/buscador/enrichment/status',requireDb,async(req,res,next)=>{try{const raw=String(req.query.codes??'').trim();const codes=raw?raw.split(',').map(code=>z.string().trim().min(1).max(100).parse(code)).slice(0,50):undefined;res.json(await enrichmentStatus(codes));}catch(error){next(error);}});
-app.post('/api/buscador/analysis/:codigo',requireDb,requireAuth,requireVerifiedEmail,requireCsrf,requireActiveCompany,requestLimit(8,60_000),async(req,res,next)=>{try{const codigo=z.string().trim().min(1).max(100).parse(req.params.codigo);const outcome=await runLimitedListingAnalysis(req.auth!.activeCompanyId!,req.auth!.userId,codigo,()=>analyzeListing(codigo));res.set('X-Plan-Analysis-Remaining',String(Math.max(0,outcome.limit-outcome.used)));res.json(outcome.value);}catch(error){next(error);}});
+app.post('/api/buscador/analysis/:codigo',requireDb,requireAuth,requireVerifiedEmail,requireCsrf,requireActiveCompany,requestLimit(8,60_000),async(req,res,next)=>{try{
+  const codigo=z.string().trim().min(1).max(100).parse(req.params.codigo);
+  const [localRows]=await pool.query<any[]>('SELECT codigo_externo FROM licitaciones WHERE codigo_externo=? LIMIT 1',[codigo]);
+  if(!localRows.length)return res.status(404).json({error:'La licitación no está disponible en la copia local.'});
+  const officialListing=await getByCode(codigo);
+  await indexOfficialDetail(codigo,officialListing as unknown as Record<string,any>);
+  const outcome=await runLimitedListingAnalysis(req.auth!.activeCompanyId!,req.auth!.userId,codigo,()=>analyzeListing(codigo));
+  res.set('Cache-Control','no-store').set('X-Plan-Analysis-Remaining',String(Math.max(0,outcome.limit-outcome.used))).json({...outcome.value,source:'mercadopublico',refreshedAt:new Date().toISOString()});
+}catch(error){next(error);}});
 app.use('/api/sync',requireServiceOrAdmin);
 app.post('/api/sync/licitaciones', requireDb, requestLimit(1,60_000,'sync'), async (req, res, next) => {
   try {
@@ -421,20 +524,40 @@ app.get('/api/configuracion', requireDb, async (_req, res, next) => {
   } catch (error) { next(error); }
 });
 if (runtime.appEnv !== 'development' && ['web', 'all'].includes(runtime.processRole)) {
+  app.get('/centro-de-pruebas',requireAuth,requirePlatformAdmin,(_req,res,next)=>res.sendFile(join(frontendDirectory,'index.html'),error=>error?next(error):undefined));
   app.get('*', (req, res, next) => {
     if (req.path === '/api' || req.path.startsWith('/api/')) return next();
     res.sendFile(join(frontendDirectory, 'index.html'));
   });
 }
-app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if(error instanceof SubscriptionLimitError)return res.status(403).json({code:error.code,error:error.message,metric:error.metric,limit:error.limit});
   if(error instanceof PendingPlanRequestError)return res.status(409).json({code:error.code,error:error.message});
   if(error instanceof PlanRequestConflictError)return res.status(409).json({code:error.code,error:error.message});
   if (error instanceof z.ZodError) return res.status(400).json({ error: 'Parámetros inválidos.' });
-  const status = error instanceof MercadoPublicoError ? error.status : 500;
-  if(status>=500)console.error(`[api] internal_error type=${error instanceof Error?error.name:'unknown'}`);
-  const message = status<500&&error instanceof MercadoPublicoError ? error.message : status===500?'Ocurrió un error interno.':'No se pudo completar la solicitud.';
-  return res.status(status).json({ error: message });
+  const cause=error as {code?:unknown};
+  const dbCode=typeof cause?.code==='string'?cause.code:'';
+  const isOfferDraft=req.path.startsWith('/api/company/offer-drafts/');
+  const requestId=String(res.locals.requestId||'SIN-REF');
+  let status=error instanceof MercadoPublicoError?error.status:500;
+  let message=status<500&&error instanceof MercadoPublicoError?error.message:'No se pudo completar la solicitud.';
+  if(status>=500){
+     console.error(`[api] internal_error ref=${requestId} method=${req.method} route=${req.path} type=${error instanceof Error?error.name:'unknown'} code=${dbCode||'none'}`);
+    message='Ocurrió un error interno.';
+    if(isOfferDraft){
+      if(dbCode==='ER_NO_SUCH_TABLE'||dbCode==='ER_BAD_FIELD_ERROR'){
+        status=503;
+        message='El guardado de borradores no está habilitado correctamente en el servidor. Contacta al administrador e indica la referencia '+requestId+'.';
+      }else if(dbCode==='ER_NO_REFERENCED_ROW_2'||dbCode==='ER_ROW_IS_REFERENCED_2'){
+        status=409;
+        message='La empresa, la sesión o la licitación ya no coincide con los datos del servidor. Recarga la ficha e inténtalo otra vez. Referencia: '+requestId+'.';
+      }else{
+        message='No se pudo guardar el borrador. Tus datos siguen en pantalla. Inténtalo nuevamente; si vuelve a fallar, comparte esta referencia con soporte: '+requestId+'.';
+      }
+    }
+  }
+  const safeDiagnosticCode=/^[A-Z0-9_]+$/.test(dbCode)?dbCode:'INTERNAL';
+  return res.status(status).json({ error: message, ...(status>=500||isOfferDraft?{requestId}:{}), ...(status>=500&&req.path==='/api/company/matches'?{diagnosticCode:safeDiagnosticCode}:{}) });
 });
 async function initializeWorker() {
   await pool.query('SELECT 1');

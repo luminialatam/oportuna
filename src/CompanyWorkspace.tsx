@@ -12,6 +12,7 @@ import {
   Search,
   Sparkles,
   Trash2,
+  ThumbsDown,
   X,
 } from 'lucide-react';
 
@@ -57,10 +58,14 @@ type FieldErrors = Record<string, string>;
 
 class RequestError extends Error {
   fieldErrors: FieldErrors;
-  constructor(message: string, fieldErrors: unknown) {
+  requestId: string;
+  diagnosticCode: string;
+  constructor(message: string, fieldErrors: unknown, requestId = '', diagnosticCode = '') {
     super(message);
     this.name = 'RequestError';
     this.fieldErrors = fieldErrors && typeof fieldErrors === 'object' ? fieldErrors as FieldErrors : {};
+    this.requestId = requestId;
+    this.diagnosticCode = diagnosticCode;
   }
 }
 
@@ -119,7 +124,7 @@ async function request<T>(url: string, options?: RequestInit, csrfToken = ''): P
   }
   const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
   const data = await response.json();
-  if (!response.ok) throw new RequestError(data.error || 'No fue posible completar la solicitud.', data.fieldErrors);
+  if (!response.ok) throw new RequestError(data.error || 'No fue posible completar la solicitud.', data.fieldErrors, typeof data.requestId === 'string' ? data.requestId : '', typeof data.diagnosticCode === 'string' ? data.diagnosticCode : '');
   return data as T;
 }
 
@@ -147,6 +152,7 @@ export function CompanyWorkspace({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [suggestionError, setSuggestionError] = useState('');
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -240,6 +246,7 @@ export function CompanyWorkspace({
     setProduct(blankProduct);
     setEditingId(null);
     setSuggestions(null);
+    setSuggestionError('');
     setShowProductForm(false);
   };
 
@@ -247,6 +254,9 @@ export function CompanyWorkspace({
     setProduct((current) => ({ ...current, [key]: value }));
 
   const editProduct = (item: Product) => {
+    setError('');
+    setNotice('');
+    setSuggestionError('');
     setEditingId(item.id ?? null);
     setProduct({ ...item });
     setSuggestions(null);
@@ -270,8 +280,8 @@ export function CompanyWorkspace({
         csrfToken
       );
       setProducts(saved.items);
-      setNotice(editingId ? 'Producto actualizado.' : 'Producto agregado al catálogo.');
       resetProduct();
+      setNotice(editingId ? 'Producto actualizado.' : 'Producto agregado al catálogo.');
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar el producto.');
@@ -323,11 +333,11 @@ export function CompanyWorkspace({
 
   const suggest = async () => {
     if (product.nombre.trim().length < 2) {
-      setError('Ingresa el nombre del producto para pedir sugerencias de IA.');
+      setSuggestionError('Ingresa un nombre de al menos 2 caracteres para pedir sugerencias de IA.');
       return;
     }
     setSuggesting(true);
-    setError('');
+    setSuggestionError('');
     setSuggestions(null);
     try {
       setSuggestions(
@@ -346,7 +356,7 @@ export function CompanyWorkspace({
         )
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudieron generar sugerencias.');
+      setSuggestionError(e instanceof Error ? e.message : 'No se pudieron generar sugerencias.');
     } finally {
       setSuggesting(false);
     }
@@ -698,6 +708,8 @@ export function CompanyWorkspace({
               <button
                 onClick={() => {
                   resetProduct();
+                  setError('');
+                  setNotice('');
                   setShowProductForm(true);
                 }}
                 className="h-10 px-4 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm"
@@ -802,6 +814,12 @@ export function CompanyWorkspace({
                   </button>
                 </div>
               </div>
+
+              {suggestionError && (
+                <p role="status" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  No se pudieron sugerir términos con IA: {suggestionError} Puedes completar las palabras manualmente y guardar el producto igual.
+                </p>
+              )}
 
               {suggestions && (
                 <div className="p-3.5 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA] space-y-2 text-xs">
@@ -928,35 +946,113 @@ export function CompanyWorkspace({
   );
 }
 
+function MatchLoadingSkeleton() {
+  return (
+    <div role="status" aria-live="polite" aria-label="Buscando oportunidades relacionadas con tu empresa" className="space-y-3 py-2">
+      <span className="sr-only">Buscando oportunidades relacionadas con los productos y palabras clave de tu empresa…</span>
+      <div className="flex items-center gap-2 text-xs font-medium text-[#5D6472]">
+        <span className="inline-flex h-2 w-2 rounded-full bg-[#5636D9] animate-pulse" />
+        Buscando oportunidades relacionadas con tu empresa…
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 animate-pulse">
+        {['Coincidencias','Alta','Media','Próximos cierres'].map((label) => (
+          <div key={label} className="rounded-lg border border-[#E1E4EA] bg-[#F8F9FB] p-3 space-y-2">
+            <div className="h-3 w-20 rounded bg-[#E1E4EA]" />
+            <div className="h-5 w-10 rounded bg-[#D9D3F8]" />
+          </div>
+        ))}
+      </div>
+      <div className="overflow-hidden rounded-lg border border-[#E1E4EA]">
+        {[0, 1, 2].map((row) => (
+          <div key={row} className="grid grid-cols-[minmax(0,2fr)_1fr_0.8fr] gap-4 border-b last:border-b-0 border-[#E1E4EA] p-3 animate-pulse">
+            <div className="space-y-2"><div className="h-3 w-4/5 rounded bg-[#E1E4EA]" /><div className="h-3 w-2/5 rounded bg-[#ECEEF2]" /></div>
+            <div className="h-3 w-3/4 rounded bg-[#ECEEF2] self-center" />
+            <div className="h-3 w-2/3 rounded bg-[#ECEEF2] self-center" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function CompanyOpportunities({
   onConfigure,
   onOpenListing,
   onViewAll,
+  actionLabel = 'Ver ficha',
+  viewAllLabel = 'Ver oportunidades',
+  board = false,
+  csrfToken,
 }: {
   onConfigure: () => void;
   onOpenListing?: (code: string) => void;
   onViewAll?: () => void;
+  actionLabel?: string;
+  viewAllLabel?: string;
+  board?: boolean;
+  csrfToken: string;
 }) {
   const [data, setData] = useState<any>(null);
+  const [visibleCount, setVisibleCount] = useState(board ? 30 : 6);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [errorReference, setErrorReference] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [dismissingCode, setDismissingCode] = useState('');
+  const [actionNotice, setActionNotice] = useState('');
+
+  const dismissMatch = async (code: string) => {
+    setDismissingCode(code);
+    setActionNotice('');
+    setError('');
+    try {
+      await request('/api/company/matches/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: code }),
+      }, csrfToken);
+      setActionNotice(`Descartaste ${code}. Buscando la siguiente coincidencia para tu empresa…`);
+      setReloadKey((key) => key + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo descartar esta coincidencia.');
+    } finally {
+      setDismissingCode('');
+    }
+  };
 
   useEffect(() => {
     let live = true;
-    request<any>('/api/company/matches')
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 45_000);
+    setLoading(true);
+    setError('');
+    setErrorReference('');
+    request<any>('/api/company/matches?view=board', { signal: controller.signal })
       .then((val) => {
-        if (live) setData(val);
+        if (live) {
+          setData(val);
+          setVisibleCount(board ? 30 : 6);
+        }
       })
       .catch((e) => {
-        if (live) setError(e instanceof Error ? e.message : 'No se pudieron cargar las oportunidades.');
+        if (!live) return;
+        setError(e?.name === 'AbortError'
+          ? 'La búsqueda está tardando más de lo esperado. Puedes volver a intentarlo.'
+          : e instanceof Error ? e.message : 'No se pudieron cargar las oportunidades. Puedes volver a intentarlo.');
+        if (e instanceof RequestError && (e.requestId || e.diagnosticCode)) {
+          setErrorReference([e.requestId && `Referencia ${e.requestId}`, e.diagnosticCode && `código ${e.diagnosticCode}`].filter(Boolean).join(' · '));
+        }
       })
       .finally(() => {
+        window.clearTimeout(timeout);
         if (live) setLoading(false);
       });
     return () => {
       live = false;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
-  }, []);
+  }, [board, reloadKey]);
 
   return (
     <section className="summary-matches-panel bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-4">
@@ -972,7 +1068,7 @@ export function CompanyOpportunities({
             </span>
           </div>
           <p className="text-xs text-[#5D6472] mt-0.5">
-            Ordenadas por coincidencia con el catálogo y los términos configurados de la empresa.
+            Oportuna cruza las licitaciones activas del índice local con tus productos y palabras clave comerciales. El puntaje de 0 a 100 mide evidencia textual; no predice una adjudicación.
           </p>
         </div>
         <div className="flex items-center gap-4 shrink-0">
@@ -981,18 +1077,24 @@ export function CompanyOpportunities({
           </button>
           {onViewAll && (
             <button onClick={onViewAll} className="text-xs font-semibold text-[#5636D9] hover:underline inline-flex items-center gap-1">
-              Ver todas <Search size={13} />
+              {viewAllLabel} <Search size={13} />
             </button>
           )}
         </div>
       </div>
 
+      {actionNotice && <p role="status" aria-live="polite" className="rounded-lg border border-[#DED8FF] bg-[#FAF9FF] px-3 py-2 text-xs text-[#5636D9]">{actionNotice}</p>}
       {loading ? (
-        <div className="py-8 text-center text-xs text-[#5D6472]">
-          Calculando coincidencias con tu catálogo en MySQL…
-        </div>
+        <MatchLoadingSkeleton />
       ) : error ? (
-        <div className="py-4 text-xs text-red-600">{error}</div>
+        <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900">
+          <div className="space-y-1">
+            <p className="font-semibold">No se pudieron calcular las coincidencias.</p>
+            <p>{error} Las demás secciones de Oportuna siguen disponibles.</p>
+            {errorReference && <p className="font-mono text-[11px] text-amber-800">{errorReference}</p>}
+          </div>
+          <button onClick={() => setReloadKey((key) => key + 1)} className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-2 font-semibold text-[#5636D9] hover:bg-[#f0edff]">Reintentar</button>
+        </div>
       ) : !data?.configured ? (
         <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472] space-y-2">
           <Sparkles size={20} className="mx-auto text-[#8A92A6]" />
@@ -1006,6 +1108,11 @@ export function CompanyOpportunities({
         </div>
       ) : (
         <>
+          <p className="text-xs text-[#5D6472]">
+            {data.matchingBasis === 'profile_keywords'
+              ? `Coincidencia automática usando ${Number(data.profileKeywordCount || 0)} palabras clave guardadas en Mi empresa. Se revisan hasta ${Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} fichas candidatas, priorizadas por fecha de cierre.`
+              : `Coincidencia automática usando los productos activos de tu catálogo y el perfil comercial. Se revisan hasta ${Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} fichas candidatas, priorizadas por fecha de cierre.`}
+          </p>
           <div className="summary-match-metrics grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div><span>Coincidencias</span><b>{Number(data.total || 0).toLocaleString('es-CL')}</b></div>
             <div><span>Alta</span><b>{Number(data.high || 0).toLocaleString('es-CL')}</b></div>
@@ -1015,9 +1122,9 @@ export function CompanyOpportunities({
           {data.items?.length ? (
             <div className="summary-matches-table-wrap">
               <table className="summary-matches-table">
-                <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Match</th><th>Acción</th></tr></thead>
+                <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Evidencia</th><th>Acción</th></tr></thead>
                 <tbody>
-                  {data.items.slice(0, 6).map((item: any) => {
+                  {data.items.slice(0, visibleCount).map((item: any) => {
                     const closing = item.fecha_cierre ? new Date(item.fecha_cierre) : null;
                     const closingLabel = closing && Number.isFinite(closing.getTime())
                       ? new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }).format(closing)
@@ -1034,11 +1141,33 @@ export function CompanyOpportunities({
                         <td><span className="summary-match-buyer">{item.organismo || 'No informado'}</span></td>
                         <td className="summary-match-nowrap">{closingLabel}</td>
                         <td className="summary-match-amount">{amount}</td>
-                        <td><span className="summary-match-score">{Number(item.score || 0)}%</span></td>
+                        <td><span className="summary-match-score" title="Puntaje de evidencia textual; no es porcentaje ni probabilidad de adjudicación">{Number(item.score || 0)} pts</span></td>
                         <td>
-                          {onOpenListing ? (
-                            <button className="summary-match-action" onClick={() => onOpenListing(item.codigo_externo)}>Ver ficha</button>
-                          ) : <span>—</span>}
+                          <div className="summary-match-actions">
+                            {onOpenListing ? (
+                              <button
+                                type="button"
+                                className="summary-match-action"
+                                onClick={() => onOpenListing(item.codigo_externo)}
+                                aria-label={`${actionLabel}: ${item.nombre || item.codigo_externo}`}
+                                title={actionLabel}
+                              >
+                                <Search size={16} aria-hidden="true" />
+                                <span className="sr-only">{actionLabel}</span>
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="summary-match-dismiss"
+                              disabled={Boolean(dismissingCode)}
+                              onClick={() => void dismissMatch(item.codigo_externo)}
+                              aria-label={`Descartar ${item.nombre || item.codigo_externo} y mostrar la siguiente coincidencia`}
+                              title="Descartar y ver la siguiente"
+                            >
+                              {dismissingCode === item.codigo_externo ? <LoaderCircle size={16} className="animate-spin" aria-hidden="true" /> : <ThumbsDown size={16} aria-hidden="true" />}
+                              <span className="sr-only">{dismissingCode === item.codigo_externo ? 'Actualizando coincidencias' : 'No me sirve; descartar y ver la siguiente'}</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1048,7 +1177,15 @@ export function CompanyOpportunities({
             </div>
           ) : (
             <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472]">
-              No encontramos coincidencias con el catálogo actual.
+              No hay coincidencias en las licitaciones activas del índice local para los criterios comerciales guardados. La búsqueda evaluó {Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones.
+            </div>
+          )}
+          {data.items?.length > 0 && <p className="text-xs text-[#5D6472]">{board ? 'Primero aparecen las coincidencias con evidencia más directa; las basadas en términos relacionados quedan al final. ' : ''}Mostrando {Math.min(visibleCount, data.items.length)} de {data.total} oportunidades.</p>}
+          {data.items?.length > 0 && visibleCount < data.items.length && (
+            <div className="flex justify-center pt-1">
+              <button type="button" onClick={() => setVisibleCount((count) => Math.min(count + 10, data.items.length))} className="rounded-lg border border-[#DCD6FF] bg-white px-4 py-2 text-xs font-semibold text-[#5636D9] hover:bg-[#F7F5FF]">
+                Cargar más ({data.items.length - visibleCount} restantes)
+              </button>
             </div>
           )}
           {data.disclaimer && <p className="summary-match-disclaimer">{data.disclaimer}</p>}

@@ -5,6 +5,8 @@ import {
   BarChart3,
   Bell,
   Building2,
+  CalendarDays,
+  Calculator,
   Clock3,
   CreditCard,
   Database,
@@ -30,7 +32,7 @@ import {
 
 import { CompanyOpportunities, CompanyWorkspace } from './CompanyWorkspace';
 import { TrackingWorkspace } from './TrackingWorkspace';
-import { AlertNotificationPanel, AlertsPage, type AlertItem } from './AlertCenter';
+import { AlertNotificationPanel, AlertsPage, type AlertItem, type AlertOverview } from './AlertCenter';
 import { AuthGate, EmailVerificationGate, LegacyClaim, type AuthResult } from './AuthGate';
 import { CompanyTeamManagement, NoCompanyOnboarding } from './Onboarding';
 import { MarketAnalytics } from './MarketAnalytics';
@@ -40,6 +42,11 @@ import { PlatformUsers } from './PlatformUsers';
 import { SubscriptionPage } from './SubscriptionPage';
 import { OpportunityInbox } from './OpportunityInbox';
 import { MarketPublicoBridge } from './MarketPublicoBridge';
+import { OfferPreparationPanel } from './OfferPreparationPanel';
+import { PriceBookWorkspace } from './PriceBookWorkspace';
+import { CommercialAgents } from './CommercialAgents';
+import { AnalyticsWorkspace } from './AnalyticsWorkspace';
+import { RevenueDesk } from './RevenueDesk';
 import { useLocation, useNavigate } from 'react-router';
 
 type Listing = {
@@ -79,10 +86,14 @@ const SECTION_PATHS: Record<string, string> = {
   Oportunidades: '/oportunidades',
   'Plan y suscripción': '/suscripcion',
   'Mercado Público': '/mercado-publico',
+  'Agentes IA': '/agentes',
   'Inteligencia de mercado': '/inteligencia-mercado',
+  'Analítica': '/inteligencia-mercado/analitica',
   Seguimiento: '/seguimiento',
+  Calendario: '/calendario',
   Alertas: '/alertas',
   'Mi empresa': '/empresa',
+  'Precios base': '/precios-base',
   'Equipo y accesos': '/equipo',
   'Cuentas de usuario': '/usuarios',
   Configuración: '/configuracion',
@@ -151,6 +162,44 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return data as T;
 }
 
+function hasListingValue(value: any) {
+  if (value === null || value === undefined || value === '') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object' && !Array.isArray(value)) return Object.keys(value).length > 0;
+  return true;
+}
+
+function mergeListingDetails(official: any, local: any) {
+  const merged = { ...local, ...official };
+  for (const [key, value] of Object.entries(local ?? {})) {
+    if (!hasListingValue(official?.[key])) (merged as any)[key] = value;
+  }
+  const mergeSection = (officialSection: any, localSection: any) => {
+    const section = { ...(localSection ?? {}), ...(officialSection ?? {}) };
+    for (const [key, value] of Object.entries(localSection ?? {})) {
+      if (!hasListingValue(officialSection?.[key])) section[key] = value;
+    }
+    return section;
+  };
+  merged.Comprador = mergeSection(official?.Comprador, local?.Comprador);
+  merged.Fechas = mergeSection(official?.Fechas, local?.Fechas);
+  const buyerName = [
+    merged.Comprador?.NombreOrganismo,
+    merged.NombreOrganismo,
+    merged.OrganismoComprador,
+    merged.Organismo,
+    local?.organismo,
+  ].find((value) => typeof value === 'string' && value.trim());
+  if (buyerName && !hasListingValue(merged.Comprador?.NombreOrganismo)) {
+    merged.Comprador = { ...merged.Comprador, NombreOrganismo: buyerName };
+  }
+  const officialItems = official?.Items?.Listado;
+  const localItems = local?.Items?.Listado;
+  if (!hasListingValue(officialItems) && hasListingValue(localItems)) merged.Items = local.Items;
+  if ([0, '0', false].includes(merged.VisibilidadMonto)) merged.MontoEstimado = null;
+  return merged;
+}
+
 function StatusBadge({ state }: { state: number | null }) {
   const name = state == null ? 'Sin estado' : statusNames[state] ?? `Estado ${state}`;
   const style =
@@ -174,6 +223,9 @@ function StatusBadge({ state }: { state: number | null }) {
 
 function ListingDetailModal({
   listing,
+  companyId,
+  userId,
+  csrfToken,
   loading = false,
   saved,
   saving,
@@ -181,9 +233,13 @@ function ListingDetailModal({
   onSave,
   analysis,
   analysisLoading,
+  onGoToCompany,
   onClose,
 }: {
   listing: any;
+  companyId: number;
+  userId: number;
+  csrfToken: string;
   loading?: boolean;
   saved: boolean | null;
   saving: boolean;
@@ -191,12 +247,32 @@ function ListingDetailModal({
   onSave: () => void;
   analysis: any;
   analysisLoading: boolean;
+  onGoToCompany: () => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<'resumen' | 'items' | 'requisitos' | 'cronograma' | 'analisis'>('resumen');
+  const [tab, setTab] = useState<'resumen' | 'items' | 'requisitos' | 'cronograma' | 'oferta'>('resumen');
+  const [titleExpanded, setTitleExpanded] = useState(false);
+  const [expandedItem, setExpandedItem] = useState<number | null>(null);
+  useEffect(() => {
+    if (analysis && !analysis.error) setTab('resumen');
+  }, [analysis]);
+  const listingTitle = String(listing.Nombre || listing.nombre || listing.CodigoExterno || 'Licitación');
   const buyer = listing.Comprador ?? {};
   const dates = listing.Fechas ?? {};
   const listedItems = Array.isArray(listing.Items?.Listado) ? listing.Items.Listado : [];
+  const officialAvailability = analysis?.official?.availability ?? null;
+  const closingValue = dates.FechaCierre ?? listing.FechaCierre ?? analysis?.official?.closeAt ?? null;
+  const closingDate = closingValue ? new Date(closingValue) : null;
+  const remainingDays = closingDate && Number.isFinite(closingDate.getTime())
+    ? Math.ceil((new Date(closingDate.getFullYear(), closingDate.getMonth(), closingDate.getDate()).getTime() - new Date().setHours(0, 0, 0, 0)) / 86_400_000)
+    : null;
+  const buyerNeedSummary = (() => {
+    const names = listedItems.map((item: any) => String(item.NombreProducto ?? item.Nombre ?? item.nombre ?? '').trim()).filter(Boolean);
+    const uniqueNames = [...new Map(names.map((name: string) => [name.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(), name])).values()];
+    return uniqueNames.length
+      ? `La ficha contempla ${uniqueNames.slice(0, 5).join('; ')}. Revisa cantidades y especificaciones en las partidas y bases oficiales.`
+      : analysis?.interpretation?.executiveSummary || listing.Descripcion || 'La ficha no incluye una descripción suficiente. Abre la fuente oficial y revisa las bases.';
+  })();
   const knownRequirements = [
     ['Prohibición de contratación', listing.ProhibicionContratacion],
     ['Subcontratación', listing.SubContratacion],
@@ -209,51 +285,84 @@ function ListingDetailModal({
   const documents = documentKeys.flatMap((key) =>
     Array.isArray(listing[key]) ? listing[key].map((item: any) => ({ item, source: key })) : []
   );
+  const relevanceLevel = String(analysis?.commercialRelevance?.level ?? '');
+  const relevanceLabels: Record<string, string> = {
+    high: 'Alta', medium: 'Media', exploratory: 'Exploratoria', none: 'Sin coincidencia',
+    excluded: 'Excluida', unavailable: 'No disponible',
+  };
+  const procurementCode = [listing.CodigoTipo, listing.Tipo, listing.CodigoExterno, listing.codigo_externo]
+    .map((value) => String(value ?? '').match(/(?:^|-)(L1|LE|LP|LQ|LR|E2|CO|B2|H2|I2)\d{0,2}$/i)?.[1]?.toUpperCase())
+    .find(Boolean) ?? null;
+  const procurementRanges: Record<string, string> = {
+    L1: 'Menos de 100 UTM',
+    LE: 'Desde 100 y menos de 1.000 UTM',
+    LP: 'Desde 1.000 y menos de 5.000 UTM',
+    LQ: 'Desde 5.000 y menos de 10.000 UTM',
+    LR: '10.000 UTM o más',
+  };
+  const procurementRange = procurementCode ? procurementRanges[procurementCode] : null;
+  const amountDisplay = listing.MontoEstimado != null
+    ? money(listing.MontoEstimado, listing.Moneda || null)
+    : [0, '0', false].includes(listing.VisibilidadMonto)
+      ? 'No publicado en la ficha oficial'
+      : procurementRange
+        ? 'Monto exacto no informado'
+        : 'Monto no informado';
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121826]/45 p-3 backdrop-blur-sm sm:p-6 lg:p-8" onClick={onClose}>
       <div
-        className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="listing-detail-title"
+        className="flex h-[min(90vh,1120px)] max-h-[92dvh] min-h-0 w-[min(92vw,1440px)] max-w-[1440px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-5 border-b border-[#E1E4EA] flex items-start justify-between gap-4 bg-white">
+        <div className="flex items-start justify-between gap-4 border-b border-[#E1E4EA] bg-white px-6 py-5 md:px-8 md:py-6">
           <div className="space-y-1 min-w-0">
-            <div className="text-[11px] font-bold text-[#5636D9] uppercase tracking-wider">
+            <div className="text-xs font-bold uppercase tracking-wider text-[#5636D9]">
               Buscar oportunidades / Ficha
             </div>
-            <h2 className="font-bold text-lg text-[#171A24] leading-snug">
-              {listing.Nombre || listing.nombre || listing.CodigoExterno || 'Licitación'}
+            <h2 id="listing-detail-title" className={`text-xl font-bold leading-snug text-[#171A24] md:text-2xl ${titleExpanded ? '' : 'line-clamp-2'}`}>
+              {listingTitle}
             </h2>
-            <div className="flex items-center gap-2 flex-wrap text-xs text-[#5D6472]">
+            {listingTitle.length > 110 && (
+              <button type="button" onClick={() => setTitleExpanded((expanded) => !expanded)} className="text-sm font-semibold text-[#5636D9] hover:underline">
+                {titleExpanded ? 'Mostrar título resumido' : 'Ver título completo'}
+              </button>
+            )}
+            <div className="flex flex-wrap items-center gap-2 text-sm text-[#5D6472]">
               <span className="font-mono font-semibold text-[#171A24]">{listing.CodigoExterno}</span>
               <span>•</span>
-              <span className="truncate max-w-xs">{buyer.NombreOrganismo || listing.organismo || 'Organismo no informado'}</span>
+              <span className="truncate max-w-xs">{buyer.NombreOrganismo || listing.organismo || listing.NombreOrganismo || listing.OrganismoComprador || 'Organismo no informado'}</span>
               <span>•</span>
               <StatusBadge state={listing.CodigoEstado != null ? Number(listing.CodigoEstado) : null} />
             </div>
           </div>
           <button
+            type="button"
+            aria-label="Cerrar ficha"
             onClick={onClose}
-            className="w-8 h-8 rounded-lg text-[#5D6472] hover:bg-gray-100 flex items-center justify-center shrink-0"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[#5D6472] hover:bg-gray-100"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Modal Navigation Tabs */}
-        <div className="flex items-center gap-1 px-5 border-b border-[#E1E4EA] bg-[#F8F9FA] overflow-x-auto">
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-[#E1E4EA] bg-[#F8F9FA] px-5 md:px-8">
           {[
-            { id: 'resumen', label: 'Resumen' },
+            { id: 'resumen', label: 'Resumen inteligente' },
             { id: 'items', label: `Partidas (${listedItems.length})` },
             { id: 'requisitos', label: 'Requisitos & Docs' },
             { id: 'cronograma', label: 'Cronograma' },
-            { id: 'analisis', label: 'Compatibilidad IA' },
+            { id: 'oferta', label: 'Preparar oferta' },
           ].map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id as any)}
-              className={`py-3 px-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${
+              className={`whitespace-nowrap border-b-2 px-4 py-4 text-sm font-semibold transition-colors ${
                 tab === t.id
                   ? 'border-[#5636D9] text-[#5636D9]'
                   : 'border-transparent text-[#5D6472] hover:text-[#171A24]'
@@ -265,11 +374,22 @@ function ListingDetailModal({
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="min-h-0 flex-1 space-y-7 overflow-y-auto p-5 sm:p-7 lg:p-9">
           {loading ? (
-            <div className="py-20 text-center text-sm text-[#5D6472]">
-              <LoaderCircle size={24} className="spin mx-auto text-[#5636D9] mb-2" />
-              Cargando información oficial…
+            <div className="space-y-5" role="status" aria-live="polite">
+              <div className="flex items-center justify-center gap-3 py-3 text-base font-medium text-[#5D6472]">
+                <LoaderCircle size={22} className="spin text-[#5636D9]" />
+                Consultando la ficha oficial de Mercado Público…
+              </div>
+              <div className="animate-pulse space-y-4">
+                <div className="h-36 rounded-2xl bg-[#F1F2F5]" />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div className="h-28 rounded-2xl bg-[#F1F2F5]" />
+                  <div className="h-28 rounded-2xl bg-[#F1F2F5]" />
+                  <div className="h-28 rounded-2xl bg-[#F1F2F5]" />
+                </div>
+                <div className="h-40 rounded-2xl bg-[#F1F2F5]" />
+              </div>
             </div>
           ) : (
             <>
@@ -279,73 +399,19 @@ function ListingDetailModal({
                   {listing._detailError ? <span className="block mt-1 text-amber-800">{listing._detailError}</span> : null}
                 </div>
               )}
-              {tab === 'resumen' && (
-            <div className="space-y-5 text-xs">
-              <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA] space-y-2">
-                <span className="font-bold text-[#5D6472] uppercase text-[10px] tracking-wider">
-                  Descripción Oficial
-                </span>
-                <p className="text-[#171A24] leading-relaxed text-xs">
-                  {listing.Descripcion || 'Mercado Público no informó una descripción para esta licitación.'}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3.5 rounded-xl border border-[#E1E4EA] space-y-1">
-                  <span className="text-[#8A92A6]">Monto Estimado</span>
-                  <div className="font-bold text-sm text-[#171A24]">
-                    {listing.MontoEstimado != null ? money(listing.MontoEstimado, listing.Moneda || null) : 'No informado'}
-                  </div>
-                </div>
-                <div className="p-3.5 rounded-xl border border-[#E1E4EA] space-y-1">
-                  <span className="text-[#8A92A6]">Fecha de Cierre</span>
-                  <div className="font-bold text-sm text-[#171A24]">
-                    {dateFmt(dates.FechaCierre ?? listing.FechaCierre)}
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl border border-[#E1E4EA] space-y-3">
-                <h4 className="font-bold text-[#171A24]">Organismo Comprador</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-[#8A92A6] block">Organismo</span>
-                    <b className="text-[#171A24]">{buyer.NombreOrganismo || 'No informado'}</b>
-                  </div>
-                  <div>
-                    <span className="text-[#8A92A6] block">Unidad de Compra</span>
-                    <b className="text-[#171A24]">{buyer.NombreUnidad || 'No informado'}</b>
-                  </div>
-                  <div>
-                    <span className="text-[#8A92A6] block">Región</span>
-                    <b className="text-[#171A24]">{buyer.RegionUnidad || 'No informada'}</b>
-                  </div>
-                  <div>
-                    <span className="text-[#8A92A6] block">Comuna</span>
-                    <b className="text-[#171A24]">{buyer.ComunaUnidad || 'No informada'}</b>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {tab === 'items' && (
-            <div className="space-y-3 text-xs">
-              <span className="font-bold text-[#5D6472] uppercase text-[10px] tracking-wider block">
-                Partidas Solicitadas ({listedItems.length})
-              </span>
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-xl font-bold text-[#171A24]">Partidas solicitadas</h3><p className="mt-1 text-sm text-[#667085]">Abre cada partida para revisar su detalle o cotizarla con tus precios base.</p></div><span className="rounded-full bg-[#F2F0FF] px-3 py-1.5 text-sm font-semibold text-[#5636D9]">{listedItems.length} {listedItems.length === 1 ? 'partida' : 'partidas'}</span></div>
               {listedItems.length ? (
                 listedItems.map((item: any, idx: number) => (
-                  <div key={idx} className="p-3.5 rounded-xl border border-[#E1E4EA] bg-white space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <b className="text-[#171A24] font-bold">{item.NombreProducto || item.Nombre || 'Partida'}</b>
-                      <span className="px-2 py-0.5 rounded-md bg-[#F5F6F8] font-semibold text-[#5D6472]">
-                        {item.Cantidad} {item.UnidadMedida || 'unidades'}
-                      </span>
-                    </div>
-                    {item.Descripcion && <p className="text-[#5D6472]">{item.Descripcion}</p>}
-                    {item.Categoria && <span className="text-[10px] text-[#8A92A6] block">Categoría: {item.Categoria}</span>}
-                  </div>
+                  <article key={idx} className={`overflow-hidden rounded-xl border bg-white transition-colors ${expandedItem===idx?'border-violet-300 shadow-sm':'border-[#E1E4EA]'}`}>
+                    <button type="button" aria-expanded={expandedItem===idx} onClick={()=>setExpandedItem(expandedItem===idx?null:idx)} className="flex w-full flex-wrap items-center justify-between gap-3 p-4 text-left hover:bg-[#FAF9FF]">
+                      <span className="min-w-0 flex-1"><span className="block font-semibold text-[#171A24]">{item.NombreProducto || item.Nombre || 'Partida'}</span><span className="mt-1 block text-sm text-[#667085]">Código {item.CodigoProducto ?? item.Codigo ?? 'No informado'}{item.Categoria ? ` · ${item.Categoria}` : ''}</span></span>
+                      <span className="rounded-full bg-[#F5F6F8] px-3 py-1.5 text-sm font-semibold text-[#475467]">{item.Cantidad ?? 'Cantidad no informada'} {item.UnidadMedida || 'unidades'}</span>
+                      <span className="text-sm font-semibold text-[#5636D9]">{expandedItem===idx?'Cerrar detalle −':'Ver detalle +'}</span>
+                    </button>
+                    {expandedItem===idx&&<div className="border-t border-[#E1E4EA] bg-[#FCFCFE] p-4"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg bg-white p-3"><span className="text-xs text-[#667085]">Cantidad solicitada</span><strong className="mt-1 block">{item.Cantidad ?? 'No informada'} {item.UnidadMedida || ''}</strong></div><div className="rounded-lg bg-white p-3"><span className="text-xs text-[#667085]">Categoría</span><strong className="mt-1 block">{item.Categoria || 'No informada'}</strong></div></div><div className="mt-3 rounded-lg bg-white p-3"><span className="text-xs font-semibold uppercase tracking-wide text-[#667085]">Descripción y especificaciones oficiales</span><p className="mt-1 whitespace-pre-line text-sm leading-6 text-[#344054]">{item.Descripcion || item.Especificacion || 'La ficha no entregó una descripción estructurada para esta partida. Revisa las bases oficiales antes de cotizar.'}</p></div><button type="button" onClick={()=>setTab('oferta')} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 text-sm font-semibold text-white">Preparar precio para esta partida <ArrowRight size={15}/></button></div>}
+                  </article>
                 ))
               ) : (
                 <div className="p-8 text-center text-[#8A92A6] border border-dashed border-[#E1E4EA] rounded-xl">
@@ -419,88 +485,217 @@ function ListingDetailModal({
             </div>
           )}
 
-          {tab === 'analisis' && (
-            <div className="space-y-4 text-xs">
-              <div className="flex items-center justify-between">
+          {tab === 'resumen' && (
+            <div className="space-y-4 text-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h4 className="font-bold text-[#171A24] flex items-center gap-2">
-                    <Sparkles size={16} className="text-[#5636D9]" /> Análisis de Compatibilidad Comercial
+                  <h4 className="flex items-center gap-2 font-bold text-[#171A24]">
+                    <Sparkles size={17} className="text-[#5636D9]" /> Evaluación de oportunidad
                   </h4>
-                  <p className="text-[#5D6472]">Evaluación contra el catálogo de productos de tu empresa.</p>
+                  <p className="mt-1 text-[#667085]">Resumen oficial, encaje comercial y qué revisar ahora.</p>
                 </div>
                 <button
                   onClick={onAnalyze}
                   disabled={analysisLoading}
-                  className="h-8 px-3 bg-[#5636D9] hover:bg-[#4b2ec7] text-white font-semibold rounded-lg flex items-center gap-1.5"
+                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 font-semibold text-white hover:bg-[#4b2ec7] disabled:cursor-wait disabled:opacity-70"
                 >
-                  {analysisLoading ? <LoaderCircle size={13} className="spin" /> : <Sparkles size={13} />}
-                  {analysisLoading ? 'Analizando…' : 'Ejecutar Análisis IA'}
+                  {analysisLoading ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />}
+                  {analysisLoading ? 'Actualizando…' : analysis ? 'Actualizar evaluación' : 'Evaluar oportunidad'}
                 </button>
               </div>
 
               {analysisLoading ? (
-                <div className="p-8 text-center text-[#5D6472] bg-[#F8F9FA] rounded-xl border border-[#E1E4EA]">
-                  <LoaderCircle size={20} className="spin mx-auto text-[#5636D9] mb-2" />
-                  Analizando requisitos y compatibilidad con Groq/IA…
+                <div className="space-y-3 rounded-xl border border-[#E1E4EA] bg-[#F8F9FC] p-5" role="status" aria-live="polite">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-[#344054]">
+                    <LoaderCircle size={17} className="spin text-[#5636D9]" />
+                    Consultando Mercado Público y comparando con tu catálogo…
+                  </div>
+                  <div className="h-2 animate-pulse rounded-full bg-[#E7E9F0]" />
+                  <div className="h-2 w-3/4 animate-pulse rounded-full bg-[#E7E9F0]" />
+                </div>
+              ) : analysis?.error ? (
+                <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
+                  <strong>No pudimos completar la evaluación</strong>
+                  <p className="mt-1">{analysis.error}</p>
                 </div>
               ) : analysis ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 rounded-xl bg-[#f0edff]/30 border border-[#5636D9]/20">
-                      <span className="text-[#5D6472] block">Relevancia Comercial</span>
-                      <b className="text-xl text-[#5636D9] font-bold">
-                        {analysis.commercialRelevance?.score ?? '—'}%
-                      </b>
-                      <small className="text-[#5D6472] block mt-0.5">
-                        {analysis.commercialRelevance?.level ?? 'No evaluado'}
-                      </small>
-                    </div>
-                    <div className="p-3 rounded-xl bg-gray-50 border border-[#E1E4EA]">
-                      <span className="text-[#5D6472] block">Cobertura de Datos</span>
-                      <b className="text-xl text-[#171A24] font-bold">
-                        {analysis.coverage?.score ?? 0}%
-                      </b>
-                      <small className="text-[#5D6472] block mt-0.5">
-                        {analysis.coverage?.present ?? 0} de {analysis.coverage?.total ?? 0} campos
-                      </small>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <section className="rounded-xl border border-[#DCD5FF] bg-[#F8F6FF] p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-[#475467]">Evidencia de coincidencia</span>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#5636D9]">
+                          {relevanceLabels[relevanceLevel] ?? relevanceLevel ?? 'Sin nivel'}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-baseline gap-2">
+                        <strong className="text-3xl leading-none text-[#5636D9]">{analysis.commercialRelevance?.score ?? '—'}</strong>
+                        <span className="text-sm text-[#667085]">puntos</span>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white" role="progressbar" aria-label="Coincidencia con el catálogo" aria-valuemin={0} aria-valuemax={100} aria-valuenow={analysis.commercialRelevance?.score ?? 0}>
+                        <div className="h-full rounded-full bg-[#6941C6] transition-all" style={{ width: `${Math.max(0,Math.min(100,Number(analysis.commercialRelevance?.score)||0))}%` }} />
+                      </div>
+                      <p className="mt-2 text-xs leading-relaxed text-[#667085]">Puntaje de evidencia según frase y fuente; no es porcentaje ni probabilidad de adjudicación.</p>
+                    </section>
+
+                    <section className="rounded-xl border border-[#E1E4EA] bg-white p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-[#475467]">Información de la ficha</span>
+                        <span className="text-xs font-medium text-[#667085]">{analysis.coverage?.present ?? 0} de {analysis.coverage?.total ?? 0} campos</span>
+                      </div>
+                      <div className="mt-2 flex items-baseline gap-2">
+                        <strong className="text-3xl leading-none text-[#171A24]">{analysis.coverage?.present ?? 0}</strong>
+                        <span className="text-sm text-[#667085]">datos disponibles</span>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#EAECF0]" role="progressbar" aria-label="Campos con información en la ficha" aria-valuemin={0} aria-valuemax={analysis.coverage?.total ?? 11} aria-valuenow={analysis.coverage?.present ?? 0}>
+                        <div className="h-full rounded-full bg-[#98A2B3] transition-all" style={{ width: `${Math.max(0,Math.min(100,Number(analysis.coverage?.score)||0))}%` }} />
+                      </div>
+                      <p className="mt-2 text-xs text-[#667085]">
+                        {analysis.source === 'mercadopublico' ? 'Ficha oficial consultada al evaluar' : 'Información del índice local'}
+                      </p>
+                    </section>
+
+                    <section className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+                      <div className="text-sm font-semibold text-[#475467]">Plazo para investigar</div>
+                      <strong className={`mt-2 block text-2xl leading-none ${analysis.decision?.tone === 'muted' ? 'text-[#667085]' : 'text-emerald-700'}`}>
+                        {officialAvailability?.isOpen === false
+                          ? officialAvailability.status === 'expired' ? 'Plazo vencido' : officialAvailability.label
+                          : officialAvailability?.isOpen === true && remainingDays != null
+                            ? `${remainingDays === 0 ? 'Hoy' : `${remainingDays} ${remainingDays === 1 ? 'día' : 'días'}`}`
+                            : officialAvailability?.isOpen === true ? 'Abierta' : 'Por confirmar'}
+                      </strong>
+                      <p className="mt-3 text-xs leading-relaxed text-[#667085]">
+                        {closingValue ? `Cierre informado: ${dateFmt(closingValue)}. ` : ''}{officialAvailability?.isOpen === false ? 'Verifica el estado actualizado antes de invertir tiempo.' : officialAvailability?.isOpen === true ? 'Confirma la hora límite y revisa las bases oficiales.' : 'Confirma el estado y el cierre en Mercado Público.'}
+                      </p>
+                    </section>
+                  </div>
+
+                  <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12">
+                    <section className="space-y-4 rounded-xl border border-[#E1E4EA] bg-white p-5 lg:col-span-7">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h5 className="font-bold text-[#171A24]">Qué necesita el comprador</h5>
+                          <p className="mt-1 text-xs text-[#667085]">Lectura rápida basada en la información oficial disponible</p>
+                        </div>
+                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-[#8A92A6]">{analysis.source === 'mercadopublico' ? 'Fuente oficial' : 'Índice local'}</span>
+                      </div>
+                      <p className="leading-relaxed text-[#475467]">{buyerNeedSummary}</p>
+                      {listing.Descripcion && (
+                        <details className="rounded-lg border border-[#E1E4EA] bg-[#F8F9FC] px-3 py-2">
+                          <summary className="cursor-pointer text-sm font-semibold text-[#5636D9]">Ver descripción oficial completa</summary>
+                          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-[#475467]">{listing.Descripcion}</p>
+                        </details>
+                      )}
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {[
+                          ['Organismo', buyer.NombreOrganismo || listing.organismo || listing.NombreOrganismo || 'No informado'],
+                          ['Unidad de compra', buyer.NombreUnidad || listing.UnidadCompra || 'No informada'],
+                          ['Región', buyer.RegionUnidad || buyer.Region || 'No informada'],
+                          ['Comuna', buyer.Comuna || buyer.NombreComuna || 'No informada'],
+                          ['Monto estimado', amountDisplay],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-lg bg-[#F8F9FC] p-3">
+                            <span className="block text-[11px] text-[#667085]">{label}</span>
+                            <strong className="mt-1 block text-sm leading-snug text-[#171A24]">{value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <div className="space-y-4 lg:col-span-5">
+                      {analysis.decision && (
+                        <section className={`rounded-xl border p-5 ${analysis.decision.tone === 'positive' ? 'border-emerald-200 bg-emerald-50/60' : analysis.decision.tone === 'caution' ? 'border-amber-200 bg-amber-50/70' : 'border-[#E1E4EA] bg-[#F8F9FA]'}`}>
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-[#667085]">Recomendación orientativa</span>
+                              <h5 className="mt-1 text-base font-bold text-[#171A24]">{analysis.decision.label}</h5>
+                            </div>
+                            <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-[#344054]">{officialAvailability?.label || 'Estado por confirmar'}</span>
+                          </div>
+                          <p className="mt-2 leading-relaxed text-[#344054]">{analysis.decision.summary}</p>
+                          {analysis.decision.toConfirm?.length > 0 && (
+                            <details className="mt-4 rounded-lg border border-amber-200 bg-white/80 px-3 py-2.5">
+                              <summary className="cursor-pointer font-semibold text-[#344054]">Qué falta revisar <span className="ml-1 text-xs font-normal text-[#667085]">({analysis.decision.toConfirm.length})</span></summary>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {analysis.decision.toConfirm.slice(0, 8).map((item: string) => <span key={item} className="rounded-full border border-[#E4E7EC] bg-white px-2.5 py-1 text-xs text-[#475467]">{item}</span>)}
+                              </div>
+                            </details>
+                          )}
+                          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-3">
+                            <div className="min-w-0 flex-1">
+                              <strong className="block text-sm text-[#171A24]">Siguiente paso</strong>
+                              <span className="mt-0.5 block text-xs leading-relaxed text-[#5D6472]">{analysis.decision.nextAction.reason}</span>
+                            </div>
+                            <button type="button" onClick={() => analysis.decision.nextAction.tab === 'catalogo' ? onGoToCompany() : setTab(analysis.decision.nextAction.tab === 'analisis' ? 'resumen' : analysis.decision.nextAction.tab)} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-3 py-2 text-sm font-semibold text-white hover:bg-[#4b2ec7]">
+                              {analysis.decision.nextAction.label}<ArrowRight size={15} />
+                            </button>
+                          </div>
+                        </section>
+                      )}
+                      {analysis.coverage?.missing?.length > 0 && (
+                        <details className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+                          <summary className="cursor-pointer font-semibold text-amber-950">Datos que faltan · {analysis.coverage.missing.length}</summary>
+                          <ul className="mt-2 grid grid-cols-1 gap-1 text-sm text-amber-900 sm:grid-cols-2">
+                            {analysis.coverage.missing.map((field: string) => <li key={field}>• {field}</li>)}
+                          </ul>
+                        </details>
+                      )}
                     </div>
                   </div>
 
-                  {analysis.interpretation?.executiveSummary && (
-                    <div className="p-3.5 rounded-xl bg-white border border-[#E1E4EA] space-y-1">
-                      <span className="font-bold text-[#171A24]">Resumen Ejecutivo</span>
-                      <p className="text-[#5D6472] leading-relaxed">{analysis.interpretation.executiveSummary}</p>
-                    </div>
+                  <details className="rounded-xl border border-[#E1E4EA] bg-white px-4 py-3">
+                    <summary className="cursor-pointer font-semibold text-[#344054]">Alcance y criterios de esta evaluación</summary>
+                    <p className="mt-2 text-sm leading-relaxed text-[#667085]">La coincidencia compara texto del catálogo con la licitación y no estima la probabilidad de adjudicación. El resumen puede usar IA generativa. Oportuna no revisa las bases ni sus anexos; valida requisitos y condiciones en la fuente oficial antes de cotizar.</p>
+                  </details>
+
+                  {(analysis.interpretation?.technicalNotes?.length > 0 || analysis.interpretation?.administrativeNotes?.length > 0) && (
+                    <details className="rounded-xl border border-[#E1E4EA] bg-white p-4">
+                      <summary className="cursor-pointer font-semibold text-[#344054]">Detalle técnico y administrativo</summary>
+                      {analysis.interpretation?.technicalNotes?.length > 0 && <div className="mt-3"><strong>Aspectos técnicos</strong><ul className="mt-1 list-disc space-y-1 pl-4 text-[#5D6472]">{analysis.interpretation.technicalNotes.map((note: string, idx: number) => <li key={`t-${idx}`}>{note}</li>)}</ul></div>}
+                      {analysis.interpretation?.administrativeNotes?.length > 0 && <div className="mt-3"><strong>Aspectos administrativos</strong><ul className="mt-1 list-disc space-y-1 pl-4 text-[#5D6472]">{analysis.interpretation.administrativeNotes.map((note: string, idx: number) => <li key={`a-${idx}`}>{note}</li>)}</ul></div>}
+                    </details>
                   )}
 
                   {analysis.interpretation?.risks?.length > 0 && (
-                    <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 space-y-1">
-                      <span className="font-bold text-amber-900">Riesgos y Consideraciones</span>
-                      <ul className="list-disc pl-4 text-amber-800 space-y-0.5">
-                        {analysis.interpretation.risks.map((r: string, idx: number) => (
-                          <li key={idx}>{r}</li>
-                        ))}
+                    <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <h5 className="font-semibold text-amber-950">Riesgos a revisar</h5>
+                      <ul className="mt-2 list-disc space-y-1 pl-4 text-sm leading-relaxed text-amber-900">
+                        {analysis.interpretation.risks.map((risk: string, idx: number) => <li key={idx}>{risk}</li>)}
                       </ul>
-                    </div>
+                    </section>
                   )}
                 </div>
               ) : (
-                <div className="p-8 text-center text-[#8A92A6] bg-[#F8F9FA] rounded-xl border border-[#E1E4EA]">
-                  Presiona "Ejecutar Análisis IA" para obtener una lectura técnica de las bases.
+                <div className="space-y-3 rounded-xl border border-[#E1E4EA] bg-[#F8F9FC] p-5" role="status" aria-live="polite">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-[#344054]">
+                    <LoaderCircle size={17} className="spin text-[#5636D9]" />
+                    Preparando el resumen de esta oportunidad…
+                  </div>
+                  <div className="h-2 animate-pulse rounded-full bg-[#E7E9F0]" />
+                  <div className="h-2 w-3/4 animate-pulse rounded-full bg-[#E7E9F0]" />
                 </div>
               )}
             </div>
+          )}
+
+          {tab === 'oferta' && (
+            <OfferPreparationPanel
+              listing={listing}
+              companyId={companyId}
+              userId={userId}
+              csrfToken={csrfToken}
+            />
           )}
             </>
           )}
         </div>
 
         {/* Modal Bottom Actions Fixed (Stitch 3) */}
-        <div className="p-4 border-t border-[#E1E4EA] bg-white flex items-center justify-between gap-3">
+        <div className="flex flex-col-reverse items-stretch justify-between gap-3 border-t border-[#E1E4EA] bg-white px-5 py-4 sm:flex-row sm:items-center md:px-8">
           <button
             onClick={onSave}
             disabled={saved === true || saving}
-            className={`h-10 px-4 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+            className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors sm:w-auto ${
               saved
                 ? 'bg-[#f0edff] text-[#5636D9] border border-[#5636D9]/30'
                 : 'bg-white border border-[#E1E4EA] text-[#171A24] hover:bg-gray-50'
@@ -518,7 +713,7 @@ function ListingDetailModal({
             href={`https://www.mercadopublico.cl/fichaLicitacion.html?idLicitacion=${encodeURIComponent(listing.CodigoExterno || '')}`}
             target="_blank"
             rel="noreferrer"
-            className="h-10 px-4 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#5636D9] px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4b2ec7] sm:w-auto"
           >
             Ver en Mercado Público <ExternalLink size={14} />
           </a>
@@ -542,6 +737,21 @@ function App() {
   const [section, setSection] = useState(() => PATH_SECTIONS[location.pathname] ?? 'Resumen');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest('.profile-menu-wrap')) setUserMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setUserMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [userMenuOpen]);
   const [health, setHealth] = useState<Health | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [companyPlan, setCompanyPlan] = useState<any>(null);
@@ -554,6 +764,9 @@ function App() {
   const [stateFilter, setStateFilter] = useState('');
   const [matchLevelFilter, setMatchLevelFilter] = useState('');
   const [regionFilter, setRegionFilter] = useState('');
+  const [modalityFilter, setModalityFilter] = useState('');
+  const [closeAfterFilter, setCloseAfterFilter] = useState('');
+  const [closeBeforeFilter, setCloseBeforeFilter] = useState('');
   const [searchView, setSearchView] = useState<'table' | 'cards'>('table');
   const [page, setPage] = useState(1);
   const [searchResults, setSearchResults] = useState<any>(null);
@@ -569,7 +782,8 @@ function App() {
 
   // Alerts State
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [alertCounts, setAlertCounts] = useState({ total: 0, unread: 0 });
+  const [alertOverview, setAlertOverview] = useState<AlertOverview | null>(null);
+  const [alertCounts, setAlertCounts] = useState({ total: 0, unread: 0, pendingMatches: 0 });
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsError, setAlertsError] = useState('');
@@ -607,7 +821,7 @@ function App() {
     }
     if (detailRouteCode) return;
     const routeSection = PATH_SECTIONS[location.pathname];
-    if (!routeSection || ((routeSection === 'Equipo y accesos' || routeSection === 'Configuración') && !isAdmin) || (routeSection === 'Cuentas de usuario' && !isPlatformAdmin)) {
+    if (!routeSection || ((routeSection === 'Equipo y accesos' || routeSection === 'Configuración') && !isAdmin) || ((routeSection === 'Cuentas de usuario' || routeSection === 'Centro de Pruebas') && !isPlatformAdmin)) {
       navigate('/', { replace: true });
       return;
     }
@@ -749,11 +963,13 @@ function App() {
     setAlertsError('');
     try {
       await api('/api/alerts/evaluate', { method: 'POST' });
-      const res = await api<{ items: AlertItem[]; counts: { total: number; unread: number } }>(
-        `/api/alerts?filter=${f}`
-      );
+      const [res, overview] = await Promise.all([
+        api<{ items: AlertItem[]; counts: { total: number; unread: number; pendingMatches: number } }>(`/api/alerts?filter=${f}`),
+        api<AlertOverview>('/api/alerts/overview'),
+      ]);
       setAlerts(res.items);
       setAlertCounts(res.counts);
+      setAlertOverview(overview);
     } catch (e) {
       setAlertsError(e instanceof Error ? e.message : 'No se pudieron cargar las alertas.');
     } finally {
@@ -770,7 +986,7 @@ function App() {
   const refreshAlertCounts = useCallback(async () => {
     if (authState !== 'authenticated' || !auth?.activeCompanyId) return;
     try {
-      const counts = await api<{ total: number; unread: number }>('/api/alerts/count');
+      const counts = await api<{ total: number; unread: number; pendingMatches: number }>('/api/alerts/count');
       setAlertCounts(counts);
     } catch {
       /* ignore */
@@ -802,16 +1018,25 @@ function App() {
     try {
       const [data, tracking] = await Promise.all([
         (async () => {
-          try {
-            return await api<{ listing: any; source: string }>(`/api/licitaciones/${encodeURIComponent(code)}/oficial`);
-          } catch (officialError) {
-            const local = await api<{ listing: any; detailAvailable: boolean }>(`/api/licitaciones/${encodeURIComponent(code)}/local`);
+          const [officialResult, localResult] = await Promise.all([
+            api<{ listing: any; source: string }>(`/api/licitaciones/${encodeURIComponent(code)}/oficial`)
+              .then((value) => ({ value, error: null as unknown }))
+              .catch((error: unknown) => ({ value: null, error })),
+            api<{ listing: any; detailAvailable: boolean }>(`/api/licitaciones/${encodeURIComponent(code)}/local`)
+              .catch(() => null),
+          ]);
+          if (officialResult.value) {
             return {
-              ...local,
-              source: 'local-fallback',
-              detailError: officialError instanceof Error ? officialError.message : 'Error de conexión con Mercado Público.',
+              listing: mergeListingDetails(officialResult.value.listing, localResult?.listing),
+              source: officialResult.value.source,
             };
           }
+          if (localResult) return {
+            ...localResult,
+            source: 'local-fallback',
+            detailError: officialResult.error instanceof Error ? officialResult.error.message : 'No se pudo consultar Mercado Público; se muestran los datos locales disponibles.',
+          };
+          throw officialResult.error ?? new Error('No se pudo cargar la ficha.');
         })(),
         api<{ saved: boolean }>(`/api/company/tracking/lookup?codigo=${encodeURIComponent(code)}`).catch(() => ({
           saved: false,
@@ -822,6 +1047,8 @@ function App() {
       void api(`/api/company/opportunities/${encodeURIComponent(code)}/read`, { method: 'POST' })
         .then(() => window.dispatchEvent(new Event('oportuna:refresh-opportunities')))
         .catch(() => {});
+      // Start the commercial evaluation automatically once the official detail is ready.
+      void analyzeListing(code);
     } catch (e) {
       setSelected({ error: e instanceof Error ? e.message : 'No se encontró el detalle local.' });
     } finally {
@@ -905,6 +1132,9 @@ function App() {
           states: stateFilter ? [Number(stateFilter)] : [],
           matchLevel: matchLevelFilter || undefined,
           region: regionFilter || null,
+          modality: modalityFilter || null,
+          closeAfter: closeAfterFilter || null,
+          closeBefore: closeBeforeFilter || null,
         }),
       });
       setSearch(q);
@@ -945,7 +1175,7 @@ function App() {
       csrfToken = next.csrfToken;
       setAuth(next);
       setAlerts([]);
-      setAlertCounts({ total: 0, unread: 0 });
+      setAlertCounts({ total: 0, unread: 0, pendingMatches: 0 });
       setAlertsOpen(false);
       goToSection('Resumen');
       void refreshAlertCounts();
@@ -1036,12 +1266,16 @@ function App() {
         { name: 'Buscar oportunidades', icon: Search },
         { name: 'Oportunidades', icon: Sparkles },
         ...(companyPlan?.plan?.marketAnalytics ? [{ name: 'Inteligencia de mercado', icon: BarChart3 }] : []),
+        { name: 'Agentes IA', icon: FileSearch },
+        { name: 'Inteligencia de mercado', icon: BarChart3 },
+        { name: 'Analítica', icon: BarChart3, subItem: true },
       ],
     },
     {
       label: 'Gestionar',
       items: [
         { name: 'Seguimiento', icon: Activity },
+        { name: 'Calendario', icon: CalendarDays },
         { name: 'Alertas', icon: Bell },
       ],
     },
@@ -1049,22 +1283,20 @@ function App() {
       label: 'Espacio de trabajo',
       items: [
         { name: 'Mi empresa', icon: Building2 },
+        { name: 'Precios base', icon: Calculator },
         ...(isAdmin ? [{ name: 'Equipo y accesos', icon: Users }] : []),
         ...(isPlatformAdmin ? [{ name: 'Cuentas de usuario', icon: Users }] : []),
         ...(isAdmin ? [{ name: 'Configuración', icon: Settings }] : []),
       ],
     },
-    {
-      label: 'Herramientas internas',
-      items: [{ name: 'Centro de Pruebas', icon: FlaskConical, isSandbox: true }],
-    },
+    ...(isPlatformAdmin ? [{ label: 'Herramientas internas', items: [{ name: 'Centro de Pruebas', icon: FlaskConical, isSandbox: true }] }] : []),
   ];
 
   return (
     <div className="min-h-screen bg-[#F5F6F8] text-[#171A24] antialiased flex flex-col lg:flex-row">
       {/* SIDEBAR NAVIGATION (Desktop fixed / Mobile drawer conforming to Stitch) */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E1E4EA] p-5 flex flex-col justify-between transition-transform duration-200 lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E1E4EA] p-5 flex flex-col justify-between gap-4 overflow-y-auto transition-transform duration-200 lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
         }`}
       >
@@ -1127,7 +1359,7 @@ function App() {
                       key={item.name}
                       onClick={() => goToSection(item.name)}
                       aria-current={active ? 'page' : undefined}
-                      className={`w-full h-10 px-3 rounded-xl flex items-center justify-between text-xs font-semibold transition-colors ${
+                      className={`w-full h-10 px-3 rounded-xl flex items-center justify-between text-xs font-semibold transition-colors ${'subItem' in item && item.subItem ? 'pl-8 h-9 text-[11px]' : ''} ${
                         active
                           ? 'bg-[#f0edff] text-[#5636D9]'
                           : 'text-[#5D6472] hover:bg-[#F8F9FA] hover:text-[#171A24]'
@@ -1173,7 +1405,7 @@ function App() {
                   {auth.firstName ? `${auth.firstName} ${auth.lastName}` : auth.email}
                 </span>
                 <span className="text-[10px] text-[#8A92A6] block truncate">
-                  {auth.role === 'admin' ? 'Administrador' : 'Colaborador'}
+                  {auth.platformRole === 'admin' ? 'Administrador de plataforma' : 'Cliente'}
                 </span>
               </div>
             </div>
@@ -1197,7 +1429,7 @@ function App() {
       )}
 
       {/* MAIN CONTENT AREA */}
-      <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
+      <div className="min-w-0 flex-1 lg:ml-64 flex flex-col min-h-screen">
         {/* TOPBAR */}
         <header className={`summary-topbar h-14 bg-white border-b border-[#E1E4EA] px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30 shadow-sm ${section === 'Resumen' ? 'summary-topbar-home' : ''}`}>
           <div className="summary-topbar-identity flex items-center gap-3">
@@ -1238,11 +1470,7 @@ function App() {
             >
               <Search size={16} />
             </button>
-            <span className={`summary-health-pill hidden 2xl:flex items-center gap-1.5 px-3 py-1 rounded-full border ${health?.mysql ? 'text-[#16845B] bg-[#E8F5E9] border-[#d6eadb]' : 'text-amber-800 bg-amber-50 border-amber-200'}`}>
-              <span className="summary-health-dot" />
-              {health?.mysql ? 'Índice local conectado' : 'Índice local no disponible'}
-            </span>
-            <span className="hidden 2xl:flex items-center gap-1.5 text-[#5D6472] bg-[#F8F9FA] px-3 py-1 rounded-full border border-[#E1E4EA]">
+            <span className="summary-topbar-date hidden 2xl:flex items-center gap-1.5 text-[#5D6472] bg-[#F8F9FA] px-3 py-1 rounded-full border border-[#E1E4EA]">
               <Clock3 size={13} className="text-[#8A92A6]" />
               {todayLabel}
             </span>
@@ -1277,6 +1505,7 @@ function App() {
             <AlertNotificationPanel
               items={alerts}
               unread={alertCounts.unread}
+              pendingMatches={alertCounts.pendingMatches}
               open={alertsOpen}
               loading={alertsLoading}
               error={alertsError}
@@ -1290,9 +1519,14 @@ function App() {
                 setAlertsFilter('all');
                 goToSection('Alertas');
               }}
+              onPending={() => {
+                setAlertsOpen(false);
+                setAlertsFilter('pending');
+                goToSection('Alertas');
+              }}
               onRead={(id) => {
                 void api(`/api/alerts/${id}/read`, { method: 'POST' }).then(() => {
-                  setAlerts((curr) => alertsFilter === 'unread'
+                  setAlerts((curr) => alertsFilter === 'unread' || alertsFilter === 'pending'
                     ? curr.filter((item) => item.id !== id)
                     : curr.map((item) => (item.id === id ? { ...item, readAt: new Date().toISOString() } : item)));
                   void refreshAlertCounts();
@@ -1309,12 +1543,13 @@ function App() {
                 void openDetail(item.code);
               }}
             />
-            <div className="relative hidden lg:block">
+            <div className="profile-menu-wrap relative hidden lg:block">
               <button
                 type="button"
                 className="summary-topbar-profile flex items-center gap-2 rounded-xl px-2 py-1 hover:bg-[#F8F9FA]"
                 aria-haspopup="menu"
                 aria-expanded={userMenuOpen}
+                aria-controls="account-profile-menu"
                 onClick={() => setUserMenuOpen((open) => !open)}
               >
                 <span className="summary-topbar-avatar">
@@ -1322,7 +1557,7 @@ function App() {
                 </span>
                 <span className="min-w-0">
                   <b>{greetingName}</b>
-                  <small>{auth.role === 'admin' ? 'Administrador' : 'Colaborador'}</small>
+                  <small>{auth.platformRole === 'admin' ? 'Administrador de plataforma' : 'Cliente'}</small>
                 </span>
               </button>
               {userMenuOpen && (
@@ -1351,7 +1586,7 @@ function App() {
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => goToSection('Seguridad')}
+                    onClick={() => { setUserMenuOpen(false); goToSection('Seguridad'); }}
                     className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-[#5D6472] hover:bg-[#F8F9FA]"
                   >
                     <Shield size={15} /> Seguridad
@@ -1371,7 +1606,7 @@ function App() {
         </header>
 
         {/* BODY CONTAINER */}
-        <main className="flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto space-y-6">
+        <main className="min-w-0 flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto space-y-6">
           {/* SECTION: RESUMEN (Stitch screen 1) */}
           {section === 'Mi perfil' && (
             <ProfilePage
@@ -1413,6 +1648,12 @@ function App() {
                   </button>
                 )}
               </section>
+
+              <RevenueDesk
+                onOpen={(code) => void openDetail(code)}
+                onViewAll={() => goToSection('Seguimiento')}
+                onSearch={() => goToSection('Oportunidades')}
+              />
 
               <section className="summary-metric-grid grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Métricas del índice">
                 <article className="summary-metric-card">
@@ -1456,7 +1697,7 @@ function App() {
               </section>
 
               <section className="summary-insight-grid grid grid-cols-1 xl:grid-cols-12 gap-5">
-                <article className="summary-activity-panel xl:col-span-5">
+                <article className="summary-activity-panel xl:col-span-8">
                   <div className="summary-section-heading">
                     <div>
                       <h2>Actividad reciente</h2>
@@ -1500,7 +1741,7 @@ function App() {
                   </div>
                 </article>
 
-                <article className="summary-evolution-panel xl:col-span-7">
+                <article className="summary-evolution-panel xl:col-span-4">
                   <div className="summary-section-heading">
                     <div>
                       <h2>Evolución de oportunidades</h2>
@@ -1530,9 +1771,10 @@ function App() {
               </section>
 
               <CompanyOpportunities
+                csrfToken={auth.csrfToken}
                 onConfigure={() => goToSection('Mi empresa')}
                 onOpenListing={(code) => void openDetail(code)}
-                onViewAll={() => goToSection('Buscar oportunidades')}
+                onViewAll={() => goToSection('Oportunidades')}
               />
             </div>
           )}
@@ -1573,29 +1815,29 @@ function App() {
                 </div>
               </div>
 
-              {/* Natural Query Search Bar */}
-              <div className="bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-4">
+              {/* Search and filters */}
+              <div className="opportunity-search-panel">
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     void runSearch(search, 1);
                   }}
-                  className="flex items-center gap-2"
+                  className="opportunity-search-form"
                 >
-                  <div className="relative flex-1">
-                    <Search size={18} className="absolute left-3.5 top-3 text-[#8A92A6]" />
+                  <div className="opportunity-query-wrap">
+                    <Search size={21} aria-hidden="true" />
                     <input
                       type="text"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Describe qué ofrece tu empresa... Ej: Insumos de laboratorio en Santiago o Mantención de transformadores"
-                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-[#E1E4EA] text-sm text-[#171A24] focus:outline-none focus:border-[#5636D9]"
+                      aria-label="Describe qué oportunidad buscas"
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={searchLoading}
-                    className="h-11 px-5 bg-[#5636D9] hover:bg-[#4b2ec7] text-white text-xs font-semibold rounded-xl flex items-center gap-2 transition-colors shadow-sm shrink-0"
+                    className="opportunity-search-submit"
                   >
                     {searchLoading ? <LoaderCircle size={16} className="spin" /> : <Search size={16} />}
                     Buscar
@@ -1603,8 +1845,8 @@ function App() {
                 </form>
 
                 {/* Example query chips */}
-                <div className="flex items-center gap-1.5 flex-wrap text-xs">
-                  <span className="text-[#8A92A6]">Prueba buscar:</span>
+                <div className="opportunity-search-examples">
+                  <span>Prueba buscar:</span>
                   {[
                     'Equipamiento médico y quirúrgico',
                     'Servicios de aseo en hospitales',
@@ -1618,21 +1860,73 @@ function App() {
                         setSearch(ex);
                         void runSearch(ex, 1);
                       }}
-                      className="px-2.5 py-1 rounded-full bg-[#F5F6F8] hover:bg-[#f0edff] text-[#5D6472] hover:text-[#5636D9] border border-[#E1E4EA] transition-colors"
+                      className="opportunity-example-chip"
                     >
                       {ex}
                     </button>
                   ))}
                 </div>
 
-                {/* Filters Row */}
-                <div className="pt-3 border-t border-[#E1E4EA] grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div>
-                    <label className="block text-[#8A92A6] font-semibold mb-1">Coincidencia</label>
+                <div className="opportunity-filter-presets" aria-label="Filtros rápidos de fecha de cierre">
+                  <span>Atajos:</span>
+                  {[7, 30].map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => {
+                        const start = new Date();
+                        start.setHours(0, 0, 0, 0);
+                        const end = new Date(start);
+                        end.setDate(end.getDate() + days);
+                        const toISO = (date: Date) => {
+                          const offset = date.getTimezoneOffset();
+                          return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 10);
+                        };
+                        setCloseAfterFilter(toISO(start));
+                        setCloseBeforeFilter(toISO(end));
+                        setStateFilter('5');
+                      }}
+                      className="opportunity-preset-chip"
+                    >
+                      Cierres en {days} días
+                    </button>
+                  ))}
+                </div>
+
+                <div className="opportunity-filter-heading">
+                  <div className="opportunity-filter-title">
+                    <strong>Filtros</strong>
+                    <span>Combina criterios admitidos por el buscador</span>
+                    {(Number(Boolean(matchLevelFilter)) + Number(Boolean(stateFilter)) + Number(Boolean(regionFilter.trim())) + Number(Boolean(modalityFilter)) + Number(Boolean(closeAfterFilter)) + Number(Boolean(closeBeforeFilter))) > 0 && (
+                      <span className="opportunity-active-count">
+                        {Number(Boolean(matchLevelFilter)) + Number(Boolean(stateFilter)) + Number(Boolean(regionFilter.trim())) + Number(Boolean(modalityFilter)) + Number(Boolean(closeAfterFilter)) + Number(Boolean(closeBeforeFilter))} filtros activos
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="opportunity-clear-filters"
+                    disabled={!matchLevelFilter && !stateFilter && !regionFilter && !modalityFilter && !closeAfterFilter && !closeBeforeFilter}
+                    onClick={() => {
+                      setMatchLevelFilter('');
+                      setStateFilter('');
+                      setRegionFilter('');
+                      setModalityFilter('');
+                      setCloseAfterFilter('');
+                      setCloseBeforeFilter('');
+                    }}
+                  >
+                    Limpiar filtros
+                  </button>
+                </div>
+
+                <div className="opportunity-filter-grid">
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-match-level">Nivel de coincidencia</label>
                     <select
+                      id="opportunity-match-level"
                       value={matchLevelFilter}
                       onChange={(e) => setMatchLevelFilter(e.target.value)}
-                      className="w-full h-8 px-2 rounded-lg border border-[#E1E4EA] text-xs bg-white text-[#171A24]"
                     >
                       <option value="">Todos los niveles</option>
                       <option value="high">Alta</option>
@@ -1640,12 +1934,12 @@ function App() {
                       <option value="exploratory">Exploratoria</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-[#8A92A6] font-semibold mb-1">Estado</label>
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-status">Estado</label>
                     <select
+                      id="opportunity-status"
                       value={stateFilter}
                       onChange={(e) => setStateFilter(e.target.value)}
-                      className="w-full h-8 px-2 rounded-lg border border-[#E1E4EA] text-xs bg-white text-[#171A24]"
                     >
                       <option value="">Todos los estados</option>
                       <option value="5">Publicada</option>
@@ -1654,24 +1948,56 @@ function App() {
                       <option value="7">Desierta</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-[#8A92A6] font-semibold mb-1">Región</label>
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-region">Región</label>
                     <input
+                      id="opportunity-region"
                       value={regionFilter}
                       onChange={(e) => setRegionFilter(e.target.value)}
                       placeholder="Ej. Metropolitana"
-                      className="w-full h-8 px-2 rounded-lg border border-[#E1E4EA] text-xs text-[#171A24]"
                     />
                   </div>
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      onClick={() => void runSearch(search, 1)}
-                      className="w-full h-8 bg-white border border-[#E1E4EA] hover:bg-gray-50 text-[#5D6472] font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5"
-                    >
-                      <Filter size={13} /> Aplicar filtros
-                    </button>
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-modality">Tipo de proceso</label>
+                    <select id="opportunity-modality" value={modalityFilter} onChange={(e) => setModalityFilter(e.target.value)}>
+                      <option value="">Todos los tipos</option>
+                      <option value="public">Licitación pública</option>
+                      <option value="private">Licitación privada</option>
+                      <option value="agile">Compra Ágil</option>
+                    </select>
                   </div>
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-close-after">Cierre desde</label>
+                    <input id="opportunity-close-after" type="date" value={closeAfterFilter} onChange={(e) => setCloseAfterFilter(e.target.value)} />
+                  </div>
+                  <div className="opportunity-filter-field">
+                    <label htmlFor="opportunity-close-before">Cierre hasta</label>
+                    <input id="opportunity-close-before" type="date" value={closeBeforeFilter} onChange={(e) => setCloseBeforeFilter(e.target.value)} />
+                  </div>
+                </div>
+
+                {(matchLevelFilter || stateFilter || regionFilter.trim() || modalityFilter || closeAfterFilter || closeBeforeFilter) && (
+                  <div className="opportunity-active-chips" aria-label="Filtros activos">
+                    <span>Aplicados</span>
+                    {matchLevelFilter && <button type="button" onClick={() => setMatchLevelFilter('')}>Coincidencia: {matchLevelFilter === 'high' ? 'Alta' : matchLevelFilter === 'medium' ? 'Media' : 'Exploratoria'} <X size={14} /></button>}
+                    {stateFilter && <button type="button" onClick={() => setStateFilter('')}>Estado: {stateFilter === '5' ? 'Publicada' : stateFilter === '6' ? 'Cerrada' : stateFilter === '8' ? 'Adjudicada' : 'Desierta'} <X size={14} /></button>}
+                    {regionFilter.trim() && <button type="button" onClick={() => setRegionFilter('')}>Región: {regionFilter.trim()} <X size={14} /></button>}
+                    {modalityFilter && <button type="button" onClick={() => setModalityFilter('')}>Tipo: {modalityFilter === 'agile' ? 'Compra Ágil' : modalityFilter === 'private' ? 'Privada' : 'Pública'} <X size={14} /></button>}
+                    {closeAfterFilter && <button type="button" onClick={() => setCloseAfterFilter('')}>Desde: {closeAfterFilter} <X size={14} /></button>}
+                    {closeBeforeFilter && <button type="button" onClick={() => setCloseBeforeFilter('')}>Hasta: {closeBeforeFilter} <X size={14} /></button>}
+                  </div>
+                )}
+
+                <div className="opportunity-filter-footer">
+                  <span><span className="opportunity-info-mark">i</span> El tipo de proceso y el rango de cierre se aplican al buscar.</span>
+                  <button
+                    type="button"
+                    onClick={() => void runSearch(search, 1)}
+                    disabled={searchLoading || search.trim().length < 2}
+                    className="opportunity-apply-filters"
+                  >
+                    <Filter size={16} /> Aplicar filtros
+                  </button>
                 </div>
               </div>
 
@@ -1857,6 +2183,31 @@ function App() {
             </div>
           )}
 
+          {section === 'Oportunidades' && (
+            <div className="space-y-6">
+              <header>
+                <h1 className="text-2xl sm:text-3xl font-bold text-[#171A24] tracking-tight">Oportunidades</h1>
+                <p className="text-sm text-[#5D6472] mt-1">Revisa las licitaciones que coinciden con el catálogo de tu empresa.</p>
+              </header>
+              <CompanyOpportunities
+                key={auth.activeCompanyId}
+                csrfToken={auth.csrfToken}
+                board
+                onConfigure={() => goToSection('Mi empresa')}
+                onOpenListing={(code) => void openDetail(code)}
+              />
+            </div>
+          )}
+
+          {section === 'Agentes IA' && (
+            <CommercialAgents
+              csrfToken={auth.csrfToken}
+              companyName={auth.memberships.find((membership) => membership.companyId === auth.activeCompanyId)?.companyName ?? 'tu empresa'}
+              onConfigure={() => goToSection('Mi empresa')}
+              onAnalyzeListing={(code) => void openDetail(code)}
+            />
+          )}
+
           {/* SECTION: INTELIGENCIA DE MERCADO (Stitch 4) */}
           {section === 'Inteligencia de mercado' && (
             <MarketAnalytics
@@ -1865,13 +2216,24 @@ function App() {
               error={error}
               onOpenListing={(code) => void openDetail(code)}
               onViewListings={() => goToSection('Buscar oportunidades')}
+              onOpenAnalytics={() => goToSection('Analítica')}
               onRetry={() => void refresh()}
             />
           )}
 
+          {section === 'Analítica' && (
+            <AnalyticsWorkspace
+              key={auth.activeCompanyId}
+              request={api}
+              csrfToken={auth.csrfToken}
+            />
+          )}
+
           {/* SECTION: SEGUIMIENTO (Stitch 5) */}
-          {section === 'Seguimiento' && (
+          {(section === 'Seguimiento' || section === 'Calendario') && (
             <TrackingWorkspace
+              key={`${auth.activeCompanyId}:${section}`}
+              calendar={section === 'Calendario'}
               onOpen={(code) => void openDetail(code)}
               onChanged={() => void refreshAlertCounts()}
               csrfToken={auth.csrfToken}
@@ -1882,11 +2244,12 @@ function App() {
           {section === 'Alertas' && (
             <AlertsPage
               items={alerts}
+              overview={alertOverview}
               filter={alertsFilter}
               onFilter={(val) => setAlertsFilter(val)}
               onRead={(id) => {
                 void api(`/api/alerts/${id}/read`, { method: 'POST' }).then(() => {
-                  setAlerts((curr) => alertsFilter === 'unread'
+                  setAlerts((curr) => alertsFilter === 'unread' || alertsFilter === 'pending'
                     ? curr.filter((item) => item.id !== id)
                     : curr.map((item) => (item.id === id ? { ...item, readAt: new Date().toISOString() } : item)));
                   void refreshAlertCounts();
@@ -1898,9 +2261,27 @@ function App() {
                   void refreshAlertCounts();
                 });
               }}
-              onOpen={(item) => void openDetail(item.code)}
+              onOpen={(item) => {
+                if (item.type === 'new_match' && !item.readAt) {
+                  void api(`/api/alerts/${item.id}/read`, { method: 'POST' }).then(() => {
+                    setAlerts((curr) => curr.filter((entry) => entry.id !== item.id));
+                    void refreshAlertCounts();
+                  });
+                }
+                void openDetail(item.code);
+              }}
+              onGoToTracking={() => goToSection('Seguimiento')}
+              onRunSearch={async () => {
+                const result = await api<{ evaluated: number; created: number; configured: boolean; locked: boolean }>('/api/company/proactive-search/run', { method: 'POST' });
+                if (result.locked) throw new Error('Ya hay una búsqueda automática en curso. Intenta de nuevo en un momento.');
+                await loadAlerts(alertsFilter);
+                return result;
+              }}
+              canRunSearch={auth.role === 'admin' || auth.role === 'collaborator'}
               loading={alertsLoading}
               error={alertsError}
+              csrfToken={auth.csrfToken}
+              canManageCompany={auth.role === 'admin'}
             />
           )}
 
@@ -1912,6 +2293,10 @@ function App() {
               canEdit={auth.role === 'admin'}
               accessRole={auth.role}
             />
+          )}
+
+          {section === 'Precios base' && (
+            <PriceBookWorkspace csrfToken={auth.csrfToken} canEdit={auth.role === 'admin' || auth.role === 'collaborator'} />
           )}
 
           {/* SECTION: EQUIPO Y ACCESOS (Stitch 7 RBAC) */}
@@ -1983,7 +2368,7 @@ function App() {
           )}
 
           {/* SECTION: CENTRO DE PRUEBAS (Isolated Sandbox, Stitch screen) */}
-          {section === 'Centro de Pruebas' && (
+          {section === 'Centro de Pruebas' && isPlatformAdmin && (
             <SandboxCenter onBackToApp={() => goToSection('Resumen')} />
           )}
         </main>
@@ -2003,6 +2388,9 @@ function App() {
       {selected && (
         <ListingDetailModal
           listing={selected}
+          companyId={auth.activeCompanyId ?? 0}
+          userId={auth.userId}
+          csrfToken={auth.csrfToken}
           loading={detailLoading}
           saved={selectedSaved}
           saving={detailSaving}
@@ -2013,6 +2401,7 @@ function App() {
           }}
           analysis={analysis}
           analysisLoading={analysisLoading}
+          onGoToCompany={() => goToSection('Mi empresa')}
           onClose={closeDetail}
         />
       )}

@@ -11,6 +11,7 @@ import {
   parseExplicitExclusions,
   scoreCatalogMatch,
   searchAmbiguityHint,
+  hasProfileKeywordEvidence,
 } from '../src/commercialMatching.js';
 
 const pendones = scoreCatalogMatch(
@@ -124,6 +125,8 @@ assert.equal(hasCommercialTerm('Oferta gastronómica', 'gastronomico'), true, 'g
 const miningListing = scoreCatalogMatch(foodCatalog, 'Adquisición de maquinaria para procesamiento minero', '', '');
 assert.equal(miningListing, null, 'shared generic words must not classify mining equipment as food equipment');
 assert.equal(matchesCommercialExclusion('Mejoramiento Plaza Los Molinos', 'plaza los molinos'), true);
+assert.equal(hasProfileKeywordEvidence('equipo de extracción de aceite', 'CCP Chillán servicio extracción de basura', '', ''), false, 'a shared extraction term must not match a different product domain');
+assert.equal(hasProfileKeywordEvidence('equipo de extracción de aceite', 'Adquisición equipo de extracción de aceite vegetal', '', ''), true, 'the full commercial phrase remains matchable');
 assert.equal(isKnownProductPlaceName('Mejoramiento Paseo Parque Los Molinos Curaco de Vélez', 'Molino coloidal industrial'), true);
 assert.equal(isKnownProductPlaceName('Adquisición de molinos industriales para harina', 'Molino industrial para alimentos'), false, 'Real mill equipment must remain eligible.');
 assert.equal(isKnownProductPlaceName('Caleta Hornos, Región de Atacama', 'Horno combinado industrial'), true);

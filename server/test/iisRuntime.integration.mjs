@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { existsSync, readFileSync } from 'node:fs';
@@ -62,14 +62,19 @@ function runtimeEnvironment(httpPlatformPort, port = httpPlatformPort) {
   };
 }
 
-async function runExpectedStartupFailure(expectedCode, env) {
-  const probe = spawn(process.execPath, [join(appRoot, 'sharkasp-bootstrap.mjs')], { cwd: appRoot, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let probeOutput = '';
-  probe.stdout.setEncoding('utf8').on('data', (chunk) => { probeOutput += chunk; });
-  probe.stderr.setEncoding('utf8').on('data', (chunk) => { probeOutput += chunk; });
-  const exitCode = await Promise.race([new Promise((resolveExit) => probe.once('exit', resolveExit)), delay(10000).then(() => null)]);
-  if (exitCode === null) { probe.kill(); throw new Error(`Bootstrap did not stop on ${expectedCode}.`); }
-  assert.notEqual(exitCode, 0, `${expectedCode} must fail fast.`);
+function runExpectedStartupFailure(expectedCode, env) {
+  const probe = spawnSync(process.execPath, [join(appRoot, 'sharkasp-bootstrap.mjs')], {
+    cwd: appRoot,
+    env,
+    encoding: 'utf8',
+    timeout: 10000,
+    maxBuffer: 1024 * 1024,
+    windowsHide: true,
+  });
+  const probeOutput = `${probe.stdout ?? ''}${probe.stderr ?? ''}`;
+  assert.equal(probe.error, undefined, `Bootstrap could not complete on ${expectedCode}: ${probe.error?.message ?? 'unknown spawn error'}`);
+  assert.equal(probe.signal, null, `Bootstrap was terminated before reporting ${expectedCode}.`);
+  assert.notEqual(probe.status, 0, `${expectedCode} must fail fast.`);
   let safeProbeOutput = probeOutput;
   for (const value of Object.values(fakeSecrets)) safeProbeOutput = safeProbeOutput.split(value).join('[redacted]');
   assert.ok(safeProbeOutput.includes(`code=${expectedCode}`), `Expected sanitized ${expectedCode} diagnostic; output=${safeProbeOutput.slice(-1000)}`);

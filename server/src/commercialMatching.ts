@@ -148,6 +148,14 @@ export function hasCommercialPhrase(text: string, phrase: string): boolean {
   return normalized.length >= 5 && ` ${normalizeCommercialText(text)} `.includes(` ${normalized} `);
 }
 
+/** Profile keywords are complete commercial phrases; matching only one shared word creates unrelated leads. */
+export function hasProfileKeywordEvidence(keyword: string, title: string, description: string, items: string): boolean {
+  const meaningfulTerms = [...new Set(commercialTerms(keyword, true).filter(term => !genericWords.has(term)))];
+  if (!meaningfulTerms.length) return false;
+  const sources = [title, description, items];
+  return sources.some(source => meaningfulTerms.every(term => hasCommercialTerm(source, term)));
+}
+
 export function matchesCommercialExclusion(text: string, exclusion: string): boolean {
   const meaningfulTerms = commercialTerms(exclusion, true);
   if (!meaningfulTerms.length) return false;
@@ -237,12 +245,25 @@ export function scoreCatalogMatch(product: CatalogMatchInput, title: string, des
   if (!score && titleNameHits.length) score = 50 + Math.round(25 * coverage);
   if (!score && itemNameHits.length) score = 46 + Math.round(24 * coverage);
   if (!score && descriptionNameHits.length) score = 38 + Math.round(22 * coverage);
-  if (!score && synonymHits.length) score = 48;
-  if (!score && keywordHits.length) score = 44;
+  // A semantic hit is not a fixed score: give more weight to a longer,
+  // more specific phrase and to evidence in the title than in the description.
+  // This avoids making unrelated one- and multi-word synonym hits all look like 48/100.
+  const semanticEvidence = [...synonymHits, ...keywordHits];
+  const strongestSemanticPhrase = semanticEvidence.reduce((best, value) => {
+    const terms = [...new Set(commercialTerms(value, true))];
+    return terms.length > best.length ? terms : best;
+  }, [] as string[]);
+  const semanticSourceBoost = title && semanticEvidence.some(value => hasCommercialTerm(title, value)) ? 8
+    : items && semanticEvidence.some(value => hasCommercialTerm(items, value)) ? 6
+    : description && semanticEvidence.some(value => hasCommercialTerm(description, value)) ? 4 : 0;
+  if (!score && synonymHits.length) score = 34 + Math.min(22, strongestSemanticPhrase.length * 6) + semanticSourceBoost;
+  if (!score && keywordHits.length) score = 30 + Math.min(22, strongestSemanticPhrase.length * 6) + semanticSourceBoost;
   if (!score && exploratoryEvidence.length) score = 24 + Math.min(12, (exploratoryEvidence.length - 1) * 4);
 
   score += Math.min(12, independentSupport.length * 4);
-  if (specificNameTerms.length > 1 && coverage > 0 && coverage <= 0.5) score = Math.min(score, 48);
+  if (specificNameTerms.length > 1 && coverage > 0 && coverage <= 0.5) {
+    score = Math.min(score, 38 + Math.round(12 * coverage));
+  }
   score = Math.min(100, score);
 
   const evidenceTerms = [...new Set([

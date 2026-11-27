@@ -54,8 +54,15 @@ const request = async <T,>(url: string, options: RequestInit = {}, csrfToken = '
     headers.set('X-CSRF-Token', csrfToken);
   }
   const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error ?? 'No se pudo completar la solicitud.');
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const details = data.fieldErrors && typeof data.fieldErrors === 'object'
+      ? Object.entries(data.fieldErrors as Record<string, unknown>)
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+          .map(([field, message]) => `${field}: ${message}`)
+      : [];
+    throw new Error([data.error ?? 'No se pudo completar la solicitud.', ...details].join(' '));
+  }
   return data as T;
 };
 

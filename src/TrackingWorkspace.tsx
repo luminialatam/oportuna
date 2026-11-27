@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { TrackingCalendar } from './TrackingCalendar';
 import {
   Activity,
   AlertTriangle,
@@ -9,11 +10,12 @@ import {
   List,
   LoaderCircle,
   Search,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
 
-type Tracked = {
+export type Tracked = {
   id: number;
   codigo: string;
   estado: string;
@@ -74,10 +76,14 @@ export function TrackingWorkspace({
   onOpen,
   onChanged,
   csrfToken,
+  calendar = false,
+  onExplore,
 }: {
   onOpen: (codigo: string) => void;
   onChanged: () => void;
   csrfToken: string;
+  calendar?: boolean;
+  onExplore?: () => void;
 }) {
   const [items, setItems] = useState<Tracked[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -89,6 +95,8 @@ export function TrackingWorkspace({
   const [query, setQuery] = useState('');
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [activeNotesId, setActiveNotesId] = useState<number | null>(null);
+  const pipelineTotal = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const exploreOpportunities = onExplore ?? (() => window.location.assign('/buscar'));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -147,6 +155,21 @@ export function TrackingWorkspace({
       setError(e instanceof Error ? e.message : 'No se pudo quitar la licitación.');
     }
   };
+
+  if (calendar) {
+    return (
+      <TrackingCalendar
+        items={items}
+        total={Object.values(counts).reduce((sum, count) => sum + count, 0)}
+        loading={loading}
+        error={error}
+        onRetry={() => void load()}
+        onOpen={onOpen}
+        onExplore={exploreOpportunities}
+        csrfToken={csrfToken}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -212,7 +235,7 @@ export function TrackingWorkspace({
                 : 'bg-[#F8F9FA] text-[#5D6472] hover:bg-gray-200'
             }`}
           >
-            Todas ({items.length})
+            Todas ({pipelineTotal})
           </button>
           {STAGES.map((st) => (
             <button
@@ -259,18 +282,90 @@ export function TrackingWorkspace({
           Cargando tu tablero de seguimiento…
         </div>
       ) : items.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-2xl border border-[#E1E4EA] space-y-3">
-          <div className="w-12 h-12 rounded-xl bg-[#f0edff] text-[#5636D9] flex items-center justify-center mx-auto">
-            <Activity size={24} />
-          </div>
-          <h3 className="font-bold text-base text-[#171A24]">
-            Aún no tienes licitaciones en seguimiento
-          </h3>
-          <p className="text-xs text-[#5D6472] max-w-sm mx-auto">
-            Explora las oportunidades en "Buscar oportunidades" o "Resumen" y haz clic en "Guardar en
-            seguimiento" para comenzar a gestionar tus postulaciones aquí.
-          </p>
-        </div>
+        <section className="overflow-hidden rounded-2xl border border-[#DED8FF] bg-white shadow-sm">
+          {pipelineTotal === 0 && !query && !filter ? (
+            <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
+              <div className="p-6 sm:p-8">
+                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#f0edff] text-[#5636D9]">
+                  <Sparkles size={22} />
+                </div>
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[#5636D9]">
+                  Tu próximo paso comercial
+                </p>
+                <h2 className="max-w-xl text-xl font-bold tracking-tight text-[#171A24] sm:text-2xl">
+                  Convierte una coincidencia en una oportunidad gestionada
+                </h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-[#5D6472]">
+                  Aquí podrás controlar cada licitación desde la primera evaluación hasta la presentación. Primero encuentra una oportunidad relevante y guárdala para iniciar el seguimiento.
+                </p>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    onClick={exploreOpportunities}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#482bc5]"
+                  >
+                    <Search size={16} /> Encontrar oportunidades <ArrowRight size={16} />
+                  </button>
+                  <button
+                    onClick={() => void load()}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#E1E4EA] px-4 py-2 text-sm font-semibold text-[#5D6472] transition hover:bg-gray-50"
+                  >
+                    <Activity size={16} /> Actualizar tablero
+                  </button>
+                </div>
+              </div>
+              <div className="border-t border-[#EEEAFE] bg-[#FAF9FF] p-6 lg:border-l lg:border-t-0 sm:p-8">
+                <h3 className="text-sm font-bold text-[#171A24]">Cómo se activa tu pipeline</h3>
+                <ol className="mt-4 space-y-4">
+                  {[
+                    ['01', 'Encuentra', 'Revisa las coincidencias con el catálogo de tu empresa.'],
+                    ['02', 'Evalúa', 'Confirma plazo, partidas y requisitos antes de cotizar.'],
+                    ['03', 'Gestiona', 'Mueve la oportunidad por etapas y asigna fechas al equipo.'],
+                  ].map(([number, title, description]) => (
+                    <li key={number} className="flex gap-3">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-[#5636D9] ring-1 ring-[#DED8FF]">{number}</span>
+                      <div>
+                        <p className="text-sm font-semibold text-[#171A24]">{title}</p>
+                        <p className="mt-0.5 text-xs leading-5 text-[#687184]">{description}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <p className="mt-5 border-t border-[#E9E5FA] pt-4 text-xs leading-5 text-[#687184]">
+                  Las cifras y etapas se actualizarán a medida que agregues licitaciones; no mostramos datos de ejemplo.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="p-8 text-center sm:p-12">
+              <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-[#f0edff] text-[#5636D9]">
+                <Search size={21} />
+              </div>
+              <h3 className="font-bold text-base text-[#171A24]">
+                {pipelineTotal > 0 ? 'No hay resultados con estos filtros' : 'Aún no tienes licitaciones en seguimiento'}
+              </h3>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#5D6472]">
+                {pipelineTotal > 0
+                  ? 'Prueba otra búsqueda o cambia la etapa seleccionada para volver a ver tus oportunidades.'
+                  : 'Busca oportunidades y guárdalas en seguimiento. Aparecerán aquí con sus plazos y etapa comercial.'}
+              </p>
+              <div className="mt-5 flex flex-wrap justify-center gap-3">
+                {(query || filter) && (
+                  <button
+                    onClick={() => { setQuery(''); setFilter(''); }}
+                    className="rounded-lg border border-[#E1E4EA] px-4 py-2 text-sm font-semibold text-[#5D6472] hover:bg-gray-50"
+                  >
+                    Limpiar búsqueda y filtros
+                  </button>
+                )}
+                {pipelineTotal === 0 && (
+                  <button onClick={exploreOpportunities} className="inline-flex items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 text-sm font-semibold text-white hover:bg-[#482bc5]">
+                    Buscar oportunidades <ArrowRight size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
       ) : viewMode === 'kanban' ? (
         /* KANBAN VIEW */
         <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 items-start overflow-x-auto pb-4">

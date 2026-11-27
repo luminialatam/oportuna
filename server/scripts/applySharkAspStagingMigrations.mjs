@@ -2,16 +2,26 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import mysql from 'mysql2/promise';
-import { createMysqlTlsOptions } from '../../dist-server/server/src/mysqlTlsConfig.js';
 
 const TARGET = Object.freeze({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT || 3306),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
+  host: process.env.STAGING_DB_HOST?.trim(),
+  port: Number(process.env.STAGING_DB_PORT || 3306),
+  database: process.env.STAGING_DB_NAME?.trim(),
+  user: process.env.STAGING_DB_USER?.trim(),
 });
 const migrationsDirectory = join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
+
+function getMigrationFiles() {
+  const files = readdirSync(migrationsDirectory)
+    .filter((name) => /^\d{3}_.+\.sql$/.test(name) && !name.endsWith('.down.sql'))
+    .sort((left, right) => Number(left.slice(0, 3)) - Number(right.slice(0, 3)));
+  const versions = files.map((name) => Number(name.slice(0, 3)));
+  const hasContiguousVersions = versions.every((version, index) => version === index + 1);
+  if (!files.length || !hasContiguousVersions) {
+    throw new Error('Las migraciones deben tener versiones consecutivas desde 001.');
+  }
+  return files;
+}
 
 function ask(question) {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -58,14 +68,53 @@ function versionAtLeast(version, minimum) {
 }
 
 async function main() {
+  const planOnly = process.argv.includes('--plan');
   const checkOnly = process.argv.includes('--check');
   const inspectOnly = process.argv.includes('--inspect');
-  if (checkOnly && inspectOnly) throw new Error('Usa solo una opción de lectura por ejecución.');
-  if (TARGET.host !== 'mysql1002.site4now.net' || TARGET.database !== 'db_ac9392_licitapp' || TARGET.user !== 'ac9392_licitapp') {
-    throw new Error('DB_HOST, DB_NAME y DB_USER deben coincidir exactamente con el destino de staging confirmado.');
+  if ([planOnly, checkOnly, inspectOnly].filter(Boolean).length > 1) {
+    throw new Error('Usa solo una opción por ejecución: --plan, --check o --inspect.');
   }
-  if (!Number.isInteger(TARGET.port) || TARGET.port < 1 || TARGET.port > 65535) throw new Error('DB_PORT no es válido.');
-  const ssl = createMysqlTlsOptions(process.env);
+  const files = getMigrationFiles();
+  const migrationRange = `${files[0].slice(0, 3)}–${files.at(-1).slice(0, 3)}`;
+  if (planOnly) {
+    process.stdout.write(`Plan local de migraciones (${migrationRange}; ${files.length} archivos ascendentes):\n`);
+    for (const name of files) process.stdout.write(`- ${name}\n`);
+    process.stdout.write('No se leyó configuración de base ni se conectó a ningún servidor.\n');
+    return;
+  }
+  if (!TARGET.host || !TARGET.database || !TARGET.user) {
+    throw new Error('Define STAGING_DB_HOST, STAGING_DB_NAME y STAGING_DB_USER para seleccionar una base de staging aislada.');
+  }
+  if (TARGET.host.toLowerCase() === 'mysql1002.site4now.net'
+    && TARGET.port === 3306
+    && TARGET.database === 'db_ac9392_licitapp') {
+    throw new Error('El destino corresponde a la base compartida existente; se bloqueó la conexión de staging.');
+  }
+  if (!Number.isInteger(TARGET.port) || TARGET.port < 1 || TARGET.port > 65535) throw new Error('STAGING_DB_PORT no es válido.');
+  const sslMode = process.env.STAGING_DB_SSL_MODE?.trim().toUpperCase() || 'VERIFY_IDENTITY';
+  if (sslMode === 'SHARKASP_STAGING_COMPAT' || process.env.DB_SSL_SHARKASP_COMPAT === 'true') {
+    throw new Error('Las migraciones de staging requieren TLS con identidad o CA verificada.');
+  }
+  const [{ default: mysql }, { createMysqlTlsOptions }] = await Promise.all([
+    import('mysql2/promise'),
+    import('../../dist-server/server/src/mysqlTlsConfig.js'),
+  ]);
+  const sslEnvironment = {
+    ...process.env,
+    APP_ENV: 'staging',
+    NODE_ENV: 'production',
+    PROCESS_ROLE: 'web',
+    DB_HOST: TARGET.host,
+    DB_PORT: String(TARGET.port),
+    DB_NAME: TARGET.database,
+    DB_USER: TARGET.user,
+    DB_SSL: 'true',
+    DB_SSL_MODE: sslMode,
+    DB_SSL_CA: process.env.STAGING_DB_SSL_CA,
+    DB_SSL_CA_SHA256: process.env.STAGING_DB_SSL_CA_SHA256,
+    DB_SSL_SHARKASP_COMPAT: '',
+  };
+  const ssl = createMysqlTlsOptions(sslEnvironment);
   if (!ssl) throw new Error('Define DB_SSL=true; no se permite una conexión sin TLS.');
   const password = await askSecret('Contraseña MySQL staging (entrada oculta): ');
   if (!password) throw new Error('La contraseña no puede estar vacía.');
@@ -98,15 +147,10 @@ async function main() {
     const hasAll = grants.includes('ALL PRIVILEGES');
     const requiredPrivileges = ['CREATE', 'ALTER', 'INDEX', 'REFERENCES', 'INSERT', 'SELECT', 'UPDATE'];
     const missingPrivileges = hasAll ? [] : requiredPrivileges.filter((privilege) => !grants.includes(privilege));
-    const files = readdirSync(migrationsDirectory)
-      .filter((name) => /^0(0[1-9]|1[0-3])_.*\.sql$/.test(name) && !name.endsWith('.down.sql'))
-      .sort();
-    if (files.length !== 13) throw new Error('No se encontraron exactamente las migraciones 001–013.');
-    const mode = process.env.DB_SSL_MODE?.trim().toUpperCase() || 'VERIFY_IDENTITY';
-    const tlsSummary = mode === 'SHARKASP_STAGING_COMPAT'
-      ? 'TLS cifrado; certificado no autenticado (compatibilidad temporal)'
-      : mode === 'VERIFY_CA' ? 'TLS con CA verificada; sin validación de hostname' : 'TLS con cadena y hostname verificados';
-    process.stdout.write(`Destino verificado: ${TARGET.host} / ${server.dbName}; MySQL ${server.version}; ${tlsSummary}; tablas=${tableRows.length}.\n`);
+    const tlsSummary = sslMode === 'VERIFY_CA'
+      ? 'TLS con CA verificada; sin validación de hostname'
+      : 'TLS con cadena y hostname verificados';
+    process.stdout.write(`Destino de staging verificado: ${TARGET.host} / ${server.dbName}; MySQL ${server.version}; ${tlsSummary}; tablas=${tableRows.length}.\n`);
     if (inspectOnly) {
       const [tables] = await connection.query(
         'SELECT table_name AS tableName, table_type AS tableType, engine, table_collation AS tableCollation FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name',
@@ -143,7 +187,7 @@ async function main() {
     if (checkOnly) {
       process.stdout.write(`Tablas existentes: ${tableRows.length ? tableRows.map((row) => row.tableName).join(', ') : '(ninguna)'}\n`);
       process.stdout.write(`Permisos de migración: ${missingPrivileges.length ? `faltan ${missingPrivileges.join(', ')}` : 'suficientes'}.\n`);
-      process.stdout.write(`Migraciones disponibles y ordenadas: ${files[0].slice(0, 3)}–${files.at(-1).slice(0, 3)} (${files.length}); down migration excluida.\n`);
+      process.stdout.write(`Migraciones disponibles y ordenadas: ${migrationRange} (${files.length}); down migration excluida.\n`);
       process.stdout.write('Modo --check: solo lectura; no se aplicó SQL.\n');
       return;
     }
@@ -161,7 +205,7 @@ async function main() {
       return { name, sql };
     });
 
-    const confirmation = `APLICAR 001-013 EN ${TARGET.host}/${TARGET.database}`;
+    const confirmation = `APLICAR ${files[0].slice(0, 3)}-${files.at(-1).slice(0, 3)} EN ${TARGET.host}/${TARGET.database}`;
     const typed = await ask(`Escribe exactamente «${confirmation}» para ejecutar las migraciones: `);
     if (typed !== confirmation) throw new Error('Confirmación incorrecta; no se ejecutó SQL.');
 
@@ -186,11 +230,14 @@ async function main() {
       'SELECT COUNT(*) AS totalForeignKeys FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE()',
     );
     const [requiredRows] = await connection.query(
-      "SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('licitaciones','app_users','company_memberships','company_alerts','app_rate_limits','sync_jobs','licitacion_items')",
+      "SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('licitaciones','app_users','company_memberships','company_alerts','app_rate_limits','sync_jobs','licitacion_items','company_offer_drafts','analytics_saved_views')",
     );
-    if (requiredRows.length !== 7) throw new Error('La verificación posterior no encontró todas las tablas críticas.');
+    const requiredTables = new Set(requiredRows.map((row) => row.table_name));
+    for (const tableName of ['licitaciones', 'app_users', 'company_memberships', 'company_alerts', 'app_rate_limits', 'sync_jobs', 'licitacion_items', 'company_offer_drafts', 'analytics_saved_views']) {
+      if (!requiredTables.has(tableName)) throw new Error(`La verificación posterior no encontró la tabla crítica ${tableName}.`);
+    }
     process.stdout.write(`Verificación final: ${summary.totalTables} tablas; ${fkSummary.totalForeignKeys} claves foráneas; tablas críticas presentes.\n`);
-    process.stdout.write('Migraciones 001–013 completas. No se creó ningún usuario ni se importaron datos.\n');
+    process.stdout.write(`Migraciones ${migrationRange} completas. No se creó ningún usuario ni se importaron datos.\n`);
   } finally {
     await connection.end();
   }

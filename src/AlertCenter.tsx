@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -7,8 +8,14 @@ import {
   Clock,
   ExternalLink,
   Filter,
+  LoaderCircle,
+  Search,
+  Sparkles,
+  CalendarDays,
+  ClipboardList,
   X,
 } from 'lucide-react';
+import { ProactiveSearchControls } from './ProactiveSearchControls';
 
 export type AlertItem = {
   id: number;
@@ -21,6 +28,20 @@ export type AlertItem = {
   createdAt: string;
   code: string;
   listingName: string | null;
+  matchLevel?: 'high' | 'medium' | 'exploratory';
+  matchScore?: number | null;
+};
+
+export type AlertOverview = {
+  trackedActive: number;
+  closingIn7Days: number;
+  overdueTasks: number;
+  tasksIn7Days: number;
+  newMatches: number;
+  nextClosings: { id: number; code: string; title: string; buyer: string | null; dueAt: string; state: number | null }[];
+  nextTasks: { id: number; trackingId: number; code: string; title: string; label: string; dueAt: string; overdue: boolean }[];
+  recentMatches: AlertItem[];
+  generatedAt: string;
 };
 
 const timeLabel = (value: string) => {
@@ -37,22 +58,26 @@ const timeLabel = (value: string) => {
 export function AlertNotificationPanel({
   items,
   unread,
+  pendingMatches,
   open,
   loading,
   error,
   onToggle,
   onNavigate,
+  onPending,
   onRead,
   onDismiss,
   onOpen,
 }: {
   items: AlertItem[];
   unread: number;
+  pendingMatches: number;
   open: boolean;
   loading: boolean;
   error: string;
   onToggle: () => void;
   onNavigate: () => void;
+  onPending: () => void;
   onRead: (id: number) => void;
   onDismiss: (id: number) => void;
   onOpen: (item: AlertItem) => void;
@@ -109,8 +134,16 @@ export function AlertNotificationPanel({
                 <div className="p-6 text-center text-xs text-[#5D6472]">
                   Actualizando alertas…
                 </div>
-              ) : items.length ? (
-                items.slice(0, 5).map((item) => (
+              ) : items.some((item) => item.type !== 'new_match') || pendingMatches > 0 ? (
+                <>
+                {pendingMatches > 0 && (
+                  <button type="button" onClick={onPending} className="m-3 mb-1 w-[calc(100%-1.5rem)] rounded-xl border border-[#D9D1FF] bg-[#F6F3FF] p-3 text-left hover:bg-[#F0EDFF] transition-colors">
+                    <span className="flex items-center justify-between gap-2"><span className="inline-flex items-center gap-2 text-xs font-bold text-[#5636D9]"><Sparkles size={14}/> Nuevas licitaciones encontradas</span><span className="rounded-full bg-[#5636D9] px-2 py-0.5 text-[11px] font-bold text-white">{pendingMatches}</span></span>
+                    <span className="mt-1 block text-[11px] leading-4 text-[#5D6472]">El Calificador comercial IA encontró oportunidades para revisar.</span>
+                    <span className="mt-2 block text-[11px] font-semibold text-[#5636D9]">Abrir pendientes de revisión →</span>
+                  </button>
+                )}
+                {items.filter((item) => item.type !== 'new_match').slice(0, 5).map((item) => (
                   <div
                     key={item.id}
                     className={`p-3.5 flex items-start gap-3 hover:bg-gray-50 transition-colors ${
@@ -155,7 +188,8 @@ export function AlertNotificationPanel({
                       </button>
                     </div>
                   </div>
-                ))
+                ))}
+                </>
               ) : (
                 <div className="p-6 text-center text-xs text-[#5D6472] space-y-1">
                   <CheckCircle2 size={24} className="mx-auto text-[#5636D9] mb-2 opacity-80" />
@@ -182,6 +216,7 @@ export function AlertNotificationPanel({
 
 export function AlertsPage({
   items,
+  overview,
   filter,
   onFilter,
   onRead,
@@ -189,8 +224,14 @@ export function AlertsPage({
   onOpen,
   loading,
   error,
+  csrfToken,
+  canManageCompany,
+  canRunSearch,
+  onRunSearch,
+  onGoToTracking,
 }: {
   items: AlertItem[];
+  overview: AlertOverview | null;
   filter: string;
   onFilter: (value: string) => void;
   onRead: (id: number) => void;
@@ -198,7 +239,24 @@ export function AlertsPage({
   onOpen: (item: AlertItem) => void;
   loading: boolean;
   error: string;
+  csrfToken: string;
+  canManageCompany: boolean;
+  canRunSearch: boolean;
+  onRunSearch: () => Promise<{ evaluated: number; created: number; configured: boolean; locked: boolean }>;
+  onGoToTracking: () => void;
 }) {
+  const [searching, setSearching] = useState(false);
+  const [searchMessage, setSearchMessage] = useState('');
+  const [searchError, setSearchError] = useState('');
+  const runSearch = async () => {
+    setSearching(true); setSearchMessage(''); setSearchError('');
+    try {
+      const result = await onRunSearch();
+      setSearchMessage(!result.configured ? 'Agrega rubros o palabras clave al perfil comercial para activar coincidencias.' : result.created ? `Búsqueda terminada: ${result.created} coincidencias nuevas entre ${result.evaluated} fichas revisadas.` : `Búsqueda terminada: se revisaron ${result.evaluated} fichas. No aparecieron coincidencias nuevas.`);
+    } catch (cause) { setSearchError(cause instanceof Error ? cause.message : 'No se pudo completar la búsqueda.'); }
+    finally { setSearching(false); }
+  };
+  const openOverviewItem = (item: { id: number; code: string; title: string; dueAt: string; message?: string }) => onOpen({ id: item.id, opportunityId: 0, type: 'overview', title: item.title, message: item.message ?? '', dueAt: item.dueAt, readAt: null, createdAt: item.dueAt, code: item.code, listingName: item.title });
   return (
     <div className="space-y-6">
       {/* Top Heading */}
@@ -217,6 +275,30 @@ export function AlertsPage({
 
       </div>
 
+      <div className="rounded-2xl border border-[#D9D1FF] bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div><div className="flex items-center gap-2 text-sm font-bold text-[#171A24]"><Sparkles size={17} className="text-[#5636D9]"/> Prioridades de tu empresa</div><p className="mt-1 text-sm text-[#5D6472]">Cierres, tareas y oportunidades relacionadas con tu perfil en el índice local.</p></div>
+          {canRunSearch && <button type="button" onClick={() => void runSearch()} disabled={searching||loading} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#5636D9] px-4 text-sm font-semibold text-white hover:bg-[#4829c7] disabled:cursor-wait disabled:opacity-60">{searching?<LoaderCircle size={16} className="animate-spin"/>:<Search size={16}/>} {searching?'Buscando en el índice…':'Buscar coincidencias ahora'}</button>}
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-5">
+          {[
+            ['En seguimiento', overview?.trackedActive],
+            ['Cierran en 7 días', overview?.closingIn7Days],
+            ['Tareas atrasadas', overview?.overdueTasks],
+            ['Tareas próximos 7 días', overview?.tasksIn7Days],
+            ['Coincidencias sin leer', overview?.newMatches],
+          ].map(([label,value])=><div key={String(label)} className="rounded-xl border border-[#E1E4EA] bg-[#F9FAFC] p-3"><span className="block text-xs font-medium text-[#687287]">{label}</span><strong className="mt-1 block text-2xl font-bold tabular-nums text-[#171A24]">{value==null?'—':new Intl.NumberFormat('es-CL').format(Number(value))}</strong></div>)}
+        </div>
+        {searchMessage&&<p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">{searchMessage}</p>}
+        {searchError&&<p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{searchError}</p>}
+        {overview&&<div className="mt-4 grid gap-4 xl:grid-cols-3">
+          <section className="min-w-0 rounded-xl border border-[#E1E4EA] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[#252A37]"><CalendarDays size={16} className="text-[#5636D9]"/> Próximos cierres</h3>{overview.nextClosings.length?<div className="mt-2 divide-y divide-[#E9ECF1]">{overview.nextClosings.map(row=><button key={row.id} type="button" onClick={()=>openOverviewItem({id:row.id,code:row.code,title:row.title,dueAt:row.dueAt,message:row.buyer??''})} className="block w-full py-2 text-left"><span className="block truncate text-sm font-semibold text-[#252A37]">{row.title}</span><span className="mt-0.5 block text-xs text-[#697387]">{row.code} · {row.buyer||'Comprador no informado'}</span><span className="mt-1 block text-xs font-semibold text-amber-700">Cierra {timeLabel(row.dueAt)}</span></button>)}</div>:<p className="mt-2 text-sm leading-5 text-[#697387]">No hay cierres dentro de 7 días entre las oportunidades guardadas.</p>}</section>
+          <section className="min-w-0 rounded-xl border border-[#E1E4EA] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[#252A37]"><ClipboardList size={16} className="text-[#5636D9]"/> Tareas de seguimiento</h3>{overview.nextTasks.length?<div className="mt-2 divide-y divide-[#E9ECF1]">{overview.nextTasks.map(row=><button key={row.id} type="button" onClick={()=>openOverviewItem({id:row.id,code:row.code,title:row.title,dueAt:row.dueAt,message:row.label})} className="block w-full py-2 text-left"><span className={`inline-block rounded px-2 py-0.5 text-[11px] font-bold ${row.overdue?'bg-red-50 text-red-700':'bg-violet-50 text-violet-700'}`}>{row.overdue?'Atrasada':timeLabel(row.dueAt)}</span><span className="mt-1 block truncate text-sm font-semibold text-[#252A37]">{row.label}</span><span className="block truncate text-xs text-[#697387]">{row.code} · {row.title}</span></button>)}</div>:<><p className="mt-2 text-sm leading-5 text-[#697387]">No hay tareas vencidas ni con fecha dentro de 7 días.</p><button type="button" onClick={onGoToTracking} className="mt-3 text-sm font-semibold text-[#5636D9] hover:underline">Abrir seguimiento y planificar tareas →</button></>}</section>
+          <section className="min-w-0 rounded-xl border border-[#E1E4EA] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[#252A37]"><Sparkles size={16} className="text-[#5636D9]"/> Coincidencias recientes</h3>{overview.recentMatches.length?<div className="mt-2 divide-y divide-[#E9ECF1]">{overview.recentMatches.map(item=><button key={item.id} type="button" onClick={()=>onOpen(item)} className="block w-full py-2 text-left"><span className="block truncate text-sm font-semibold text-[#252A37]">{item.listingName||item.title}</span><span className="mt-0.5 block text-xs text-[#697387]">{item.code} · {item.matchLevel==='high'?'Coincidencia alta':item.matchLevel==='medium'?'Coincidencia media':'Coincidencia exploratoria'}{item.matchScore!=null?` · ${item.matchScore}/100`:''}</span><span className="mt-1 block line-clamp-2 text-xs text-[#697387]">{item.message||'Revisar ficha y criterios de coincidencia.'}</span></button>)}</div>:<p className="mt-2 text-sm leading-5 text-[#697387]">Aún no hay coincidencias guardadas. Ejecuta la búsqueda para cruzar tu perfil con fichas indexadas.</p>}</section>
+        </div>}
+        <p className="mt-3 flex flex-wrap justify-between gap-2 text-xs text-[#7A8497]"><span>La búsqueda automática usa datos ya indexados en Oportuna; no consulta Mercado Público en tiempo real.</span>{overview&&<span>Datos actualizados {timeLabel(overview.generatedAt)}</span>}</p>
+      </div>
+
       {/* TAB 1: REAL ALERTS LIST */}
         <div className="space-y-4">
           {/* Filters Bar */}
@@ -225,10 +307,12 @@ export function AlertsPage({
               <Filter size={14} /> Filtro:
             </span>
             {[
+              { id: 'pending', label: 'Pendientes de revisar' },
               { id: 'all', label: 'Todas' },
               { id: 'unread', label: 'Sin leer' },
-              { id: 'closing', label: 'Cierres próximos (24h/48h)' },
+              { id: 'closing', label: 'Cierres próximos' },
               { id: 'followup', label: 'Seguimiento' },
+              { id: 'matches', label: 'Nuevas coincidencias' },
             ].map((f) => (
               <button
                 key={f.id}
@@ -244,6 +328,13 @@ export function AlertsPage({
             ))}
           </div>
 
+          {filter === 'pending' && (
+            <div className="rounded-xl border border-[#D9D1FF] bg-[#F6F3FF] px-4 py-3 text-sm text-[#4C5568]">
+              <div className="flex items-center gap-2 font-semibold text-[#5636D9]"><Sparkles size={16}/> Licitaciones nuevas para revisar</div>
+              <p className="mt-1 text-xs leading-5">El agente Calificador comercial compara tu perfil y catálogo con las fichas disponibles en el índice local. Abre cada resultado para revisar sus antecedentes y marcarlo como revisado.</p>
+            </div>
+          )}
+
           {error && (
             <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
               <AlertCircle size={16} className="shrink-0" />
@@ -253,7 +344,7 @@ export function AlertsPage({
 
           {loading ? (
             <div className="p-8 text-center text-sm text-[#5D6472] bg-white rounded-xl border border-[#E1E4EA]">
-              Consultando eventos de alerta en tiempo real…
+              Cargando tus alertas y datos de seguimiento…
             </div>
           ) : items.length === 0 ? (
             <div className="p-12 text-center bg-white rounded-xl border border-[#E1E4EA] space-y-3">
@@ -261,11 +352,10 @@ export function AlertsPage({
                 <Bell size={22} />
               </div>
               <h3 className="font-bold text-base text-[#171A24]">
-                No hay alertas activas en esta vista
+                No hay avisos activos en este filtro
               </h3>
               <p className="text-xs text-[#5D6472] max-w-sm mx-auto">
-                Las alertas se generan automáticamente cuando las licitaciones guardadas en tu
-                seguimiento tienen plazos de cierre a 72h, 48h o 24 horas.
+                Los avisos aparecen cuando una oportunidad guardada se acerca a su cierre, cuando vence una tarea de seguimiento o cuando la búsqueda del perfil encuentra una coincidencia nueva.
               </p>
             </div>
           ) : (
@@ -345,6 +435,7 @@ export function AlertsPage({
             </div>
           )}
       </div>
+      <details className="rounded-xl border border-[#E1E4EA] bg-white px-4 py-3"><summary className="cursor-pointer text-sm font-semibold text-[#4C5568]">Configuración de búsqueda automática</summary><div className="mt-3"><ProactiveSearchControls csrfToken={csrfToken} canManageCompany={canManageCompany}/></div></details>
     </div>
   );
 }

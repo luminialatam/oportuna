@@ -51,6 +51,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 .sidebar { background: var(--color-surface); border-right-color: var(--color-border); }
+.sidebar .nav-item { font-size: 15px; }
 .brand strong, .workspace b, .profile b { color: var(--color-text); }
 .brand-mark { background: var(--color-primary) !important; }
 .workspace, .topbar { border-color: var(--color-border); background: var(--color-surface); }

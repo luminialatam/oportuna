@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import pool from './db.js';
 import { currentCompanyContext } from './companyRequestContext.js';
 import { formatChileanRut, normalizeChileanRut } from './chileanRut.js';
-import { classifyCommercialIntent, commercialIntentMatchesOffer, commercialOfferTypeList, commercialOfferTypeLabels, commercialTerms, commercialTermVariants, hasCatalogDomainConflict, isKnownProductPlaceName, matchesCommercialExclusion, normalizeCommercialText, scoreCatalogMatch } from './commercialMatching.js';
+import { classifyCommercialIntent, commercialIntentMatchesOffer, commercialOfferTypeList, commercialOfferTypeLabels, commercialTerms, commercialTermVariants, hasCatalogDomainConflict, hasProfileKeywordEvidence, isKnownProductPlaceName, matchesCommercialExclusion, normalizeCommercialText, scoreCatalogMatch } from './commercialMatching.js';
 
 type ProfileInput = {
   nombreComercial: string | null; razonSocial: string | null; rut: string | null;
@@ -20,14 +20,27 @@ const matchCache = new Map<string, CacheValue>();
 const GENERIC = new Set('servicio servicios equipo equipos equipamiento industrial industriales comercial comerciales producto productos suministro suministros compra compras adquisicion adquisiciones varios varias gestion integral general publico publica chile empresa licitacion licitaciones'.split(' '));
 const STOP = new Set('de del la el los las un una unos unas en y o por para con a al como sus que'.split(' '));
 const cleanList = (value: unknown): string[] => {
-  if (Array.isArray(value)) return [...new Set(value.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(Boolean))].slice(0, 40);
-  if (typeof value === 'string') return [...new Set(value.split(/[\n,;]+/).map(item => item.trim()).filter(Boolean))].slice(0, 40);
+  if (Array.isArray(value)) return [...new Set(value.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(Boolean))];
+  if (typeof value === 'string') return [...new Set(value.split(/[\n,;]+/).map(item => item.trim()).filter(Boolean))];
   return [];
 };
 function jsonList(value: unknown): string[] {
   if (Array.isArray(value)) return cleanList(value);
   if (typeof value === 'string') { try { return cleanList(JSON.parse(value)); } catch { return []; } }
   return [];
+}
+function matchingProducts(productRows: any[], profile: any): any[] {
+  const saved = productRows.map((row: any) => ({ ...row,
+    palabrasClave: jsonList(row.palabras_clave), sinonimos: jsonList(row.sinonimos),
+    terminosRelacionados: jsonList(row.terminos_relacionados), aplicaciones: jsonList(row.aplicaciones),
+    exclusiones: jsonList(row.exclusiones), tiposComerciales: commercialOfferTypeList(row.tipos_comerciales),
+  }));
+  if (saved.length) return saved;
+  // Use saved company keywords as product phrases when no separate catalog records exist.
+  return [...new Set(jsonList(profile?.palabras_clave).map(value => value.trim()).filter(Boolean))].map((nombre, index) => ({
+    id: `profile-keyword-${index}`, nombre, categoria: '', descripcion: '', palabrasClave: [], sinonimos: [],
+    terminosRelacionados: [], aplicaciones: [], exclusiones: [], tiposComerciales: [], source: 'profile',
+  }));
 }
 function jsonNumberList(value: unknown): number[] {
   let parsed = value;
@@ -54,8 +67,9 @@ export async function scoreCurrentCompanyListing(input: { title: string; descrip
     pool.query<any[]>('SELECT actividad,rubros,palabras_clave,terminos_excluidos FROM commercial_profiles WHERE company_id=?', [companyId]),
     pool.query<any[]>('SELECT id,nombre,categoria,descripcion,palabras_clave,sinonimos,terminos_relacionados,aplicaciones,exclusiones,tipos_comerciales FROM company_products WHERE company_id=? AND activo=1 ORDER BY updated_at DESC LIMIT 200', [companyId]),
   ]);
-  if (!productRows.length) return { score: null, level: 'unavailable' as const, productName: null, exactPhrase: false, matchedSources: [], reason: 'La empresa activa no tiene productos configurados en su catálogo.' };
   const profile = profileRows[0];
+  const products = matchingProducts(productRows, profile);
+  if (!products.length) return { score: null, level: 'unavailable' as const, productName: null, exactPhrase: false, matchedSources: [], reason: 'Agrega palabras clave comerciales o productos al perfil de la empresa para activar las coincidencias.' };
   const profileTerms = [...new Set([
     ...terms(String(profile?.actividad ?? '')),
     ...jsonList(profile?.rubros).flatMap(terms),
@@ -67,12 +81,12 @@ export async function scoreCurrentCompanyListing(input: { title: string; descrip
     return { score: null, level: 'excluded' as const, productName: null, exactPhrase: false, matchedSources: [], reason: 'La ficha coincide con una exclusión comercial del perfil activo.' };
   }
   let best: any = null;
-  for (const row of productRows) {
+  for (const row of products) {
     const product = {
       nombre: String(row.nombre), categoria: row.categoria ?? '', descripcion: row.descripcion ?? '',
-      palabrasClave: jsonList(row.palabras_clave), sinonimos: jsonList(row.sinonimos),
-      terminosRelacionados: jsonList(row.terminos_relacionados), aplicaciones: jsonList(row.aplicaciones),
-      exclusiones: jsonList(row.exclusiones), tiposComerciales: commercialOfferTypeList(row.tipos_comerciales), profileTerms,
+      palabrasClave: row.palabrasClave, sinonimos: row.sinonimos,
+      terminosRelacionados: row.terminosRelacionados, aplicaciones: row.aplicaciones,
+      exclusiones: row.exclusiones, tiposComerciales: row.tiposComerciales, profileTerms,
     };
     if (isKnownProductPlaceName(combined, [product.nombre, product.categoria, product.descripcion, ...product.palabrasClave, ...product.sinonimos, ...product.terminosRelacionados].join(' '))) continue;
     if (hasCatalogDomainConflict([product.nombre, product.categoria, ...product.palabrasClave, ...product.sinonimos].join(' '), combined)) continue;
@@ -197,25 +211,29 @@ export async function suggestCommercialTerms(input: { nombre: string; categoria:
 
 const MATCH_BATCH_SIZE = 250;
 const MATCH_MAX_DURATION_MS = 30_000;
+const MATCH_BOARD_LIMIT = 30;
 
-export async function getCompanyMatches(options: { includeAllItems?: boolean; evaluationLimit?: number; commercialClassification?: boolean } = {}) {
+export async function getCompanyMatches(options: { includeAllItems?: boolean; board?: boolean; evaluationLimit?: number; commercialClassification?: boolean } = {}) {
   const startedAt = Date.now();
   const initialHeap = process.memoryUsage().heapUsed;
   let peakHeapUsed = initialHeap;
   let queryCount = 0;
   const query = (sql: string, values: unknown[] = []) => { queryCount++; return pool.query<any[]>(sql, values); };
   const companyId = await companyContext();
-  const [[profileRows], [preferenceRows], [productRows], [listingVersion]] = await Promise.all([
+  const [[profileRows], [preferenceRows], [productRows], [listingVersion], [trackingVersion]] = await Promise.all([
     query('SELECT actividad,rubros,regiones,palabras_clave,terminos_excluidos,updated_at FROM commercial_profiles WHERE company_id=?', [companyId]),
     query('SELECT estados,regiones,updated_at FROM company_search_preferences WHERE company_id=?', [companyId]),
     query('SELECT id,nombre,categoria,descripcion,palabras_clave,sinonimos,terminos_relacionados,aplicaciones,exclusiones,tipos_comerciales FROM company_products WHERE company_id=? AND activo=1 ORDER BY updated_at DESC LIMIT 200', [companyId]),
     query('SELECT MAX(last_synced_at) version FROM licitaciones'),
+    query('SELECT MAX(updated_at) version FROM company_opportunity_tracking WHERE company_id=?', [companyId]),
   ]);
-  const products = productRows.map((row: any) => ({ ...row, palabrasClave: jsonList(row.palabras_clave), sinonimos: jsonList(row.sinonimos), terminosRelacionados: jsonList(row.terminos_relacionados), aplicaciones: jsonList(row.aplicaciones), exclusiones: jsonList(row.exclusiones), tiposComerciales: commercialOfferTypeList(row.tipos_comerciales) }));
   const profile = profileRows[0]; const preference = preferenceRows[0];
+  const products = matchingProducts(productRows, profile);
   const states = jsonNumberList(preference?.estados);
   const regions = jsonList(preference?.regiones).map(normalize).filter(Boolean);
-  const empty = { configured: products.length > 0, total: 0, high: 0, medium: 0, exploratory: 0, closingSoon: 0, candidatesEvaluated: 0, evaluation: { evaluatedListings: 0, batches: 0, queryCount, durationMs: Date.now() - startedAt, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: 0 }, coverage: { indexed: 0, limited: 0 }, items: [], disclaimer: 'La relevancia comercial se basa en texto y datos indexados. No confirma elegibilidad; revisa las bases oficiales.' };
+  const matchingBasis = productRows.length ? 'catalog' : 'profile_keywords';
+  const profileKeywordCount = jsonList(profile?.palabras_clave).length;
+  const empty = { configured: products.length > 0, matchingBasis, profileKeywordCount, total: 0, high: 0, medium: 0, exploratory: 0, closingSoon: 0, candidatesEvaluated: 0, evaluation: { evaluatedListings: 0, batches: 0, queryCount, durationMs: Date.now() - startedAt, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: 0 }, coverage: { indexed: 0, limited: 0 }, items: [], disclaimer: 'La relevancia comercial se basa en el catálogo o las palabras clave del perfil y los datos indexados. No confirma elegibilidad; revisa las bases oficiales.' };
   if (!products.length) return empty;
   const profileTerms = [...new Set([...terms(String(profile?.actividad ?? '')), ...jsonList(profile?.rubros).flatMap(terms), ...jsonList(profile?.palabras_clave).flatMap(terms)])];
   for (const product of products) product.profileTerms = profileTerms;
@@ -223,11 +241,16 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; ev
   const keywords = [...new Set([...nameKeywords, ...products.flatMap(product => [...terms(product.nombre), ...terms(product.categoria ?? ''), ...product.palabrasClave.flatMap(terms), ...product.sinonimos.flatMap(terms), ...product.terminosRelacionados.flatMap(terms), ...product.aplicaciones.flatMap(terms)]), ...profileTerms].flatMap(commercialTermVariants))].slice(0, 90);
   if (!keywords.length) return empty;
   const evaluationLimit = options.evaluationLimit == null ? null : Math.max(1, Math.min(800, Math.trunc(options.evaluationLimit) || 800));
-  const key = createHash('sha256').update(JSON.stringify({ companyId, products, profileUpdated: profile?.updated_at, preferenceUpdated: preference?.updated_at, listingVersion: listingVersion[0]?.version, states, regions, includeAllItems: Boolean(options.includeAllItems), evaluationLimit, commercialClassification: options.commercialClassification !== false })).digest('hex');
-  const cached = matchCache.get(key); if (cached && cached.expires > Date.now()) return cached.value;
+  const key = createHash('sha256').update(JSON.stringify({ companyId, products, profileUpdated: profile?.updated_at, preferenceUpdated: preference?.updated_at, listingVersion: listingVersion[0]?.version, trackingVersion: trackingVersion[0]?.version, states, regions, board: Boolean(options.board), includeAllItems: Boolean(options.includeAllItems), evaluationLimit, commercialClassification: options.commercialClassification !== false })).digest('hex');
+  const visibleMatches = (result: CacheValue['value']) =>
+    options.board || options.includeAllItems ? result : { ...result, items: result.items.slice(0, 6) };
+  const cached = matchCache.get(key);
+  if (cached && cached.expires > Date.now()) return visibleMatches(cached.value);
   const statusFilter = states.length ? states : [5];
   const filterValues: unknown[] = [...statusFilter];
   const filters = [`l.codigo_estado IN (${statusFilter.map(() => '?').join(',')})`, `(l.fecha_cierre IS NULL OR l.fecha_cierre>=UTC_TIMESTAMP())`];
+  filters.push("NOT EXISTS (SELECT 1 FROM company_opportunity_tracking t WHERE t.company_id=? AND t.codigo_externo=l.codigo_externo AND t.estado='discarded')");
+  filterValues.push(companyId);
   if (regions.length) {
     const regionExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.RegionUnidad')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.Region')))";
     filters.push(`(${regionExpr} IS NULL OR (${regions.map(() => `LOWER(${regionExpr}) COLLATE utf8mb4_0900_ai_ci LIKE ?`).join(' OR ')}))`);
@@ -250,6 +273,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; ev
         if (options.commercialClassification !== false && hasCatalogDomainConflict([product.nombre, product.categoria ?? '', ...product.palabrasClave, ...product.sinonimos].join(' '), text)) continue;
         if (product.exclusiones.some((phrase: string) => matchesCommercialExclusion(text, phrase))) continue;
         if (options.commercialClassification !== false && commercialIntentMatchesOffer(intent, product.tiposComerciales) === false) continue;
+        if (product.source === 'profile' && !hasProfileKeywordEvidence(product.nombre, title, description, items)) continue;
         const score = scoreCatalogMatch(product, title, description, items); if (!score) continue;
         if (!best || score.score > best.score) best = { ...score, productName: product.nombre, offerTypes: product.tiposComerciales };
       }
@@ -275,9 +299,12 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; ev
       if (best.level === 'high') high++; else if (best.level === 'medium') medium++; else exploratory++;
       if (daysToClose != null && daysToClose >= 0 && daysToClose <= 14) closingSoon++;
       if (items.trim()) indexed++; else limited++;
-      topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
-      topResults.sort((a, b) => b.score - a.score || (a.daysToClose ?? 9999) - (b.daysToClose ?? 9999) || String(a.codigo_externo).localeCompare(String(b.codigo_externo)));
-      if (!options.includeAllItems && topResults.length > 6) topResults.pop();
+      const evidenceStrength = best.exactPhrase ? 2 : best.nameTerms.length ? 1 : 0;
+      topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, fecha_publicacion: row.fecha_publicacion, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, evidenceStrength, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
+      // Prioriza frase exacta y términos del nombre del producto. Las coincidencias
+      // basadas solo en términos relacionados siguen disponibles al final.
+      topResults.sort((a, b) => b.evidenceStrength - a.evidenceStrength || b.score - a.score || (a.daysToClose ?? 9999) - (b.daysToClose ?? 9999) || String(a.codigo_externo).localeCompare(String(b.codigo_externo)));
+      if (!options.board && !options.includeAllItems && topResults.length > MATCH_BOARD_LIMIT) topResults.pop();
     }
   };
 
@@ -285,7 +312,10 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; ev
     const textClauses = keywords.map(() => "LOWER(CONCAT_WS(' ',COALESCE(l.nombre,''),COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Descripcion')),''))) COLLATE utf8mb4_0900_ai_ci LIKE ?");
     const legacyValues = [...filterValues,...keywords.map(term => `%${term}%`),...keywords.map(term => `%${term}%`)];
     const itemClause = `EXISTS (SELECT 1 FROM licitacion_items li WHERE li.codigo_externo=l.codigo_externo AND (${keywords.map(() => "LOWER(COALESCE(li.search_text,'')) COLLATE utf8mb4_0900_ai_ci LIKE ?").join(' OR ')}))`;
-    const [candidateRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.organismo,l.monto_estimado,l.moneda,
+    const [candidateRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.fecha_publicacion,
+      COALESCE(l.organismo,JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.NombreOrganismo')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.NombreOrganismo'))) organismo,
+      CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.VisibilidadMonto')) IN ('0','false') THEN NULL
+        ELSE COALESCE(l.monto_estimado,CAST(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.MontoEstimado')) AS DECIMAL(20,4))) END monto_estimado,l.moneda,
       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.RegionUnidad')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.Region'))) region,
       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Descripcion')),'') official_description,
       COALESCE((SELECT GROUP_CONCAT(DISTINCT CONCAT_WS(' ',li.nombre,li.descripcion,li.categoria,li.search_text) SEPARATOR ' ') FROM licitacion_items li WHERE li.codigo_externo=l.codigo_externo),'') item_text
@@ -296,7 +326,10 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; ev
   } else {
     while (true) {
       if (Date.now() - startedAt > MATCH_MAX_DURATION_MS) throw new Error('El Match completo superó el límite de 30 segundos. Vuelve a intentarlo cuando haya menos carga.');
-      const [batchRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.organismo,l.monto_estimado,l.moneda,
+      const [batchRows] = await query(`SELECT l.id,l.codigo_externo,l.nombre,l.codigo_estado,l.fecha_cierre,l.fecha_publicacion,
+      COALESCE(l.organismo,JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.NombreOrganismo')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.NombreOrganismo'))) organismo,
+      CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.VisibilidadMonto')) IN ('0','false') THEN NULL
+        ELSE COALESCE(l.monto_estimado,CAST(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.MontoEstimado')) AS DECIMAL(20,4))) END monto_estimado,l.moneda,
         COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.RegionUnidad')),JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Comprador.Region'))) region,
         COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.payload_json,'$.Descripcion')),'') official_description,
         COALESCE(GROUP_CONCAT(DISTINCT CONCAT_WS(' ',li.nombre,li.descripcion,li.categoria,li.search_text) SEPARATOR ' '),'') item_text
@@ -313,11 +346,11 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; ev
     }
   }
   const durationMs=Date.now()-startedAt;
-  const value = { configured: true, total, high, medium, exploratory, closingSoon, candidatesEvaluated: evaluatedListings,
+  const value = { configured: true, matchingBasis, profileKeywordCount, total, high, medium, exploratory, closingSoon, candidatesEvaluated: evaluatedListings,
     evaluation: { evaluatedListings, batches, queryCount, durationMs, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: Math.max(0,peakHeapUsed-initialHeap) },
-    coverage: { indexed, limited }, items: options.includeAllItems ? topResults : topResults.slice(0, 6), disclaimer: 'Coincidencia estimada según evidencias del catálogo, título, descripción y partidas. No confirma elegibilidad; revisa las bases oficiales.' };
+    coverage: { indexed, limited }, items: topResults, disclaimer: 'Coincidencia estimada según evidencias del catálogo o las palabras clave del perfil, título, descripción y partidas. No confirma elegibilidad; revisa las bases oficiales.' };
   matchCache.set(key, { value, expires: Date.now() + 30_000 }); if (matchCache.size > 200) matchCache.clear();
-  return value;
+  return visibleMatches(value);
 }
 
 export function clearCompanyMatchCache() { matchCache.clear(); }
