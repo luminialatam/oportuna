@@ -240,7 +240,7 @@ export function TrackingCalendar({ items, total, loading, error, onRetry, onOpen
           <aside className="space-y-4">
             {suggestedOpportunity && (
               <section className="rounded-xl border border-[#DED8FF] bg-[#FAF9FF] p-5">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-[#5636D9]">Sugerencia de Oportuna</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-[#5636D9]">Sugerencia de Leasy</p>
                 <h2 className="mt-1 font-semibold text-[#171A24]">{suggestedStep}</h2>
                 <button type="button" onClick={() => onOpen(suggestedOpportunity.codigo)} className="mt-2 text-left text-sm font-semibold text-[#5636D9] hover:underline">{suggestedOpportunity.listing.nombre || suggestedOpportunity.codigo} <span aria-hidden="true">→</span></button>
                 <p className="mt-2 text-xs leading-5 text-[#687184]">Recomendación según la etapa actual: {suggestedOpportunity.estado === 'saved' ? 'Guardada' : suggestedOpportunity.estado === 'evaluating' ? 'En evaluación' : 'Preparando oferta'}. Confirma siempre las condiciones en la ficha oficial.</p>

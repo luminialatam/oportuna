@@ -194,7 +194,7 @@ export function OpportunityInbox({
 
     {error && <div role="alert" className="opportunity-alert">{error}<button type="button" onClick={() => void load()}>Reintentar</button></div>}
     {loading ? <div role="status" aria-live="polite" className="opportunity-state"><LoaderCircle className="spin" size={22} /><b>Cargando oportunidades…</b></div>
-      : !configured && filter !== 'discarded' ? <div className="opportunity-state"><Star size={26} /><b>Configura el catálogo de tu empresa</b><span>Al agregar productos y servicios, Oportuna podrá buscar coincidencias reales en las licitaciones indexadas.</span></div>
+      : !configured && filter !== 'discarded' ? <div className="opportunity-state"><Star size={26} /><b>Configura el catálogo de tu empresa</b><span>Al agregar productos y servicios, Leasy podrá buscar coincidencias reales en las licitaciones indexadas.</span></div>
       : items.length === 0 ? <div className="opportunity-state"><Circle size={26} /><b>{filter === 'unread' ? 'No tienes oportunidades pendientes de revisar' : filter === 'discarded' ? 'No has descartado oportunidades' : 'Aún no hay recomendaciones en tu bandeja'}</b><span>{filter === 'recommended' ? 'Cuando se detecten nuevas oportunidades para tu empresa, aparecerán aquí para que puedas revisarlas.' : filter === 'unread' ? 'Las oportunidades que todavía no hayas revisado aparecerán en esta pestaña.' : 'Las oportunidades que descartes aparecerán aquí y podrás recuperarlas.'}</span></div>
       : visibleItems.length === 0 ? <div className="opportunity-state"><Search size={26} /><b>No hay resultados para esta búsqueda</b><span>Prueba con otro nombre, código u organismo.</span><button type="button" onClick={() => setQuery('')}>Limpiar búsqueda</button></div>
       : <>

@@ -234,7 +234,7 @@ export function AuthGate({ onAuthenticated, initialError = '' }: { onAuthenticat
     return (
       <main className="min-h-screen bg-gradient-to-br from-[#001F3F] via-[#5636D9] to-[#001F3F] flex items-center justify-center p-4">
         <header className="flex justify-between items-center w-full max-w-lg px-4 mb-6 text-white">
-  <h1 className="text-xl font-bold">Oportuna</h1>
+  <h1 className="m-0"><img src="/assets/leasy-app-logo.png" alt="Leasy.cl" className="block h-auto w-[148px] rounded-md bg-white p-1.5 object-contain" /></h1>
   <a href="#" className="text-sm underline cursor-not-allowed" title="Prototipo">Centro de Ayuda</a>
 </header>
 <div className="w-full max-w-lg bg-white rounded-2xl border border-[#E1E4EA] p-8 shadow-sm space-y-6 relative z-10">
@@ -244,7 +244,7 @@ export function AuthGate({ onAuthenticated, initialError = '' }: { onAuthenticat
             </div>
             <h1 className="text-2xl font-bold text-[#171A24]">Verificar cuenta</h1>
             <p className="text-sm text-[#5D6472] mt-1">
-              Confirma que tienes acceso a este correo para habilitar tu cuenta en Oportuna.
+              Confirma que tienes acceso a este correo para habilitar tu cuenta en Leasy.
             </p>
           </div>
 
@@ -303,8 +303,8 @@ export function AuthGate({ onAuthenticated, initialError = '' }: { onAuthenticat
       <div aria-hidden="true" className="auth-ambient pointer-events-none fixed inset-0" />
       <header className="auth-topbar fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-5 py-5 sm:px-8 lg:px-12 text-white">
         <a href="/" className="flex items-center gap-3 no-underline text-white">
-          <span className="auth-logo-mark"><Lock size={21} /></span>
-          <span className="flex flex-col"><b className="text-lg leading-5">Oportuna</b><small className="text-sm text-[#aaa0c4]">Mercado Público · Chile</small></span>
+          <span className="rounded-md bg-white p-1.5"><img src="/assets/leasy-app-logo.png" alt="Leasy.cl" className="block h-auto w-[148px] object-contain" /></span>
+          <span className="sr-only">Mercado Público · Chile</span>
         </a>
         <span className="auth-help">Centro de Ayuda</span>
       </header>
@@ -563,7 +563,7 @@ export function AuthGate({ onAuthenticated, initialError = '' }: { onAuthenticat
           Las contraseñas se protegen con Argon2id. Las solicitudes sensibles validan tokens CSRF; el RUT identifica a la empresa, pero no acredita representación legal.
         </p>
       </div>
-      <footer className="auth-bottomline">Oportuna · Inteligencia de Mercado Público para Chile · Plataforma segura</footer>
+      <footer className="auth-bottomline">Leasy.cl · Inteligencia de Mercado Público para Chile · Plataforma segura</footer>
     </main>
   );
 }

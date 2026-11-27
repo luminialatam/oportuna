@@ -311,7 +311,7 @@ export function OfferPreparationPanel({
 
       <div className="rounded-xl border border-[#E1E4EA] bg-white p-5">
         <h3 className="text-lg font-semibold text-[#171A24]">Documentos y revisión</h3>
-        <p className="mt-1 text-sm text-[#667085]">Registra referencias para encontrarlos. Oportuna no almacena ni sube los archivos desde este panel.</p>
+        <p className="mt-1 text-sm text-[#667085]">Registra referencias para encontrarlos. Leasy no almacena ni sube los archivos desde este panel.</p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <input id={`offer-document-name-${code}`} className="min-w-0 flex-1 rounded-lg border border-[#D0D5DD] px-3 py-2.5 text-base" placeholder="Nombre del documento" />
           <input id={`offer-document-url-${code}`} type="url" className="min-w-0 flex-1 rounded-lg border border-[#D0D5DD] px-3 py-2.5 text-base" placeholder="https://… (opcional)" />
