@@ -143,7 +143,7 @@ export function AnalyticsWorkspace({ request, csrfToken }: { request: Request; c
       if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.error || 'No fue posible exportar los datos.'); }
       const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a');
       link.href = url; link.download = 'oportuna-analitica.csv'; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
-      const exported = response.headers.get('X-LEASY-Exported-Rows'); setNotice(`CSV exportado${exported ? ` con ${fmt(Number(exported))} fichas` : ''}.`);
+      const exported = response.headers.get('X-Oportuna-Exported-Rows'); setNotice(`CSV exportado${exported ? ` con ${fmt(Number(exported))} fichas` : ''}.`);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'No fue posible exportar los datos.'); }
     finally { setExporting(false); }
   };
