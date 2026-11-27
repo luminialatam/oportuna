@@ -755,6 +755,7 @@ function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [companyPlan, setCompanyPlan] = useState<any>(null);
+  const [companyPlanCompanyId, setCompanyPlanCompanyId] = useState<number | null>(null);
   const [config, setConfig] = useState<any>(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -829,17 +830,20 @@ function App() {
   }, [authState, auth?.activeCompanyId, auth?.platformRole, detailRouteCode, isAdmin, isPlatformAdmin, isCompanySetup, location.pathname, navigate, pendingLegacy, section]);
 
   useEffect(() => {
-    if (authState !== 'authenticated' || !auth?.activeCompanyId) { setCompanyPlan(null); return; }
+    if (authState !== 'authenticated' || !auth?.activeCompanyId) { setCompanyPlan(null); setCompanyPlanCompanyId(null); return; }
+    const companyId = auth.activeCompanyId;
     let active = true;
-    void api<any>('/api/company/plan').then((value) => { if (active) setCompanyPlan(value); }).catch(() => { if (active) setCompanyPlan(null); });
+    setCompanyPlan(null);
+    setCompanyPlanCompanyId(null);
+    void api<any>('/api/company/plan').then((value) => { if (active) { setCompanyPlan(value); setCompanyPlanCompanyId(companyId); } }).catch(() => { if (active) { setCompanyPlan(null); setCompanyPlanCompanyId(companyId); } });
     return () => { active = false; };
   }, [authState, auth?.activeCompanyId]);
 
   useEffect(() => {
-    if (location.pathname === '/inteligencia-mercado' && companyPlan && !companyPlan.plan?.marketAnalytics) {
+    if (location.pathname === '/inteligencia-mercado' && auth?.activeCompanyId && companyPlanCompanyId === auth.activeCompanyId && companyPlan && !companyPlan.plan?.marketAnalytics) {
       navigate('/suscripcion', { replace: true });
     }
-  }, [location.pathname, companyPlan, navigate]);
+  }, [location.pathname, auth?.activeCompanyId, companyPlanCompanyId, companyPlan, navigate]);
 
   // Restore server-backed sessions after reloads. A temporary backend restart must not
   // be mistaken for an anonymous session or turn a valid cookie into a blank login.
@@ -1265,7 +1269,6 @@ function App() {
         { name: 'Resumen', icon: LayoutDashboard },
         { name: 'Buscar oportunidades', icon: Search },
         { name: 'Oportunidades', icon: Sparkles },
-        ...(companyPlan?.plan?.marketAnalytics ? [{ name: 'Inteligencia de mercado', icon: BarChart3 }] : []),
         { name: 'Agentes IA', icon: FileSearch },
         { name: 'Inteligencia de mercado', icon: BarChart3 },
         { name: 'Analítica', icon: BarChart3, subItem: true },

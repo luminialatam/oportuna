@@ -545,12 +545,13 @@ body { overflow-x: clip; }
 @media(max-width:760px){.opportunity-page-header{align-items:stretch;flex-direction:column;gap:16px}.opportunity-page-copy h1{font-size:28px}.opportunity-page-copy>p:last-child{font-size:15px}.opportunity-search{flex:initial;width:100%;min-width:0}.opportunity-filter-tabs{overflow-x:auto;scrollbar-width:thin}.opportunity-filter-tabs [role="tab"]{flex:1 0 auto;padding:0 12px}.opportunity-state{min-height:190px;padding:28px 18px}}
 @media(max-width:420px){.opportunity-inbox{gap:16px}.opportunity-filter-tabs{gap:4px;padding:4px}.opportunity-filter-tabs [role="tab"]{gap:6px;min-height:40px;padding:0 9px;font-size:12px}.opportunity-tab-count{min-width:22px;height:22px;font-size:11px}.opportunity-state>b{font-size:16px}.opportunity-state>span{font-size:13px}}
 
-.subscription-pending-notice{display:flex;align-items:flex-start;gap:12px;line-height:1.5}
-.subscription-pending-icon{flex:none;margin-top:1px;color:#a85b08}
-.subscription-pending-notice strong{display:block;color:#713f12;font-size:14px}
-.subscription-pending-notice p{margin:3px 0 0;color:#713f12}
-.subscription-pending-notice small{display:block;margin-top:5px;color:#8b571e;font-size:12px}
-.subscription-request-panel.has-pending-request{border-color:#f3d58c;background:linear-gradient(180deg,#fffdf7,#fff)}
+.subscription-pending-notice{display:flex;align-items:flex-start;gap:12px;line-height:1.5;border-color:#ded8f6;background:#f8f7fc;color:#49435f}
+.subscription-pending-icon{flex:none;margin-top:1px;color:#6545d7}
+.subscription-pending-notice strong{display:block;color:#302755;font-size:14px}
+.subscription-pending-notice p{margin:3px 0 0;color:#49435f}
+.subscription-pending-notice small{display:block;margin-top:5px;color:#69647a;font-size:12px}
+.subscription-request-panel.has-pending-request{border-color:#ded8f6;background:#fff}
+.company-sync-notice{padding:10px 12px;border:1px solid #ded8f6;border-radius:9px;background:#f8f7fc;color:#4f4867;font-size:var(--type-body);line-height:1.55}
 .subscription-request-panel [role="group"].is-locked{opacity:.7}
 .subscription-request-panel [role="group"] button:disabled{cursor:not-allowed}
 .subscription-plan-action{width:100%;border:1px solid #5636d9;background:#5636d9;color:#fff;transition:background .15s,border-color .15s,box-shadow .15s}
