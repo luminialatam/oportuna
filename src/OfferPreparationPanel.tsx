@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Circle, FileText, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { calculateOfferEconomics, formatCLP } from './offerEconomics.js';
+import { loadPriceBook, type PriceBookItem } from './PriceBookWorkspace.js';
 
 type OfferItem = {
   enabled: boolean;
@@ -53,6 +54,12 @@ export function OfferPreparationPanel({
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [priceBook, setPriceBook] = useState<PriceBookItem[]>([]);
+  const [selectedRates, setSelectedRates] = useState<Record<string, string>>({});
+  const [dimensions, setDimensions] = useState<Record<string, { width: string; height: string }>>({});
+  const [priceBookHint, setPriceBookHint] = useState('');
+
+  useEffect(() => { void loadPriceBook().then(setPriceBook).catch(() => setPriceBook([])); }, [companyId]);
 
   useEffect(() => {
     setLoaded(false);
@@ -128,6 +135,20 @@ export function OfferPreparationPanel({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo eliminar el borrador.');
     }
+  };
+
+  const applyBasePrice = (id: string) => {
+    const rate = priceBook.find(entry => String(entry.id) === selectedRates[id]);
+    if (!rate) return;
+    const dim = dimensions[id] ?? { width: String(rate.widthM || ''), height: String(rate.heightM || '') };
+    const measure = rate.chargeUnit === 'm2' ? Number(dim.width) * Number(dim.height) : 1;
+    if (rate.chargeUnit === 'm2' && (!Number(dim.width) || !Number(dim.height))) { setPriceBookHint('Ingresa ancho y alto en metros para calcular la tarifa por m².'); return; }
+    const surchargeFixed = rate.surcharges.filter(charge => charge.kind === 'fixed').reduce((sum, charge) => sum + charge.amount, 0);
+    const surchargePercent = rate.surcharges.filter(charge => charge.kind === 'percent').reduce((sum, charge) => sum + charge.amount, 0);
+    const cost = (rate.baseCost * measure + surchargeFixed) * (1 + surchargePercent / 100);
+    const price = (rate.basePrice * measure + surchargeFixed) * (1 + surchargePercent / 100);
+    patchItem(id, { directUnitCost: String(Math.round(cost)), unitPrice: String(Math.round(price)), specification: [rate.specifications, rate.chargeUnit === 'm2' ? `${dim.width} × ${dim.height} m = ${measure.toFixed(2)} m²` : '', rate.surcharges.length ? `Incluye recargos: ${rate.surcharges.map(value => value.name).join(', ')}` : ''].filter(Boolean).join('\n') });
+    setPriceBookHint(`Tarifa «${rate.name}» aplicada. Revisa los importes antes de guardar el borrador.`);
   };
 
   const activeItems = products.filter((item: any, index: number) => draft.items[itemCode(item, index)]?.enabled !== false);
@@ -252,6 +273,18 @@ export function OfferPreparationPanel({
                 </div>
               </div>
               {entry.enabled && <div className="grid gap-3 md:grid-cols-2">
+                {priceBook.length > 0 && <div className="md:col-span-2 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="min-w-56 flex-1 space-y-1 text-sm font-medium text-[#344054]">Usar una tarifa de Precios base
+                      <select className="w-full rounded-lg border border-[#D0D5DD] bg-white px-3 py-2.5" value={selectedRates[id] ?? ''} onChange={e=>{const value=e.target.value;setSelectedRates(old=>({...old,[id]:value}));const rate=priceBook.find(r=>String(r.id)===value);if(rate)setDimensions(old=>({...old,[id]:{width:String(rate.widthM||''),height:String(rate.heightM||'')}}));}}>
+                        <option value="">Selecciona producto o servicio…</option>{priceBook.filter(rate=>rate.active).map(rate=><option key={rate.id} value={rate.id}>{rate.name} · {rate.chargeUnit==='m2'?'m²':rate.chargeUnit} · {formatCLP(rate.basePrice)}</option>)}
+                      </select>
+                    </label>
+                    {selectedRates[id] && priceBook.find(r=>String(r.id)===selectedRates[id])?.chargeUnit==='m2' && <><label className="space-y-1 text-sm">Ancho (m)<input className="block w-28 rounded-lg border border-[#D0D5DD] bg-white px-3 py-2.5" type="number" min="0" step="0.001" value={(dimensions[id]??{width:'',height:''}).width} onChange={e=>setDimensions(old=>({...old,[id]:{...(old[id]??{height:''}),width:e.target.value}}))}/></label><label className="space-y-1 text-sm">Alto (m)<input className="block w-28 rounded-lg border border-[#D0D5DD] bg-white px-3 py-2.5" type="number" min="0" step="0.001" value={(dimensions[id]??{width:'',height:''}).height} onChange={e=>setDimensions(old=>({...old,[id]:{...(old[id]??{width:''}),height:e.target.value}}))}/></label></>}
+                    <button type="button" disabled={!selectedRates[id]} onClick={()=>applyBasePrice(id)} className="rounded-lg bg-[#5636D9] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Calcular y aplicar</button>
+                  </div>{priceBookHint&&<p className="mt-2 text-xs text-[#5636D9]" role="status">{priceBookHint}</p>}
+                  <p className="mt-2 text-xs text-[#667085]">Importes sugeridos desde tus costos y precios; pueden editarse. No son el monto oficial ni se envían a Mercado Público.</p>
+                </div>}
                 <label className="space-y-1 text-sm font-medium text-[#344054]">Costo unitario total para tu empresa (CLP)
                   <input inputMode="numeric" type="number" min="0" step="1" className="w-full rounded-lg border border-[#D0D5DD] px-3 py-2.5 text-base" value={entry.directUnitCost} onChange={(e) => patchItem(id, { directUnitCost: e.target.value })} placeholder="Incluye los costos directos" />
                 </label>

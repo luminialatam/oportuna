@@ -3,6 +3,7 @@ import { getCompanyMatches } from './companyService.js';
 import { resolveCurrentCompanyId } from './companyService.js';
 import { runWithCompanyContext } from './companyRequestContext.js';
 import { loadRuntimeConfig } from './runtimeConfig.js';
+import { deliverOpportunityEmailDigests, queueNewOpportunityEmails, type OpportunityEmailItem } from './alertEmailService.js';
 
 type Frequency='hourly'|'daily'|'weekly';
 const sqlUtc=(value:Date)=>value.toISOString().slice(0,19).replace('T',' ');
@@ -37,7 +38,7 @@ export async function saveProactiveSearchPreferences(input:{enabled:boolean;freq
 
 async function evaluateCompany(companyId:number,cutoff:Date|null){
   const result=await runWithCompanyContext({userId:0,companyId,role:'admin',platformRole:'user'},()=>getCompanyMatches({includeAllItems:true,evaluationLimit:800}));
-  let created=0;
+  let created=0;const newMatches:OpportunityEmailItem[]=[];
   for(const item of result.items??[]){
     const code=String(item.codigo_externo??'').trim();if(!code)continue;
     const published=asDate(item.fecha_publicacion);
@@ -49,8 +50,12 @@ async function evaluateCompany(companyId:number,cutoff:Date|null){
       SELECT ?,?,nombre,?,?,? FROM licitaciones WHERE codigo_externo=?`,
       [companyId,code,level,Number.isFinite(Number(item.score))?Math.max(0,Math.min(100,Math.round(Number(item.score)))):null,JSON.stringify(reasons),code]);
     created+=Number(inserted.affectedRows??0);
+    if(Number(inserted.affectedRows??0)>0&&level!=='exploratory')newMatches.push({code,name:String(item.nombre??item.Nombre??code),level,score:Number.isFinite(Number(item.score))?Math.max(0,Math.min(100,Math.round(Number(item.score)))):null,reasons});
   }
-  return {evaluated:Number(result.candidatesEvaluated??0),created};
+  let emailsQueued=0;
+  try{emailsQueued=await queueNewOpportunityEmails(companyId,newMatches);}
+  catch{console.warn('[alert-email] queue_failed code=QUEUE_UNAVAILABLE');}
+  return {evaluated:Number(result.candidatesEvaluated??0),created,emailsQueued};
 }
 
 /** Runs the active company's local index search on demand, sharing the worker lock. */
@@ -64,6 +69,7 @@ export async function runCurrentCompanyProactiveSearch(){
     locked=Number(lockRows[0]?.acquired)===1;
     if(!locked)return {evaluated:0,created:0,configured:true,locked:true,completedAt:null};
     const result=await evaluateCompany(companyId,null);
+    void deliverOpportunityEmailDigests(10,companyId).catch(()=>console.warn('[alert-email] delivery_pass_failed code=WORKER_UNAVAILABLE'));
     const completedAt=new Date();
     await pool.execute(`INSERT INTO company_proactive_search_preferences(company_id,enabled,frequency,last_checked_at,last_error_code)
       VALUES(?,0,'daily',?,NULL) ON DUPLICATE KEY UPDATE last_checked_at=VALUES(last_checked_at),last_error_code=NULL`,[companyId,sqlUtc(completedAt)]);
@@ -77,7 +83,7 @@ export async function runCurrentCompanyProactiveSearch(){
 /** One MySQL advisory lock prevents overlapping process and cron runs. */
 export async function runProactiveSearchPass(now=new Date()){
   const connection=await pool.getConnection();let locked=false;
-  const summary={companies:0,evaluated:0,created:0,failed:0,locked:false};
+  const summary={companies:0,evaluated:0,created:0,failed:0,emailsQueued:0,locked:false};
   try{
     const [lockRows]=await connection.query<any[]>("SELECT GET_LOCK('oportuna_proactive_search',0) acquired");
     locked=Number(lockRows[0]?.acquired)===1;if(!locked){summary.locked=true;return summary;}
@@ -91,9 +97,10 @@ export async function runProactiveSearchPass(now=new Date()){
       const [claimed]=await pool.execute<any>('UPDATE company_proactive_search_preferences SET last_checked_at=?,last_error_code=NULL WHERE company_id=? AND enabled=1 AND (last_checked_at IS NULL OR last_checked_at=?)',[sqlUtc(now),companyId,row.lastCheckedAt??null]);
       if(!claimed.affectedRows)continue;
       summary.companies++;
-      try{const result=await evaluateCompany(companyId,cutoff);summary.evaluated+=result.evaluated;summary.created+=result.created;}
+      try{const result=await evaluateCompany(companyId,cutoff);summary.evaluated+=result.evaluated;summary.created+=result.created;summary.emailsQueued+=result.emailsQueued;}
       catch{summary.failed++;await pool.execute("UPDATE company_proactive_search_preferences SET last_checked_at=?,last_error_code='SEARCH_FAILED' WHERE company_id=?",[row.lastCheckedAt??null,companyId]);}
     }
+    await deliverOpportunityEmailDigests();
     return summary;
   }finally{if(locked)await connection.query("SELECT RELEASE_LOCK('oportuna_proactive_search')");connection.release();}
 }

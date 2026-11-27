@@ -6,6 +6,7 @@ import {
   Bell,
   Building2,
   CalendarDays,
+  Calculator,
   Clock3,
   Database,
   ExternalLink,
@@ -37,6 +38,7 @@ import { SandboxCenter } from './SandboxCenter';
 import { ProfilePage, SecurityPage } from './AccountSettings';
 import { PlatformUsers } from './PlatformUsers';
 import { OfferPreparationPanel } from './OfferPreparationPanel';
+import { PriceBookWorkspace } from './PriceBookWorkspace';
 import { CommercialAgents } from './CommercialAgents';
 import { AnalyticsWorkspace } from './AnalyticsWorkspace';
 import { RevenueDesk } from './RevenueDesk';
@@ -84,6 +86,7 @@ const SECTION_PATHS: Record<string, string> = {
   Calendario: '/calendario',
   Alertas: '/alertas',
   'Mi empresa': '/empresa',
+  'Precios base': '/precios-base',
   'Equipo y accesos': '/equipo',
   'Cuentas de usuario': '/usuarios',
   Configuración: '/configuracion',
@@ -242,6 +245,7 @@ function ListingDetailModal({
 }) {
   const [tab, setTab] = useState<'resumen' | 'items' | 'requisitos' | 'cronograma' | 'oferta'>('resumen');
   const [titleExpanded, setTitleExpanded] = useState(false);
+  const [expandedItem, setExpandedItem] = useState<number | null>(null);
   useEffect(() => {
     if (analysis && !analysis.error) setTab('resumen');
   }, [analysis]);
@@ -389,22 +393,18 @@ function ListingDetailModal({
                 </div>
               )}
           {tab === 'items' && (
-            <div className="space-y-3 text-xs">
-              <span className="font-bold text-[#5D6472] uppercase text-[10px] tracking-wider block">
-                Partidas Solicitadas ({listedItems.length})
-              </span>
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-xl font-bold text-[#171A24]">Partidas solicitadas</h3><p className="mt-1 text-sm text-[#667085]">Abre cada partida para revisar su detalle o cotizarla con tus precios base.</p></div><span className="rounded-full bg-[#F2F0FF] px-3 py-1.5 text-sm font-semibold text-[#5636D9]">{listedItems.length} {listedItems.length === 1 ? 'partida' : 'partidas'}</span></div>
               {listedItems.length ? (
                 listedItems.map((item: any, idx: number) => (
-                  <div key={idx} className="p-3.5 rounded-xl border border-[#E1E4EA] bg-white space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <b className="text-[#171A24] font-bold">{item.NombreProducto || item.Nombre || 'Partida'}</b>
-                      <span className="px-2 py-0.5 rounded-md bg-[#F5F6F8] font-semibold text-[#5D6472]">
-                        {item.Cantidad} {item.UnidadMedida || 'unidades'}
-                      </span>
-                    </div>
-                    {item.Descripcion && <p className="text-[#5D6472]">{item.Descripcion}</p>}
-                    {item.Categoria && <span className="text-[10px] text-[#8A92A6] block">Categoría: {item.Categoria}</span>}
-                  </div>
+                  <article key={idx} className={`overflow-hidden rounded-xl border bg-white transition-colors ${expandedItem===idx?'border-violet-300 shadow-sm':'border-[#E1E4EA]'}`}>
+                    <button type="button" aria-expanded={expandedItem===idx} onClick={()=>setExpandedItem(expandedItem===idx?null:idx)} className="flex w-full flex-wrap items-center justify-between gap-3 p-4 text-left hover:bg-[#FAF9FF]">
+                      <span className="min-w-0 flex-1"><span className="block font-semibold text-[#171A24]">{item.NombreProducto || item.Nombre || 'Partida'}</span><span className="mt-1 block text-sm text-[#667085]">Código {item.CodigoProducto ?? item.Codigo ?? 'No informado'}{item.Categoria ? ` · ${item.Categoria}` : ''}</span></span>
+                      <span className="rounded-full bg-[#F5F6F8] px-3 py-1.5 text-sm font-semibold text-[#475467]">{item.Cantidad ?? 'Cantidad no informada'} {item.UnidadMedida || 'unidades'}</span>
+                      <span className="text-sm font-semibold text-[#5636D9]">{expandedItem===idx?'Cerrar detalle −':'Ver detalle +'}</span>
+                    </button>
+                    {expandedItem===idx&&<div className="border-t border-[#E1E4EA] bg-[#FCFCFE] p-4"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg bg-white p-3"><span className="text-xs text-[#667085]">Cantidad solicitada</span><strong className="mt-1 block">{item.Cantidad ?? 'No informada'} {item.UnidadMedida || ''}</strong></div><div className="rounded-lg bg-white p-3"><span className="text-xs text-[#667085]">Categoría</span><strong className="mt-1 block">{item.Categoria || 'No informada'}</strong></div></div><div className="mt-3 rounded-lg bg-white p-3"><span className="text-xs font-semibold uppercase tracking-wide text-[#667085]">Descripción y especificaciones oficiales</span><p className="mt-1 whitespace-pre-line text-sm leading-6 text-[#344054]">{item.Descripcion || item.Especificacion || 'La ficha no entregó una descripción estructurada para esta partida. Revisa las bases oficiales antes de cotizar.'}</p></div><button type="button" onClick={()=>setTab('oferta')} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#5636D9] px-4 py-2 text-sm font-semibold text-white">Preparar precio para esta partida <ArrowRight size={15}/></button></div>}
+                  </article>
                 ))
               ) : (
                 <div className="p-8 text-center text-[#8A92A6] border border-dashed border-[#E1E4EA] rounded-xl">
@@ -1258,6 +1258,7 @@ function App() {
       label: 'Espacio de trabajo',
       items: [
         { name: 'Mi empresa', icon: Building2 },
+        { name: 'Precios base', icon: Calculator },
         ...(isAdmin ? [{ name: 'Equipo y accesos', icon: Users }] : []),
         ...(isPlatformAdmin ? [{ name: 'Cuentas de usuario', icon: Users }] : []),
         ...(isAdmin ? [{ name: 'Configuración', icon: Settings }] : []),
@@ -2250,6 +2251,10 @@ function App() {
               canEdit={auth.role === 'admin'}
               accessRole={auth.role}
             />
+          )}
+
+          {section === 'Precios base' && (
+            <PriceBookWorkspace csrfToken={auth.csrfToken} canEdit={auth.role === 'admin' || auth.role === 'collaborator'} />
           )}
 
           {/* SECTION: EQUIPO Y ACCESOS (Stitch 7 RBAC) */}

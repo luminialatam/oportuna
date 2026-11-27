@@ -32,3 +32,11 @@ Alternativa compatible: configura un cron externo con la solicitud siguiente:
 Deja el job pausado hasta que el despliegue haya publicado la ruta. Luego realiza una invocación controlada desde el scheduler y confirma HTTP 200, `failed: 0` y que el resultado no indique `locked: true`. Activa la recurrencia solo después de esa comprobación. La ruta usa el token de servicio existente, limita invocaciones, coordina rondas con un lock MySQL y procesa únicamente las empresas cuyo intervalo ya venció.
 
 Las preferencias nacen apagadas. La interfaz puede guardar activación y frecuencia, pero advierte que no habrá búsquedas mientras no se ejecute un proceso programado. Hasta verificar migración, ruta y cron, mantén pausado el job y no anuncies la búsqueda proactiva como funcional. El proceso compara el perfil comercial y productos con el índice local existente; no consulta Mercado Público en vivo. La sincronización ya configurada debe mantener actualizado ese índice.
+
+## Avisos por email (migración 023)
+
+`server/migrations/023_opportunity_alert_emails.sql` agrega dos tablas aditivas: `company_alert_email_preferences` guarda el consentimiento individual de cada integrante y `company_alert_email_outbox` conserva una cola idempotente de resúmenes. Los destinatarios se resuelven desde el email verificado de su propia cuenta; no se aceptan direcciones externas en la preferencia.
+
+El cliente puede activar el correo desde **Alertas → Configuración de búsqueda automática**. Oportuna envía un único resumen por ronda con coincidencias nuevas medias o altas; las señales exploratorias se mantienen en Alertas. Si la búsqueda automática está apagada, el correo solo se genera después de una búsqueda manual. En producción, la cola se procesa en una ronda del worker; requiere SMTP funcional y el scheduler/cron ya verificado. El envío falla de forma reintentable y no se duplica por cada resultado.
+
+La migración 023 debe aplicarse después de 022 y antes de publicar el código que expone esta preferencia. En el hosting actual el scheduler está apagado; por eso activar el checkbox por sí solo no garantiza detección automática. No habilites el cron ni publiques esta función hasta verificar la ruta de worker y el transporte de correo en el entorno de destino.
