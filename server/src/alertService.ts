@@ -88,10 +88,16 @@ export async function listAlerts(options:{filter?:'all'|'unread'|'closing'|'foll
     FROM company_alerts a JOIN company_opportunity_tracking t ON t.id=a.opportunity_id AND t.company_id=a.company_id JOIN licitaciones l ON l.codigo_externo=t.codigo_externo
     WHERE ${where.join(' AND ')} ORDER BY a.read_at IS NULL DESC,a.due_at ASC,a.created_at DESC LIMIT ?`,[...values,limit]);
   const items=rows.map(row=>({id:Number(row.id),opportunityId:Number(row.opportunity_id),type:row.alert_type,key:row.alert_key,title:row.title,message:row.message,dueAt:row.due_at,readAt:row.read_at,createdAt:row.created_at,code:row.codigo_externo,opportunityStatus:row.estado,listingName:row.nombre}));
+  let automationItems:any[]=[];
+  if(!['closing','followup','matches','pending'].includes(options.filter??'all')){
+    const automationWhere=['company_id=?','dismissed_at IS NULL'];const automationValues:any[]=[companyId];if(options.filter==='unread')automationWhere.push('read_at IS NULL');
+    const [notifications]=await pool.query<any[]>(`SELECT id,listing_code code,title,message,read_at readAt,created_at createdAt FROM company_automation_notifications WHERE ${automationWhere.join(' AND ')} ORDER BY read_at IS NULL DESC,created_at DESC LIMIT ?`,[...automationValues,limit]);
+    automationItems=notifications.map(row=>({id:-(1_000_000_000+Number(row.id)),opportunityId:0,type:'automation',title:row.title,message:row.message,dueAt:row.createdAt,readAt:row.readAt,createdAt:row.createdAt,code:row.code,listingName:null}));
+  }
   const matches=options.filter==='closing'||options.filter==='followup'?[]:await listProactiveMatches({filter:options.filter==='unread'?'unread':options.filter==='matches'?'matches':options.filter==='pending'?'pending':'all',limit});
-  return [...items,...matches].sort((a,b)=>new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime()).slice(0,limit);
+  return [...items,...automationItems,...matches].sort((a,b)=>new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime()).slice(0,limit);
 }
-export async function alertCounts(){const companyId=await resolveCurrentCompanyId();const [[[row]],matches]=await Promise.all([pool.query<any[]>('SELECT COUNT(*) total,SUM(read_at IS NULL) unread FROM company_alerts WHERE company_id=? AND dismissed_at IS NULL',[companyId]),proactiveMatchCounts()]);return {total:Number(row.total??0)+matches.total,unread:Number(row.unread??0)+matches.unread,pendingMatches:matches.unread};}
+export async function alertCounts(){const companyId=await resolveCurrentCompanyId();const [[[row]],[[automation]],matches]=await Promise.all([pool.query<any[]>('SELECT COUNT(*) total,SUM(read_at IS NULL) unread FROM company_alerts WHERE company_id=? AND dismissed_at IS NULL',[companyId]),pool.query<any[]>('SELECT COUNT(*) total,SUM(read_at IS NULL) unread FROM company_automation_notifications WHERE company_id=? AND dismissed_at IS NULL',[companyId]),proactiveMatchCounts()]);return {total:Number(row.total??0)+Number(automation.total??0)+matches.total,unread:Number(row.unread??0)+Number(automation.unread??0)+matches.unread,pendingMatches:matches.unread};}
 
 export async function getAlertOverview(){
   const companyId=await resolveCurrentCompanyId();

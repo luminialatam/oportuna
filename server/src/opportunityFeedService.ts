@@ -2,8 +2,20 @@ import pool from './db.js';
 import { currentCompanyContext } from './companyRequestContext.js';
 import { getCompanyMatches } from './companyService.js';
 import { planCatalog, isPlanId, type PlanId } from './subscriptionService.js';
+import { getOpportunityTeam, recordCompanyActivity, saveOpportunityTeam } from './collaborationService.js';
 
 export type OpportunityFeedFilter = 'recommended' | 'unread' | 'discarded';
+type ListingCode = { codigo_externo: string };
+
+export function preserveMatchOrder<T extends ListingCode>(orderedMatches: T[], visibleCodes: ReadonlySet<string>): T[] {
+  const seen = new Set<string>();
+  return orderedMatches.filter(item => {
+    const code = String(item.codigo_externo);
+    if (!visibleCodes.has(code) || seen.has(code)) return false;
+    seen.add(code);
+    return true;
+  });
+}
 
 function currentContext() {
   const context = currentCompanyContext();
@@ -62,7 +74,16 @@ export async function getOpportunityFeed(filter: OpportunityFeedFilter) {
       for (const state of states) statesByCode.set(String(state.codigo_externo), state);
     }
     await connection.commit();
-    const items = visible.map((item: any) => ({ ...item, ...(statesByCode.get(String(item.codigo_externo)) ?? {}) }))
+    const visibleCodes = new Set(visible.map((item: any) => String(item.codigo_externo)));
+    // Keep the scoring engine's global relevance ordering while preserving the weekly quota.
+    const globallyOrderedVisible = preserveMatchOrder(eligible, visibleCodes);
+    const trackingByCode = new Map<string, any>();
+    if (codes.length) {
+      const [trackedRows] = await connection.query<any[]>(`SELECT codigo_externo,created_at trackingCreatedAt,estado trackingState
+        FROM company_opportunity_tracking WHERE company_id=? AND codigo_externo IN (${codes.map(() => '?').join(',')})`, [companyId, ...codes]);
+      for (const tracked of trackedRows) trackingByCode.set(String(tracked.codigo_externo), tracked);
+    }
+    const items = globallyOrderedVisible.map((item: any) => ({ ...item, ...(statesByCode.get(String(item.codigo_externo)) ?? {}), ...(trackingByCode.get(String(item.codigo_externo)) ?? {}) }))
       .filter((item: any) => !item.dismissedAt && (filter !== 'unread' || !item.readAt));
     return { ...matches, total: items.length, items };
   } catch (error) { await connection.rollback(); throw error; }
@@ -73,8 +94,9 @@ export async function markOpportunityRead(code: string) {
   const { userId, companyId } = currentContext();
   const [listings] = await pool.query<any[]>('SELECT codigo_externo FROM licitaciones WHERE codigo_externo=? LIMIT 1', [code]);
   if (!listings.length) return false;
-  await pool.execute(`INSERT INTO company_user_opportunity_states (company_id,user_id,codigo_externo,read_at)
+  const [result] = await pool.execute<any>(`INSERT INTO company_user_opportunity_states (company_id,user_id,codigo_externo,read_at)
     VALUES (?,?,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE read_at=COALESCE(read_at,UTC_TIMESTAMP())`, [companyId, userId, code]);
+  if (Number(result.affectedRows) > 0) await recordCompanyActivity(code, 'marked_read', 'Se marcó la oportunidad como leída.');
   return true;
 }
 
@@ -82,13 +104,34 @@ export async function dismissOpportunity(code: string) {
   const { userId, companyId } = currentContext();
   const [listings] = await pool.query<any[]>('SELECT codigo_externo FROM licitaciones WHERE codigo_externo=? LIMIT 1', [code]);
   if (!listings.length) return false;
-  await pool.execute(`INSERT INTO company_user_opportunity_states (company_id,user_id,codigo_externo,dismissed_at)
+  const [result] = await pool.execute<any>(`INSERT INTO company_user_opportunity_states (company_id,user_id,codigo_externo,dismissed_at)
     VALUES (?,?,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE dismissed_at=UTC_TIMESTAMP()`, [companyId, userId, code]);
+  if (Number(result.affectedRows) > 0) await recordCompanyActivity(code, 'opportunity_discarded', 'Se descartó la oportunidad.');
   return true;
 }
 
 export async function restoreOpportunity(code: string) {
   const { userId, companyId } = currentContext();
   const [result] = await pool.execute<any>('UPDATE company_user_opportunity_states SET dismissed_at=NULL WHERE company_id=? AND user_id=? AND codigo_externo=? AND dismissed_at IS NOT NULL', [companyId, userId, code]);
+  if (Number(result.affectedRows) > 0) await recordCompanyActivity(code, 'opportunity_restored', 'Se recuperó la oportunidad descartada.');
   return Number(result.affectedRows) > 0;
+}
+
+export async function bulkOpportunityAction(input: { codes: string[]; action: 'read' | 'discard' | 'restore' | 'assign'; assignedUserId?: number | null }) {
+  const results: Array<{ code: string; ok: boolean; error?: string }> = [];
+  for (const code of input.codes) {
+    try {
+      let ok = false;
+      if (input.action === 'read') ok = await markOpportunityRead(code);
+      else if (input.action === 'discard') ok = await dismissOpportunity(code);
+      else if (input.action === 'restore') ok = await restoreOpportunity(code);
+      else {
+        const team = await getOpportunityTeam(code);
+        const saved = await saveOpportunityTeam(code, { assignedUserId: input.assignedUserId ?? null, participantIds: team.participants.map(person => person.id) });
+        ok = saved !== null;
+      }
+      results.push(ok ? { code, ok } : { code, ok: false, error: 'La oportunidad no está disponible o el estado ya cambió.' });
+    } catch (error) { results.push({ code, ok: false, error: error instanceof Error ? error.message : 'No se pudo aplicar la acción.' }); }
+  }
+  return { action: input.action, total: results.length, succeeded: results.filter(item => item.ok).length, failed: results.filter(item => !item.ok).length, results };
 }

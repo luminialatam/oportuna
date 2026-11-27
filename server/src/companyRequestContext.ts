@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 export type CompanyRole = 'admin' | 'collaborator' | 'read_only';
-export type RequestCompanyContext = { userId: number; companyId: number | null; role: CompanyRole | null; platformRole: 'user' | 'admin' };
+export type RequestCompanyContext = { userId: number; companyId: number | null; role: CompanyRole | null; platformRole: 'user' | 'admin'; systemAction?: boolean };
 const context = new AsyncLocalStorage<RequestCompanyContext>();
 
 export function runWithCompanyContext<T>(value: RequestCompanyContext, callback: () => T): T {

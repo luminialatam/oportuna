@@ -175,10 +175,10 @@ export function extractCommercialEvidence(title: string, description: string, it
   const sources: Array<[string, string]> = [['título', title], ['descripción oficial', description], ['partidas indexadas', items]];
   return sources.flatMap(([source, text]) => {
     const tokens = [...text.matchAll(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+/g)];
-    const matches = tokens.map((token, index) => ({ token: canonicalCommercialWord(normalizeCommercialText(token[0])), index, start: token.index ?? 0, end: (token.index ?? 0) + token[0].length }))
+    const matches = tokens.map((token, index) => ({ token: canonicalCommercialWord(normalizeCommercialText(token[0])), literal: token[0], index, start: token.index ?? 0, end: (token.index ?? 0) + token[0].length }))
       .filter(token => wanted.has(token.token));
     if (!matches.length) return [];
-    const matchedTerms = [...new Set(matches.map(match => match.token))];
+    const matchedTerms = [...new Set(matches.map(match => match.literal))];
     const first = matches[0].index;
     const last = matches[matches.length - 1].index;
     const start = tokens[Math.max(0, first - 5)]?.index ?? matches[0].start;
