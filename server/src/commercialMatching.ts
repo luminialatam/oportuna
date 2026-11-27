@@ -148,12 +148,45 @@ export function hasCommercialPhrase(text: string, phrase: string): boolean {
   return normalized.length >= 5 && ` ${normalizeCommercialText(text)} `.includes(` ${normalized} `);
 }
 
-/** Profile keywords are complete commercial phrases; matching only one shared word creates unrelated leads. */
-export function hasProfileKeywordEvidence(keyword: string, title: string, description: string, items: string): boolean {
+export type ProfileKeywordEvidence = { keyword: string; matchedTerms: string[]; matchedSources: string[] };
+
+/** A profile phrase remains a complete requirement, but its terms may be evidenced across official fields. */
+export function profileKeywordEvidence(keyword: string, title: string, description: string, items: string): ProfileKeywordEvidence | null {
   const meaningfulTerms = [...new Set(commercialTerms(keyword, true).filter(term => !genericWords.has(term)))];
-  if (!meaningfulTerms.length) return false;
-  const sources = [title, description, items];
-  return sources.some(source => meaningfulTerms.every(term => hasCommercialTerm(source, term)));
+  if (!meaningfulTerms.length) return null;
+  const sources: Array<[string, string]> = [['título', title], ['descripción oficial', description], ['partidas indexadas', items]];
+  const tokenSet = (text: string) => new Set(normalizeCommercialText(text).split(' ').filter(Boolean).map(canonicalCommercialWord));
+  const sourceTokens = sources.map(([, text]) => tokenSet(text));
+  const combinedTokens = new Set(sourceTokens.flatMap(tokens => [...tokens]));
+  const matchedTerms = meaningfulTerms.filter(term => commercialTerms(term, true).every(word => combinedTokens.has(word)));
+  if (matchedTerms.length !== meaningfulTerms.length) return null;
+  return { keyword, matchedTerms, matchedSources: sources.filter((_, index) => matchedTerms.some(term => commercialTerms(term, true).some(word => sourceTokens[index].has(word)))).map(([source]) => source) };
+}
+
+/** Profile keywords are complete commercial phrases; all specific terms must appear somewhere in the official listing. */
+export function hasProfileKeywordEvidence(keyword: string, title: string, description: string, items: string): boolean {
+  return profileKeywordEvidence(keyword, title, description, items) !== null;
+}
+
+/** Returns short, literal excerpts from the fields that contain the matched terms. */
+export function extractCommercialEvidence(title: string, description: string, items: string, terms: string[]) {
+  const wanted = new Set(terms.flatMap(term => commercialTerms(term, true)));
+  if (!wanted.size) return [] as Array<{ source: string; text: string; matchedTerms: string[] }>;
+  const sources: Array<[string, string]> = [['título', title], ['descripción oficial', description], ['partidas indexadas', items]];
+  return sources.flatMap(([source, text]) => {
+    const tokens = [...text.matchAll(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+/g)];
+    const matches = tokens.map((token, index) => ({ token: canonicalCommercialWord(normalizeCommercialText(token[0])), index, start: token.index ?? 0, end: (token.index ?? 0) + token[0].length }))
+      .filter(token => wanted.has(token.token));
+    if (!matches.length) return [];
+    const matchedTerms = [...new Set(matches.map(match => match.token))];
+    const first = matches[0].index;
+    const last = matches[matches.length - 1].index;
+    const start = tokens[Math.max(0, first - 5)]?.index ?? matches[0].start;
+    const lastToken = tokens[Math.min(tokens.length - 1, last + 5)];
+    const end = lastToken ? (lastToken.index ?? 0) + lastToken[0].length : matches[matches.length - 1].end;
+    const excerpt = text.slice(start, end).trim();
+    return [{ source, text: excerpt.length > 240 ? `${excerpt.slice(0, 237).trimEnd()}…` : excerpt, matchedTerms }];
+  });
 }
 
 export function matchesCommercialExclusion(text: string, exclusion: string): boolean {
