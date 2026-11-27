@@ -6,7 +6,7 @@ const nonSpecificProductNameTerms = new Set('servicio servicios industrial indus
 const weakNameTerms = new Set('alimento equipo maquinaria producto servicio tecnico tecnica tecnicos tecnicas electrico electrica electricos electricas camara procesamiento proceso produccion elaboracion gastronomico sistema planta linea conjunto equipamiento maquina instalacion montaje puesta marcha configuracion red redes laboratorio edificio infraestructura infraestructuras digital institucional cama monitor'.split(' '));
 // Materias primas: acompañan a un equipo, pero no lo identifican.
 const commodityNameTerms = new Set('aceite harina grano cereal agua vegetal'.split(' '));
-const lowSpecificitySingleTerms = new Set('alimento comida gastronomico cocina procesamiento molino maquinaria equipo horno prensa informatica mantencion mantenimiento reparacion instalacion montaje'.split(' '));
+const lowSpecificitySingleTerms = new Set('alimento comida gastronomico cocina procesamiento molino maquinaria equipo horno prensa informatica mantencion mantenimiento reparacion instalacion montaje vacio'.split(' '));
 
 export const commercialOfferTypes = ['product_supply', 'service', 'installation', 'maintenance_repair', 'rental', 'construction'] as const;
 export type CommercialOfferType = typeof commercialOfferTypes[number];
@@ -261,9 +261,9 @@ export function scoreCatalogMatch(product: CatalogMatchInput, title: string, des
   if (!score && exploratoryEvidence.length) score = 24 + Math.min(12, (exploratoryEvidence.length - 1) * 4);
 
   score += Math.min(12, independentSupport.length * 4);
-  if (specificNameTerms.length > 1 && coverage > 0 && coverage <= 0.5) {
-    score = Math.min(score, 38 + Math.round(12 * coverage));
-  }
+  const onlyLowSpecificityNameEvidence = !exactTitle && !exactItems && !exactDescription && directNameHits.length > 0
+    && directNameHits.every(term => lowSpecificitySingleTerms.has(term)) && !keywordHits.length && !synonymHits.length;
+  if ((specificNameTerms.length > 1 && coverage > 0 && coverage <= 0.5) || onlyLowSpecificityNameEvidence) score = Math.min(score, 48);
   score = Math.min(100, score);
 
   const evidenceTerms = [...new Set([
@@ -286,7 +286,7 @@ export function scoreCatalogMatch(product: CatalogMatchInput, title: string, des
   let level: CatalogMatch['level'];
   if (exactTitle || exactItems || (specificNameTerms.length === 1 && titleNameHits.length === 1 && !lowSpecificitySingleTerms.has(specificNameTerms[0]))) level = 'high';
   else if (fullTitleCoverage || (fullItemCoverage && score >= 70) || (fullDescriptionCoverage && score >= 80)) level = 'high';
-  else if (directNameHits.length && coverage >= 0.5 && !(specificNameTerms.length === 1 && lowSpecificitySingleTerms.has(specificNameTerms[0]))) level = 'medium';
+  else if (directNameHits.length && coverage > 0.5 && !(specificNameTerms.length === 1 && lowSpecificitySingleTerms.has(specificNameTerms[0]))) level = 'medium';
   else if (synonymHits.length || keywordHits.length) level = 'medium';
   else level = 'exploratory';
 

@@ -44,9 +44,9 @@ import { OpportunityInbox } from './OpportunityInbox';
 import { MarketPublicoBridge } from './MarketPublicoBridge';
 import { OfferPreparationPanel } from './OfferPreparationPanel';
 import { PriceBookWorkspace } from './PriceBookWorkspace';
-import { CommercialAgents } from './CommercialAgents';
 import { AnalyticsWorkspace } from './AnalyticsWorkspace';
 import { RevenueDesk } from './RevenueDesk';
+import { AIAgentsWorkspace } from './AIAgentsWorkspace';
 import { useLocation, useNavigate } from 'react-router';
 
 type Listing = {
@@ -1618,7 +1618,7 @@ function App() {
           {section === 'Seguridad' && <SecurityPage session={auth} />}
           {section === 'Plan y suscripción' && <SubscriptionPage csrfToken={auth.csrfToken} canRequest={auth.role === 'admin'} onPlanLoaded={setCompanyPlan} />}
           {section === 'Mercado Público' && <MarketPublicoBridge code={new URLSearchParams(location.search).get('codigo') ?? ''} csrfToken={auth.csrfToken} companyName={auth.memberships.find(membership => membership.companyId === auth.activeCompanyId)?.companyName || 'Empresa activa'} canSave={auth.role === 'admin' || auth.role === 'collaborator'} onSaved={() => goToSection('Seguimiento')} />}
-          {section === 'Oportunidades' && <OpportunityInbox csrfToken={auth.csrfToken} onOpen={(code) => void openDetail(code)} />}
+          {section === 'Oportunidades' && <OpportunityInbox csrfToken={auth.csrfToken} onOpen={(code) => void openDetail(code)} onSave={saveOpportunity} />}
 
           {section === 'Resumen' && (
             <div className="summary-page space-y-6">
@@ -2200,11 +2200,13 @@ function App() {
           )}
 
           {section === 'Agentes IA' && (
-            <CommercialAgents
-              csrfToken={auth.csrfToken}
-              companyName={auth.memberships.find((membership) => membership.companyId === auth.activeCompanyId)?.companyName ?? 'tu empresa'}
-              onConfigure={() => goToSection('Mi empresa')}
-              onAnalyzeListing={(code) => void openDetail(code)}
+            <AIAgentsWorkspace
+              key={auth.activeCompanyId ?? 'no-company'}
+              companyId={auth.activeCompanyId}
+              companyName={auth.memberships.find((membership) => membership.companyId === auth.activeCompanyId)?.companyName ?? null}
+              onOpen={(code) => void openDetail(code)}
+              onSave={saveOpportunity}
+              onNavigate={goToSection}
             />
           )}
 
