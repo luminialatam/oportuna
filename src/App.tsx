@@ -15,7 +15,6 @@ import {
   Filter,
   FlaskConical,
   LayoutDashboard,
-  LockKeyhole,
   LoaderCircle,
   LogOut,
   MailPlus,
@@ -756,6 +755,7 @@ function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [companyPlan, setCompanyPlan] = useState<any>(null);
+  const [companyPlanCompanyId, setCompanyPlanCompanyId] = useState<number | null>(null);
   const [config, setConfig] = useState<any>(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -830,17 +830,20 @@ function App() {
   }, [authState, auth?.activeCompanyId, auth?.platformRole, detailRouteCode, isAdmin, isPlatformAdmin, isCompanySetup, location.pathname, navigate, pendingLegacy, section]);
 
   useEffect(() => {
-    if (authState !== 'authenticated' || !auth?.activeCompanyId) { setCompanyPlan(null); return; }
+    if (authState !== 'authenticated' || !auth?.activeCompanyId) { setCompanyPlan(null); setCompanyPlanCompanyId(null); return; }
+    const companyId = auth.activeCompanyId;
     let active = true;
-    void api<any>('/api/company/plan').then((value) => { if (active) setCompanyPlan(value); }).catch(() => { if (active) setCompanyPlan(null); });
+    setCompanyPlan(null);
+    setCompanyPlanCompanyId(null);
+    void api<any>('/api/company/plan').then((value) => { if (active) { setCompanyPlan(value); setCompanyPlanCompanyId(companyId); } }).catch(() => { if (active) { setCompanyPlan(null); setCompanyPlanCompanyId(companyId); } });
     return () => { active = false; };
   }, [authState, auth?.activeCompanyId]);
 
   useEffect(() => {
-    if (location.pathname === '/inteligencia-mercado' && companyPlan && !companyPlan.plan?.marketAnalytics) {
+    if (location.pathname === '/inteligencia-mercado' && auth?.activeCompanyId && companyPlanCompanyId === auth.activeCompanyId && companyPlan && !companyPlan.plan?.marketAnalytics) {
       navigate('/suscripcion', { replace: true });
     }
-  }, [location.pathname, companyPlan, navigate]);
+  }, [location.pathname, auth?.activeCompanyId, companyPlanCompanyId, companyPlan, navigate]);
 
   // Restore server-backed sessions after reloads. A temporary backend restart must not
   // be mistaken for an anonymous session or turn a valid cookie into a blank login.
@@ -1267,7 +1270,7 @@ function App() {
         { name: 'Buscar oportunidades', icon: Search },
         { name: 'Oportunidades', icon: Sparkles },
         { name: 'Agentes IA', icon: FileSearch },
-        { name: 'Inteligencia de mercado', icon: BarChart3, isPlanLocked: Boolean(companyPlan && !companyPlan.plan?.marketAnalytics) },
+        { name: 'Inteligencia de mercado', icon: BarChart3 },
         { name: 'Analítica', icon: BarChart3, subItem: true },
       ],
     },
@@ -1357,7 +1360,7 @@ function App() {
                   return (
                     <button
                       key={item.name}
-                      onClick={() => goToSection('isPlanLocked' in item && item.isPlanLocked ? 'Plan y suscripción' : item.name)}
+                      onClick={() => goToSection(item.name)}
                       aria-current={active ? 'page' : undefined}
                       className={`w-full h-10 px-3 rounded-xl flex items-center justify-between text-xs font-semibold transition-colors ${'subItem' in item && item.subItem ? 'pl-8 h-9 text-[11px]' : ''} ${
                         active
@@ -1369,11 +1372,6 @@ function App() {
                         <item.icon size={17} className={active ? 'text-[#5636D9]' : 'text-[#8A92A6]'} />
                         <span>{item.name}</span>
                       </div>
-                      {'isPlanLocked' in item && item.isPlanLocked && (
-                        <span title="Disponible en los planes Vuela y Brilla" aria-label="Disponible en los planes Vuela y Brilla" className="inline-flex items-center gap-1 rounded-full border border-[#E6E1FA] bg-[#F5F2FF] px-2 py-1 text-[9px] font-semibold text-[#6249C6]">
-                          <LockKeyhole size={11} aria-hidden="true" /> Plan superior
-                        </span>
-                      )}
                       {'isSandbox' in item && item.isSandbox && (
                         <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
                           Aislado
