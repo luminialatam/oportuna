@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Check, LoaderCircle, Sparkles } from 'lucide-react';
+import { Check, Clock3, LoaderCircle, Sparkles } from 'lucide-react';
 
 type PlanId = 'crece' | 'vuela' | 'brilla';
 type BillingPeriod = 'monthly' | 'annual';
@@ -19,6 +19,7 @@ const statusLabel = { pending: 'Pendiente de revisión', approved: 'Aprobada', r
 export function SubscriptionPage({ csrfToken, canRequest, onPlanLoaded }: { csrfToken: string; canRequest: boolean; onPlanLoaded?: (summary: Summary) => void }) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [requests, setRequests] = useState<PlanRequest[]>([]);
+  const [requestsLoaded, setRequestsLoaded] = useState(!canRequest);
   const [period, setPeriod] = useState<BillingPeriod>('monthly');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -26,26 +27,36 @@ export function SubscriptionPage({ csrfToken, canRequest, onPlanLoaded }: { csrf
   const [submittingPlan, setSubmittingPlan] = useState<PlanId | null>(null);
   const load = useCallback(async () => {
     setLoading(true); setError('');
+    if (canRequest) setRequestsLoaded(false);
     try {
       const requestsPromise = canRequest ? fetch('/api/company/plan-requests', { credentials: 'same-origin', cache: 'no-store' }) : Promise.resolve(null);
       const [planResponse, requestsResponse] = await Promise.all([
         fetch('/api/company/plan', { credentials: 'same-origin', cache: 'no-store' }), requestsPromise,
       ]);
-      const data = await planResponse.json();
+      const [data, requestData] = await Promise.all([
+        planResponse.json(),
+        requestsResponse ? requestsResponse.json() : Promise.resolve(null),
+      ]);
       if (!planResponse.ok) throw new Error(data.error || 'No se pudo cargar el plan de la empresa.');
-      setSummary(data); setPeriod(data.billingPeriod === 'annual' ? 'annual' : 'monthly'); onPlanLoaded?.(data);
+      if (requestsResponse && !requestsResponse.ok) throw new Error(requestData?.error || 'No se pudo cargar el estado de las solicitudes.');
       if (requestsResponse) {
-        const requestData = await requestsResponse.json();
-        if (!requestsResponse.ok) throw new Error(requestData.error || 'No se pudo cargar el estado de las solicitudes.');
-        setRequests(requestData.requests ?? []);
+        const loadedRequests: PlanRequest[] = Array.isArray(requestData?.requests) ? requestData.requests : [];
+        const pending = loadedRequests.find(item => item.status === 'pending');
+        setRequests(loadedRequests);
+        setPeriod(pending?.billingPeriod ?? (data.billingPeriod === 'annual' ? 'annual' : 'monthly'));
+        setRequestsLoaded(true);
+      } else {
+        setRequests([]);
+        setPeriod(data.billingPeriod === 'annual' ? 'annual' : 'monthly');
       }
+      setSummary(data); onPlanLoaded?.(data);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo cargar el plan de la empresa.'); }
     finally { setLoading(false); }
   }, [canRequest, onPlanLoaded]);
   useEffect(() => { void load(); }, [load]);
 
   const requestPlan = async (plan: PlanId) => {
-    if (!canRequest || pendingRequest) return;
+    if (!canRequest || !requestsLoaded || pendingRequest || submittingPlan) return;
     setSubmittingPlan(plan); setError(''); setNotice('');
     try {
       const response = await fetch('/api/company/plan-requests', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: JSON.stringify({ plan, billingPeriod: plan === 'crece' ? 'monthly' : period }) });
@@ -91,11 +102,15 @@ export function SubscriptionPage({ csrfToken, canRequest, onPlanLoaded }: { csrf
         </div>
       </section>
 
-      {canRequest ? <section className="rounded-2xl border border-[#E1E4EA] bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold text-[#171A24]">Solicitar cambio de plan</h2><p className="mt-1 text-xs text-[#737D91]">Un administrador de plataforma revisará la solicitud.</p></div>
-          <div role="group" aria-label="Modalidad de pago" className="inline-flex rounded-xl border border-[#DCE1EA] bg-[#F7F8FA] p-1"><button type="button" aria-pressed={period === 'monthly'} onClick={() => setPeriod('monthly')} className={`rounded-lg px-4 py-2 text-xs font-semibold ${period === 'monthly' ? 'bg-white text-[#5636D9] shadow-sm' : 'text-[#5D6472]'}`}>Mensual</button><button type="button" aria-pressed={period === 'annual'} onClick={() => setPeriod('annual')} className={`rounded-lg px-4 py-2 text-xs font-semibold ${period === 'annual' ? 'bg-white text-[#5636D9] shadow-sm' : 'text-[#5D6472]'}`}>Anual <span className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-800">Ahorra 15%</span></button></div>
+      {canRequest ? <section className={`subscription-request-panel rounded-2xl border bg-white p-5 shadow-sm${pendingRequest ? ' has-pending-request' : ''}`} aria-labelledby="plan-request-title">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="plan-request-title" className="font-bold text-[#171A24]">Solicitar cambio de plan</h2><p className="mt-1 text-xs text-[#737D91]">Un administrador de plataforma revisará la solicitud. No se procesa ningún cobro.</p></div>
+          <div role="group" aria-label="Modalidad de pago" className={`inline-flex rounded-xl border border-[#DCE1EA] bg-[#F7F8FA] p-1${pendingRequest || !requestsLoaded ? ' is-locked' : ''}`} aria-disabled={Boolean(pendingRequest) || !requestsLoaded}>
+            <button type="button" disabled={Boolean(pendingRequest) || !requestsLoaded} aria-pressed={period === 'monthly'} onClick={() => setPeriod('monthly')} className={`rounded-lg px-4 py-2 text-xs font-semibold ${period === 'monthly' ? 'bg-white text-[#5636D9] shadow-sm' : 'text-[#5D6472]'}`}>Mensual</button>
+            <button type="button" disabled={Boolean(pendingRequest) || !requestsLoaded} aria-pressed={period === 'annual'} onClick={() => setPeriod('annual')} className={`rounded-lg px-4 py-2 text-xs font-semibold ${period === 'annual' ? 'bg-white text-[#5636D9] shadow-sm' : 'text-[#5D6472]'}`}>Anual <span className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-800">Ahorra 15%</span></button>
+          </div>
         </div>
-        {pendingRequest ? <div role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Solicitud pendiente: {features.find(item => item.id === pendingRequest.requestedPlan)?.title} · {pendingRequest.billingPeriod === 'annual' ? 'Anual' : 'Mensual'}. No se puede crear otra hasta que se resuelva.</div> : null}
+        {!requestsLoaded && canRequest ? <div role="status" className="mt-4 rounded-xl border border-[#DCE1EA] bg-[#F8F9FB] p-3 text-sm text-[#5D6472]">Verificando si hay una solicitud en revisión. Las opciones se habilitarán cuando termine.</div> : null}
+        {pendingRequest ? <div role="status" className="subscription-pending-notice mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><Clock3 className="subscription-pending-icon" size={20} aria-hidden="true" /><div><strong>Solicitud en revisión</strong><p>Solicitaste <b>{features.find(item => item.id === pendingRequest.requestedPlan)?.title}</b> con modalidad <b>{pendingRequest.billingPeriod === 'annual' ? 'anual' : 'mensual'}</b>{pendingRequest.requestedAt ? ` el ${new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santiago' }).format(new Date(pendingRequest.requestedAt))}` : ''}. El plan actual sigue activo hasta que un administrador resuelva la solicitud.</p><small>No puedes enviar otra solicitud ni cambiar la modalidad mientras esta siga pendiente.</small></div></div> : null}
       </section> : null}
 
       <section className="grid gap-4 lg:grid-cols-3" aria-label="Opciones de plan">
@@ -109,7 +124,7 @@ export function SubscriptionPage({ csrfToken, canRequest, onPlanLoaded }: { csrf
             <div className="flex items-start justify-between gap-2"><div><h3 className="text-lg font-bold text-[#171A24]">{option.title}</h3><p className="mt-1 min-h-10 text-sm font-semibold text-[#5636D9]">{optionPrice}</p></div>{isCurrent && <span className="rounded-full bg-[#f0edff] px-2.5 py-1 text-[11px] font-semibold text-[#5636D9]">Plan actual</span>}</div>
             <ul className="mt-4 flex-1 space-y-3 text-sm text-[#4C5568]">{[option.users, option.analyses, option.recommendations, option.tracking, ...(option.analytics ? ['Inteligencia de mercado'] : ['Resumen y buscador'])].map(feature => <li key={feature} className="flex gap-2"><Check size={16} className="mt-0.5 shrink-0 text-emerald-600" /><span>{feature}</span></li>)}</ul>
             {option.analytics && <p className="mt-4 text-xs text-[#737D91]">Incluye los cinco principales compradores por licitaciones indexadas de los últimos 30 días.</p>}
-            {canRequest ? <button type="button" disabled={Boolean(pendingRequest) || submittingPlan !== null || isCurrentSelection} onClick={() => void requestPlan(option.id)} className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#5636D9] px-4 text-sm font-semibold text-white hover:bg-[#4b2ec7] disabled:cursor-not-allowed disabled:opacity-50">{submittingPlan === option.id ? <LoaderCircle size={16} className="animate-spin" /> : null}{isCurrentSelection ? 'Plan actual' : isCurrent ? 'Solicitar cambio de modalidad' : `Solicitar ${option.title}`}</button> : null}
+            {canRequest ? <button type="button" disabled={!requestsLoaded || Boolean(pendingRequest) || submittingPlan !== null || isCurrentSelection} onClick={() => void requestPlan(option.id)} className={`subscription-plan-action mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold ${pendingRequest || !requestsLoaded ? 'is-disabled' : ''}`} title={pendingRequest ? 'Ya existe una solicitud en revisión para esta empresa' : undefined}>{submittingPlan === option.id || (!requestsLoaded && !pendingRequest) ? <LoaderCircle size={16} className="animate-spin" /> : null}{!requestsLoaded ? 'Verificando solicitud…' : pendingRequest ? (pendingRequest.requestedPlan === option.id ? 'Solicitud en revisión' : 'Esperando resolución') : submittingPlan === option.id ? 'Enviando…' : isCurrentSelection ? 'Plan actual' : isCurrent ? 'Solicitar cambio de modalidad' : `Solicitar ${option.title}`}</button> : null}
           </article>;
         })}
       </section>

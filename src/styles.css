@@ -510,6 +510,56 @@ body { overflow-x: clip; }
   .summary-matches-table td:not(:first-child)::before{color:#687286;font-size:11px;font-weight:700}
 }
 
+/* Opportunities inbox: explicit spacing and a usable search/filter hierarchy. */
+.opportunity-inbox{display:grid;gap:22px;min-width:0}
+.opportunity-page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;min-width:0;padding:4px 0 2px}
+.opportunity-page-copy{min-width:0}
+.opportunity-eyebrow{margin:0;color:#5636d9;font-size:12px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
+.opportunity-page-copy h1{margin:5px 0 0;color:#171a24;font-size:32px;font-weight:750;line-height:1.15;letter-spacing:-.035em}
+.opportunity-page-copy>p:last-child{margin:8px 0 0;color:#667085;font-size:16px;line-height:1.5}
+.opportunity-search{display:flex;align-items:center;gap:10px;flex:0 1 390px;min-width:270px;min-height:46px;padding:0 12px;border:1px solid #dce1ea;border-radius:11px;background:#fff;color:#8a92a6;box-shadow:0 1px 2px #171a2408}
+.opportunity-search:focus-within{border-color:#8065f5;box-shadow:0 0 0 3px #8065f51c}
+.opportunity-search>svg{flex:none;color:#687184}
+.opportunity-search input{flex:1;min-width:0;height:42px;border:0;outline:0;background:transparent;color:#171a24;font:inherit;font-size:14px}
+.opportunity-search input::placeholder{color:#8a92a6}
+.opportunity-search button{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:7px;background:transparent;color:#687184;font-size:20px;line-height:1;cursor:pointer}
+.opportunity-search button:hover:not(:disabled){background:#f0edff;color:#5636d9}
+.opportunity-search button:disabled{visibility:hidden}
+.opportunity-filter-tabs{display:flex;align-items:center;gap:8px;min-width:0;padding:5px;border:1px solid #e1e4ea;border-radius:13px;background:#f8f9fb}
+.opportunity-filter-tabs [role="tab"]{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:42px;padding:0 15px;border:1px solid transparent;border-radius:9px;background:transparent;color:#5d6472;font:inherit;font-size:14px;font-weight:650;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s,color .15s,box-shadow .15s}
+.opportunity-filter-tabs [role="tab"]:hover{background:#fff;color:#5636d9}
+.opportunity-filter-tabs [role="tab"][aria-selected="true"]{border-color:#e6e1ff;background:#fff;color:#5636d9;box-shadow:0 1px 3px #171a2410}
+.opportunity-tab-count{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border-radius:999px;background:#eef0f4;color:#667085;font-size:12px;font-weight:700;line-height:1}
+.opportunity-filter-tabs [aria-selected="true"] .opportunity-tab-count{background:#f0edff;color:#5636d9}
+.opportunity-filter-tabs [role="tab"]:focus-visible,.opportunity-search button:focus-visible,.opportunity-state button:focus-visible{outline:3px solid #a797ff;outline-offset:2px}
+.opportunity-state{display:grid;justify-items:center;gap:10px;min-height:220px;padding:36px 22px;border:1px solid #e1e4ea;border-radius:16px;background:#fff;color:#8a92a6;text-align:center;box-shadow:0 2px 8px #18233b08}
+.opportunity-state>svg{color:#8065f5}
+.opportunity-state>b{max-width:640px;color:#202433;font-size:18px;line-height:1.35}
+.opportunity-state>span{max-width:620px;color:#687184;font-size:14px;line-height:1.55}
+.opportunity-state>button{min-height:38px;margin-top:4px;padding:0 14px;border:1px solid #ded8ff;border-radius:9px;background:#fff;color:#5636d9;font-size:13px;font-weight:700;cursor:pointer}
+.opportunity-state>button:hover{background:#f5f2ff}
+.opportunity-alert{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;border:1px solid #ffc9c4;border-radius:12px;background:#fff4f2;color:#a6322a;font-size:14px;line-height:1.45}
+.opportunity-alert button{flex:none;border:0;background:none;color:#5636d9;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer}
+.opportunity-results-summary{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;color:#687184;font-size:13px}
+.opportunity-results-summary b{color:#202433}
+@media(max-width:760px){.opportunity-page-header{align-items:stretch;flex-direction:column;gap:16px}.opportunity-page-copy h1{font-size:28px}.opportunity-page-copy>p:last-child{font-size:15px}.opportunity-search{flex:initial;width:100%;min-width:0}.opportunity-filter-tabs{overflow-x:auto;scrollbar-width:thin}.opportunity-filter-tabs [role="tab"]{flex:1 0 auto;padding:0 12px}.opportunity-state{min-height:190px;padding:28px 18px}}
+@media(max-width:420px){.opportunity-inbox{gap:16px}.opportunity-filter-tabs{gap:4px;padding:4px}.opportunity-filter-tabs [role="tab"]{gap:6px;min-height:40px;padding:0 9px;font-size:12px}.opportunity-tab-count{min-width:22px;height:22px;font-size:11px}.opportunity-state>b{font-size:16px}.opportunity-state>span{font-size:13px}}
+
+.subscription-pending-notice{display:flex;align-items:flex-start;gap:12px;line-height:1.5}
+.subscription-pending-icon{flex:none;margin-top:1px;color:#a85b08}
+.subscription-pending-notice strong{display:block;color:#713f12;font-size:14px}
+.subscription-pending-notice p{margin:3px 0 0;color:#713f12}
+.subscription-pending-notice small{display:block;margin-top:5px;color:#8b571e;font-size:12px}
+.subscription-request-panel.has-pending-request{border-color:#f3d58c;background:linear-gradient(180deg,#fffdf7,#fff)}
+.subscription-request-panel [role="group"].is-locked{opacity:.7}
+.subscription-request-panel [role="group"] button:disabled{cursor:not-allowed}
+.subscription-plan-action{width:100%;border:1px solid #5636d9;background:#5636d9;color:#fff;transition:background .15s,border-color .15s,box-shadow .15s}
+.subscription-plan-action:hover:not(:disabled){background:#4b2ec7}
+.subscription-plan-action:disabled{cursor:not-allowed}
+.subscription-plan-action.is-disabled:disabled{border-color:#d9d5e8;background:#eeecf4;color:#625d73;opacity:1;box-shadow:none}
+.subscription-plan-action:focus-visible{outline:3px solid #a797ff;outline-offset:3px}
+@media(max-width:640px){.subscription-pending-notice{padding:13px}.subscription-request-panel [role="group"]{width:100%}.subscription-request-panel [role="group"] button{flex:1}}
+
 
 /* Refinamiento visual e interacción de filtros de búsqueda */
 .opportunity-query-wrap input{border:2px solid #6545e8;box-shadow:0 0 0 4px #6545e814}
