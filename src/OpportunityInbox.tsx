@@ -180,20 +180,23 @@ export function OpportunityInbox({
 
   const levelFor = (item: Item) => matchLevelName[item.level ?? ''] ?? 'Coincidencia no informada';
 
-  return <section className="opportunity-inbox space-y-5" aria-labelledby="opportunities-title">
-    <header className="opportunity-page-header flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-wider text-[#5636D9]">Explorar</p><h1 id="opportunities-title" className="mt-1 text-3xl font-bold">Oportunidades</h1><p className="mt-2 text-[#667085]">Revisa las coincidencias del catálogo de tu empresa y decide cuáles seguir.</p></div><label className="opportunity-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Buscar oportunidades</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar por nombre, código u organismo" /><button type="button" onClick={() => setQuery('')} disabled={!query} aria-label="Limpiar búsqueda">×</button></label></header>
+  return <section className="opportunity-inbox" aria-labelledby="opportunities-title">
+    <header className="opportunity-page-header">
+      <div className="opportunity-page-copy"><p className="opportunity-eyebrow">Explorar</p><h1 id="opportunities-title">Oportunidades</h1><p>Revisa las coincidencias del catálogo de tu empresa y decide cuáles seguir.</p></div>
+      <label className="opportunity-search"><Search size={18} aria-hidden="true" /><span className="sr-only">Buscar oportunidades</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar por nombre, código u organismo" /><button type="button" onClick={() => setQuery('')} disabled={!query} aria-label="Limpiar búsqueda">×</button></label>
+    </header>
 
     <div className="opportunity-filter-tabs" role="tablist" aria-label="Filtrar oportunidades">
       {filters.map(option => <button key={option.id} type="button" role="tab" aria-selected={filter === option.id} onClick={() => setFilter(option.id)}>
-        <span>{option.label}</span><span className="opportunity-tab-count" aria-label={counts[option.id] == null ? 'Conteo aún no cargado' : `${counts[option.id]} oportunidades`}>{counts[option.id] == null ? '—' : counts[option.id]}</span>
+        <span className="opportunity-tab-label">{option.label}</span><span className="opportunity-tab-count" aria-label={counts[option.id] == null ? 'Conteo aún no cargado' : `${counts[option.id]} oportunidades`}>{counts[option.id] == null ? '—' : counts[option.id]}</span>
       </button>)}
     </div>
 
     {error && <div role="alert" className="opportunity-alert">{error}<button type="button" onClick={() => void load()}>Reintentar</button></div>}
-    {loading ? <div role="status" aria-live="polite" className="opportunity-state"><LoaderCircle className="spin" size={22} /> Cargando oportunidades…</div>
-      : !configured && filter !== 'discarded' ? <div className="opportunity-state"><Star size={24} /><b>Configura el catálogo de tu empresa</b><span>Al agregar productos y servicios, Oportuna podrá buscar coincidencias reales en las licitaciones indexadas.</span></div>
-      : items.length === 0 ? <div className="opportunity-state"><Circle size={24} /><b>{filter === 'unread' ? 'No tienes oportunidades sin leer' : filter === 'discarded' ? 'No hay oportunidades descartadas' : 'No hay recomendaciones disponibles'}</b><span>{filter === 'recommended' ? 'No encontramos coincidencias para el catálogo y las preferencias de tu empresa en este momento.' : 'Cuando cambie este estado, las oportunidades aparecerán aquí.'}</span></div>
-      : visibleItems.length === 0 ? <div className="opportunity-state"><Search size={24} /><b>No hay resultados para esta búsqueda</b><span>Prueba con otro nombre, código u organismo.</span><button type="button" onClick={() => setQuery('')}>Limpiar búsqueda</button></div>
+    {loading ? <div role="status" aria-live="polite" className="opportunity-state"><LoaderCircle className="spin" size={22} /><b>Cargando oportunidades…</b></div>
+      : !configured && filter !== 'discarded' ? <div className="opportunity-state"><Star size={26} /><b>Configura el catálogo de tu empresa</b><span>Al agregar productos y servicios, Oportuna podrá buscar coincidencias reales en las licitaciones indexadas.</span></div>
+      : items.length === 0 ? <div className="opportunity-state"><Circle size={26} /><b>{filter === 'unread' ? 'No tienes oportunidades sin leer' : filter === 'discarded' ? 'No hay oportunidades descartadas' : 'No hay recomendaciones disponibles'}</b><span>{filter === 'recommended' ? 'No encontramos coincidencias para el catálogo y las preferencias de tu empresa en este momento.' : 'Cuando cambie este estado, las oportunidades aparecerán aquí.'}</span></div>
+      : visibleItems.length === 0 ? <div className="opportunity-state"><Search size={26} /><b>No hay resultados para esta búsqueda</b><span>Prueba con otro nombre, código u organismo.</span><button type="button" onClick={() => setQuery('')}>Limpiar búsqueda</button></div>
       : <>
         <div className="opportunity-results-summary" aria-live="polite"><span>Mostrando <b>{visibleItems.length}</b> de <b>{counts[filter] ?? items.length}</b> oportunidades</span>{query && <span>La búsqueda solo filtra los resultados cargados y no modifica los estados.</span>}</div>
         <div className="opportunity-card-grid">
