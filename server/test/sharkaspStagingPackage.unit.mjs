@@ -59,6 +59,24 @@ const legacySchemaWithDifferentUser = loadStagingConfig({
 });
 assert.equal(legacySchemaWithDifferentUser.DB_HOST, '', 'changing MySQL user cannot make the shared production schema a staging target');
 
+const productionSchemaOnOtherHost = loadStagingConfig({
+  ...process.env,
+  DB_HOST: 'mysql-stage.example.invalid',
+  DB_PORT: '3306',
+  DB_NAME: 'db_ac9392_licitapp',
+  DB_USER: 'oportuna_stage_user',
+});
+assert.equal(productionSchemaOnOtherHost.DB_HOST, '', 'the production schema is blocked even on another host');
+
+const productionHostWithOtherSchema = loadStagingConfig({
+  ...process.env,
+  DB_HOST: 'mysql1002.site4now.net',
+  DB_PORT: '3306',
+  DB_NAME: 'oportuna_stage',
+  DB_USER: 'oportuna_stage_user',
+});
+assert.equal(productionHostWithOtherSchema.DB_HOST, '', 'the shared production host is blocked even with another schema');
+
 assert.match(webConfig, /name="PORT"\s+value="%HTTP_PLATFORM_PORT%"/);
 assert.match(webConfig, /name="PROCESS_ROLE"\s+value="web"/);
 assert.match(webConfig, /name="SYNC_SCHEDULER_ENABLED"\s+value="false"/);
@@ -76,25 +94,46 @@ const plan = spawnSync(process.execPath, [resolve(root, 'server/scripts/applySha
   env: { PATH: process.env.PATH, NODE_ENV: 'test' },
 });
 assert.equal(plan.status, 0, plan.stderr);
-assert.match(plan.stdout, /001–018; 18 archivos ascendentes/);
+assert.match(plan.stdout, /001–025; \d+ archivos ascendentes/);
 assert.match(plan.stdout, /017_company_offer_drafts\.sql/);
 assert.match(plan.stdout, /018_analytics_saved_views\.sql/);
+assert.match(plan.stdout, /025_team_activity_automation\.sql/);
 assert.doesNotMatch(plan.stdout, /012_authentication\.down\.sql/);
 assert.match(plan.stdout, /No se leyó configuración de base ni se conectó a ningún servidor/);
 
-const blockedTarget = spawnSync(process.execPath, [resolve(root, 'server/scripts/applySharkAspStagingMigrations.mjs'), '--check'], {
-  cwd: root,
-  encoding: 'utf8',
-  env: {
-    PATH: process.env.PATH,
-    STAGING_DB_HOST: 'mysql1002.site4now.net',
-    STAGING_DB_PORT: '3306',
-    STAGING_DB_NAME: 'db_ac9392_licitapp',
-    STAGING_DB_USER: 'ac9392_licitapp',
-  },
+function runStagingCheck(env) {
+  return spawnSync(process.execPath, [resolve(root, 'server/scripts/applySharkAspStagingMigrations.mjs'), '--check'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH, ...env },
+  });
+}
+
+const missingTarget = runStagingCheck({ DB_HOST: 'mysql1002.site4now.net', DB_NAME: 'db_ac9392_licitapp', DB_USER: 'production_user' });
+assert.notEqual(missingTarget.status, 0);
+assert.match(missingTarget.stderr, /Define STAGING_DB_HOST, STAGING_DB_NAME y STAGING_DB_USER/);
+assert.doesNotMatch(missingTarget.stderr, /Contraseña MySQL staging/);
+
+const productionTargets = [
+  { STAGING_DB_HOST: 'mysql1002.site4now.net', STAGING_DB_PORT: '3306', STAGING_DB_NAME: 'db_ac9392_licitapp', STAGING_DB_USER: 'migration_user' },
+  { STAGING_DB_HOST: 'mysql-stage.example.invalid', STAGING_DB_PORT: '3306', STAGING_DB_NAME: 'db_ac9392_licitapp', STAGING_DB_USER: 'migration_user' },
+  { STAGING_DB_HOST: 'mysql1002.site4now.net', STAGING_DB_PORT: '3306', STAGING_DB_NAME: 'oportuna_stage', STAGING_DB_USER: 'migration_user' },
+];
+for (const target of productionTargets) {
+  const blockedTarget = runStagingCheck(target);
+  assert.notEqual(blockedTarget.status, 0);
+  assert.match(blockedTarget.stderr, /coincide con el host o esquema de producción conocido/);
+  assert.doesNotMatch(blockedTarget.stderr, /Contraseña MySQL staging/);
+}
+
+const blockedTarget = runStagingCheck({
+  STAGING_DB_HOST: 'mysql1002.site4now.net',
+  STAGING_DB_PORT: '3306',
+  STAGING_DB_NAME: 'db_ac9392_licitapp',
+  STAGING_DB_USER: 'ac9392_licitapp',
 });
 assert.notEqual(blockedTarget.status, 0);
 assert.match(blockedTarget.stderr, /se bloqueó la conexión de staging/);
 assert.doesNotMatch(blockedTarget.stderr, /Contraseña MySQL staging/);
 
-console.log('PASS SharkASP staging package: isolated DB settings, dedicated secrets, web-only workers off, and 001–018 migration plan.');
+console.log('PASS SharkASP staging package: isolated DB settings, dedicated secrets, web-only workers off, and ordered migration plan through 025.');
