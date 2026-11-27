@@ -182,7 +182,7 @@ export function OpportunityInbox({
 
   return <section className="opportunity-inbox" aria-labelledby="opportunities-title">
     <header className="opportunity-page-header">
-      <div className="opportunity-page-copy"><p className="opportunity-eyebrow">Explorar</p><h1 id="opportunities-title">Oportunidades</h1><p>Revisa las coincidencias del catálogo de tu empresa y decide cuáles seguir.</p></div>
+      <div className="opportunity-page-copy"><p className="opportunity-eyebrow">Explorar</p><h1 id="opportunities-title">Oportunidades</h1><p>Revisa las oportunidades detectadas para tu empresa y decide cuáles seguir.</p></div>
       <label className="opportunity-search"><Search size={18} aria-hidden="true" /><span className="sr-only">Buscar oportunidades</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar por nombre, código u organismo" /><button type="button" onClick={() => setQuery('')} disabled={!query} aria-label="Limpiar búsqueda">×</button></label>
     </header>
 
@@ -195,7 +195,7 @@ export function OpportunityInbox({
     {error && <div role="alert" className="opportunity-alert">{error}<button type="button" onClick={() => void load()}>Reintentar</button></div>}
     {loading ? <div role="status" aria-live="polite" className="opportunity-state"><LoaderCircle className="spin" size={22} /><b>Cargando oportunidades…</b></div>
       : !configured && filter !== 'discarded' ? <div className="opportunity-state"><Star size={26} /><b>Configura el catálogo de tu empresa</b><span>Al agregar productos y servicios, Oportuna podrá buscar coincidencias reales en las licitaciones indexadas.</span></div>
-      : items.length === 0 ? <div className="opportunity-state"><Circle size={26} /><b>{filter === 'unread' ? 'No tienes oportunidades sin leer' : filter === 'discarded' ? 'No hay oportunidades descartadas' : 'No hay recomendaciones disponibles'}</b><span>{filter === 'recommended' ? 'No encontramos coincidencias para el catálogo y las preferencias de tu empresa en este momento.' : 'Cuando cambie este estado, las oportunidades aparecerán aquí.'}</span></div>
+      : items.length === 0 ? <div className="opportunity-state"><Circle size={26} /><b>{filter === 'unread' ? 'No tienes oportunidades pendientes de revisar' : filter === 'discarded' ? 'No has descartado oportunidades' : 'Aún no hay recomendaciones en tu bandeja'}</b><span>{filter === 'recommended' ? 'Cuando se detecten nuevas oportunidades para tu empresa, aparecerán aquí para que puedas revisarlas.' : filter === 'unread' ? 'Las oportunidades que todavía no hayas revisado aparecerán en esta pestaña.' : 'Las oportunidades que descartes aparecerán aquí y podrás recuperarlas.'}</span></div>
       : visibleItems.length === 0 ? <div className="opportunity-state"><Search size={26} /><b>No hay resultados para esta búsqueda</b><span>Prueba con otro nombre, código u organismo.</span><button type="button" onClick={() => setQuery('')}>Limpiar búsqueda</button></div>
       : <>
         <div className="opportunity-results-summary" aria-live="polite"><span>Mostrando <b>{visibleItems.length}</b> de <b>{counts[filter] ?? items.length}</b> oportunidades</span>{query && <span>La búsqueda solo filtra los resultados cargados y no modifica los estados.</span>}</div>
