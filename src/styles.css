@@ -552,6 +552,12 @@ body { overflow-x: clip; }
 .subscription-pending-notice small{display:block;margin-top:5px;color:#69647a;font-size:12px}
 .subscription-request-panel.has-pending-request{border-color:#ded8f6;background:#fff}
 .company-sync-notice{padding:10px 12px;border:1px solid #ded8f6;border-radius:9px;background:#f8f7fc;color:#4f4867;font-size:var(--type-body);line-height:1.55}
+.company-match-error{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 15px;border:1px solid #ded8f6;border-radius:10px;background:#f8f7fc;color:#4f4867;font-size:var(--type-body);line-height:1.55}
+.company-match-error-title{font-weight:700;color:#302755}
+.company-match-error-reference{margin-top:5px;color:#69647a;font-size:var(--type-meta);overflow-wrap:anywhere}
+.company-match-retry{flex:none;min-height:40px;padding:0 13px;border:1px solid #d5cdf5;border-radius:9px;background:#fff;color:#5636d9;font-size:var(--type-control);font-weight:700}
+.company-match-retry:hover{background:#f0edff;border-color:#bdb0f0}
+@media(max-width:640px){.company-match-error{align-items:stretch;flex-direction:column}.company-match-retry{width:100%}}
 .subscription-request-panel [role="group"].is-locked{opacity:.7}
 .subscription-request-panel [role="group"] button:disabled{cursor:not-allowed}
 .subscription-plan-action{width:100%;border:1px solid #5636d9;background:#5636d9;color:#fff;transition:background .15s,border-color .15s,box-shadow .15s}

@@ -1044,11 +1044,14 @@ export function CompanyOpportunities({
       })
       .catch((e) => {
         if (!live) return;
+        const message = e instanceof RequestError && e.diagnosticCode === 'INTERNAL'
+          ? 'Se produjo un problema temporal al consultar las oportunidades.'
+          : e instanceof Error ? e.message : 'No se pudieron cargar las oportunidades. Puedes volver a intentarlo.';
         setError(e?.name === 'AbortError'
           ? 'La búsqueda está tardando más de lo esperado. Puedes volver a intentarlo.'
-          : e instanceof Error ? e.message : 'No se pudieron cargar las oportunidades. Puedes volver a intentarlo.');
-        if (e instanceof RequestError && (e.requestId || e.diagnosticCode)) {
-          setErrorReference([e.requestId && `Referencia ${e.requestId}`, e.diagnosticCode && `código ${e.diagnosticCode}`].filter(Boolean).join(' · '));
+          : message);
+        if (e instanceof RequestError && e.requestId) {
+          setErrorReference(e.requestId);
         }
       })
       .finally(() => {
@@ -1108,13 +1111,13 @@ export function CompanyOpportunities({
       {loading ? (
         <MatchLoadingSkeleton />
       ) : error ? (
-        <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900">
+        <div role="alert" className="company-match-error">
           <div className="space-y-1">
-            <p className="font-semibold">No se pudieron calcular las coincidencias.</p>
-            <p>{error} Las demás secciones de Oportuna siguen disponibles.</p>
-            {errorReference && <p className="font-mono text-[11px] text-amber-800">{errorReference}</p>}
+            <p className="company-match-error-title">No pudimos cargar las coincidencias.</p>
+            <p>{error} El resto de Oportuna sigue disponible.</p>
+            {errorReference && <p className="company-match-error-reference">Folio para soporte: {errorReference}</p>}
           </div>
-          <button onClick={() => setReloadKey((key) => key + 1)} className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-2 font-semibold text-[#5636D9] hover:bg-[#f0edff]">Reintentar</button>
+          <button onClick={() => setReloadKey((key) => key + 1)} className="company-match-retry">Intentar de nuevo</button>
         </div>
       ) : !data?.configured ? (
         <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472] space-y-2">
