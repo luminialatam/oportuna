@@ -12,7 +12,7 @@ Aplicación local para consultar, organizar y sincronizar licitaciones de Mercad
 
 1. Instala dependencias con `npm install`.
 2. Configura las variables de servidor en `.env` usando `.env.example` como referencia. No se requieren credenciales en el frontend.
-3. Ejecuta en orden las migraciones de `server/migrations/001_initial.sql` a `018_analytics_saved_views.sql`. La migración 012 es aditiva y tiene una reversión limitada a sus seis tablas nuevas en `012_authentication.down.sql`; ejecutarla elimina las cuentas y sesiones creadas en esa fase.
+3. Ejecuta en orden las migraciones base e incrementales documentadas en `server/migrations/`. Revisa los prerequisitos de cada función; las migraciones 022 y 023 agregan búsqueda proactiva y avisos por email; la 024 agrega el libro de precios base por empresa.
 4. Inicia ambos servicios con `npm run dev` y abre `http://127.0.0.1:5173`.
 
 Para el primer acceso, crea **un** administrador de plataforma con `npm run auth:bootstrap` desde una Terminal interactiva. La contraseña se ingresa oculta. Esta cuenta no queda asignada a ninguna empresa. El administrador puede revisar y reclamar explícitamente el espacio local heredado una sola vez; no se realiza un vínculo automático. No ejecutes el bootstrap si ya existe un administrador.

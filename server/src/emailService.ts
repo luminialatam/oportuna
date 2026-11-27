@@ -2,7 +2,7 @@ import net from 'node:net';
 import tls from 'node:tls';
 import { randomUUID } from 'node:crypto';
 
-export type MailPurpose = 'verification' | 'password-reset' | 'invitation';
+export type MailPurpose = 'verification' | 'password-reset' | 'invitation' | 'new-opportunities';
 export type MailMessage = { to: string; purpose: MailPurpose; subject: string; text: string; link: string };
 type StoredMail = MailMessage & { createdAt: string };
 const localOutbox: StoredMail[] = [];
