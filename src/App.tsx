@@ -15,6 +15,7 @@ import {
   Filter,
   FlaskConical,
   LayoutDashboard,
+  LockKeyhole,
   LoaderCircle,
   LogOut,
   MailPlus,
@@ -1265,9 +1266,8 @@ function App() {
         { name: 'Resumen', icon: LayoutDashboard },
         { name: 'Buscar oportunidades', icon: Search },
         { name: 'Oportunidades', icon: Sparkles },
-        ...(companyPlan?.plan?.marketAnalytics ? [{ name: 'Inteligencia de mercado', icon: BarChart3 }] : []),
         { name: 'Agentes IA', icon: FileSearch },
-        { name: 'Inteligencia de mercado', icon: BarChart3 },
+        { name: 'Inteligencia de mercado', icon: BarChart3, isPlanLocked: Boolean(companyPlan && !companyPlan.plan?.marketAnalytics) },
         { name: 'Analítica', icon: BarChart3, subItem: true },
       ],
     },
@@ -1357,7 +1357,7 @@ function App() {
                   return (
                     <button
                       key={item.name}
-                      onClick={() => goToSection(item.name)}
+                      onClick={() => goToSection('isPlanLocked' in item && item.isPlanLocked ? 'Plan y suscripción' : item.name)}
                       aria-current={active ? 'page' : undefined}
                       className={`w-full h-10 px-3 rounded-xl flex items-center justify-between text-xs font-semibold transition-colors ${'subItem' in item && item.subItem ? 'pl-8 h-9 text-[11px]' : ''} ${
                         active
@@ -1369,6 +1369,11 @@ function App() {
                         <item.icon size={17} className={active ? 'text-[#5636D9]' : 'text-[#8A92A6]'} />
                         <span>{item.name}</span>
                       </div>
+                      {'isPlanLocked' in item && item.isPlanLocked && (
+                        <span title="Disponible en los planes Vuela y Brilla" aria-label="Disponible en los planes Vuela y Brilla" className="inline-flex items-center gap-1 rounded-full border border-[#E6E1FA] bg-[#F5F2FF] px-2 py-1 text-[9px] font-semibold text-[#6249C6]">
+                          <LockKeyhole size={11} aria-hidden="true" /> Plan superior
+                        </span>
+                      )}
                       {'isSandbox' in item && item.isSandbox && (
                         <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
                           Aislado
