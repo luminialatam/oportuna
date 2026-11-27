@@ -975,6 +975,14 @@ function MatchLoadingSkeleton() {
   );
 }
 
+function santiagoDateParts(value: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23',
+  }).formatToParts(value);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')) };
+}
+
 export function CompanyOpportunities({
   onConfigure,
   onOpenListing,
@@ -1054,6 +1062,19 @@ export function CompanyOpportunities({
     };
   }, [board, reloadKey]);
 
+  const lastSyncAt = data?.indexStatus?.lastSuccessfulSyncAt;
+  const syncTimestamp = lastSyncAt ? new Date(lastSyncAt).getTime() : Number.NaN;
+  const syncAgeHours = Number.isFinite(syncTimestamp) ? Math.max(0, Math.floor((Date.now() - syncTimestamp) / 3_600_000)) : null;
+  const todaySantiago = santiagoDateParts(new Date());
+  const lastSyncSantiago = Number.isFinite(syncTimestamp) ? santiagoDateParts(new Date(syncTimestamp)) : null;
+  const dailySyncOverdue = todaySantiago.hour >= 8 && (!lastSyncSantiago || lastSyncSantiago.date !== todaySantiago.date || lastSyncSantiago.hour < 8);
+  const visibleMatches = (data?.items ?? []).slice(0, visibleCount);
+  const relevanceGroups = [
+    { level: 'high', label: 'Alta relevancia', items: visibleMatches.filter((item: any) => item.level === 'high') },
+    { level: 'medium', label: 'Media relevancia', items: visibleMatches.filter((item: any) => item.level === 'medium') },
+    { level: 'exploratory', label: 'Exploratorias · evidencia parcial o indirecta', items: visibleMatches.filter((item: any) => item.level === 'exploratory') },
+  ];
+
   return (
     <section className="summary-matches-panel bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E1E4EA] pb-3">
@@ -1113,7 +1134,9 @@ export function CompanyOpportunities({
               ? `Coincidencia automática usando ${Number(data.profileKeywordCount || 0)} palabras clave guardadas en Mi empresa. Se evaluaron ${Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones vigentes del índice local.`
               : `Coincidencia automática usando los productos activos de tu catálogo y el perfil comercial. Se evaluaron ${Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones vigentes del índice local.`}
           </p>
-          <p className="text-xs text-[#5D6472]">El índice local contiene {Number(data.indexStatus?.totalListings || 0).toLocaleString('es-CL')} licitaciones. {Number(data.indexStatus?.discardedListings || 0).toLocaleString('es-CL')} descartadas de Seguimiento se excluyen. {data.indexStatus?.lastSuccessfulSyncAt ? `Última sincronización completada: ${new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santiago' }).format(new Date(data.indexStatus.lastSuccessfulSyncAt))}.` : 'No hay una sincronización completada registrada.'} Esta búsqueda solo consulta el índice local; las licitaciones publicadas en Mercado Público desde esa sincronización no aparecen hasta que se sincronicen.</p>
+          <p className="text-xs text-[#5D6472]">El índice local contiene {Number(data.indexStatus?.totalListings || 0).toLocaleString('es-CL')} licitaciones. {Number(data.indexStatus?.discardedListings || 0).toLocaleString('es-CL')} descartadas de Seguimiento se excluyen. {lastSyncAt ? `Última sincronización completada: ${new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santiago' }).format(new Date(lastSyncAt))}${syncAgeHours !== null ? ` (hace ${syncAgeHours} h)` : ''}.` : 'No hay una sincronización completada registrada.'} Esta búsqueda solo consulta el índice local; las licitaciones publicadas en Mercado Público desde esa sincronización no aparecen hasta que se sincronicen. El sincronizador diario está programado para las 08:00 de Chile; una actualización fuera de horario debe solicitarse a la administración de plataforma.</p>
+          {dailySyncOverdue && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">No se registra una sincronización completada desde las 08:00 de hoy en Chile. Revisa el estado del sincronizador en Configuración; la ejecución diaria puede estar pendiente o haber fallado. Una persona administradora de plataforma puede iniciar un trabajo desde el servidor.</p>}
+          {data.matchingBasis === 'profile_keywords' && Number(data.activeProductCount ?? 0) === 0 && <p className="rounded-lg border border-[#E1E4EA] bg-[#F8F9FA] px-3 py-2 text-xs text-[#5D6472]">La empresa no tiene productos o servicios activos en el catálogo. Se usan las palabras clave del perfil como respaldo; para evitar coincidencias por una palabra suelta, se exige que todos los términos comerciales de cada frase aparezcan en la ficha, aunque estén repartidos entre título, descripción y partidas. Agregar productos activos permite precisar mejor el match.</p>}
           <div className="summary-match-metrics grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 text-xs">
             <div><span>Coincidencias</span><b>{Number(data.total || 0).toLocaleString('es-CL')}</b></div>
             <div><span>Alta</span><b>{Number(data.high || 0).toLocaleString('es-CL')}</b></div>
@@ -1124,9 +1147,10 @@ export function CompanyOpportunities({
           {data.items?.length ? (
             <div className="summary-matches-table-wrap">
               <table className="summary-matches-table">
-                <thead><tr><th>Licitación</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Evidencia</th><th>Acción</th></tr></thead>
-                <tbody>
-                  {data.items.slice(0, visibleCount).map((item: any) => {
+                <thead><tr><th>Licitación y texto de respaldo</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Puntaje</th><th>Acción</th></tr></thead>
+                {relevanceGroups.map((group) => group.items.length > 0 && <tbody key={group.level}>
+                  <tr className="summary-match-group"><th scope="rowgroup" colSpan={6}>{group.label} <span>({group.items.length})</span></th></tr>
+                  {group.items.map((item: any) => {
                     const closing = item.fecha_cierre ? new Date(item.fecha_cierre) : null;
                     const closingLabel = closing && Number.isFinite(closing.getTime())
                       ? new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }).format(closing)
@@ -1139,11 +1163,14 @@ export function CompanyOpportunities({
                         <td>
                           <b className="summary-match-title">{item.nombre || 'Nombre no disponible'}</b>
                           <small>{item.codigo_externo}{item.productName ? ` · Coincide con ${item.productName}` : ''}</small>
+                          {item.evidence?.length > 0 && <ul className="summary-match-evidence" aria-label="Texto que respalda la coincidencia">{item.evidence.map((entry: any) => <li key={entry.source}><b>{entry.source}:</b> “{entry.text}”</li>)}</ul>}
                         </td>
                         <td><span className="summary-match-buyer">{item.organismo || 'No informado'}</span></td>
                         <td className="summary-match-nowrap">{closingLabel}</td>
                         <td className="summary-match-amount">{amount}</td>
-                        <td><span className="summary-match-score" title="Puntaje de evidencia textual; no es porcentaje ni probabilidad de adjudicación">{Number(item.score || 0)} pts</span></td>
+                        <td>
+                          <span className="summary-match-score" title="Puntaje de evidencia textual; no es porcentaje ni probabilidad de adjudicación">{Number(item.score || 0)} pts</span>
+                        </td>
                         <td>
                           <div className="summary-match-actions">
                             {onOpenListing ? (
@@ -1174,7 +1201,7 @@ export function CompanyOpportunities({
                       </tr>
                     );
                   })}
-                </tbody>
+                </tbody>)}
               </table>
             </div>
           ) : (

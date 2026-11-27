@@ -235,6 +235,10 @@
 .summary-match-nowrap,.summary-match-amount{white-space:nowrap}
 .summary-match-amount{color:#171a24!important;font-weight:600}
 .summary-match-score{display:inline-flex;align-items:center;justify-content:center;min-width:43px;padding:5px 8px;border-radius:999px;background:#e8f5e9;color:#16845b;font-size:var(--type-badge);font-weight:700}
+.summary-matches-table .summary-match-group th{width:100%;height:auto;padding:9px 10px;background:#f8f7ff;color:#5636d9;font-size:11px;letter-spacing:0;text-transform:none;white-space:normal}
+.summary-match-group span{color:#737d91;font-weight:500}
+.summary-match-evidence{display:grid;gap:3px;margin:6px 0 0;padding:0;list-style:none;color:#626b7a;font-size:10px;line-height:1.45;overflow-wrap:anywhere}
+.summary-match-evidence b{color:#5636d9;font-weight:700}
 .summary-match-action{min-height:30px;padding:0 9px;border:1px solid #e1e4ea;border-radius:7px;background:#fff;color:#5636d9;font-size:var(--type-badge);font-weight:700;white-space:nowrap}
 .summary-match-action:hover{background:#f0edff;border-color:#d5cdfc}
 .summary-match-disclaimer{margin:0;color:#737b88;font-size:var(--type-badge);line-height:1.5}
@@ -492,6 +496,8 @@ body { overflow-x: clip; }
   .summary-matches-table-wrap{overflow:visible}
   .summary-matches-table,.summary-matches-table tbody{display:block;width:100%}
   .summary-matches-table thead{display:none}
+  .summary-matches-table tr.summary-match-group{margin:12px 0 5px;padding:0;border:0;background:transparent}
+  .summary-matches-table tr.summary-match-group th{display:block;padding:7px 3px;background:transparent;text-align:left}
   .summary-matches-table tr{display:block;margin:0 0 10px;padding:8px;border:1px solid #e1e4ea;border-radius:10px;background:#fff}
   .summary-matches-table td{display:grid;grid-template-columns:minmax(90px,.34fr) minmax(0,1fr);align-items:center;gap:10px;width:100%;padding:8px 4px;border-bottom:1px solid #f0f1f3}
   .summary-matches-table td:first-child{display:block}

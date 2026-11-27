@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import pool from './db.js';
 import { currentCompanyContext } from './companyRequestContext.js';
 import { formatChileanRut, normalizeChileanRut } from './chileanRut.js';
-import { classifyCommercialIntent, commercialIntentMatchesOffer, commercialOfferTypeList, commercialOfferTypeLabels, commercialTerms, commercialTermVariants, hasCatalogDomainConflict, hasProfileKeywordEvidence, isKnownProductPlaceName, matchesCommercialExclusion, normalizeCommercialText, scoreCatalogMatch } from './commercialMatching.js';
+import { classifyCommercialIntent, commercialIntentMatchesOffer, commercialOfferTypeList, commercialOfferTypeLabels, commercialTerms, commercialTermVariants, extractCommercialEvidence, hasCatalogDomainConflict, hasProfileKeywordEvidence, isKnownProductPlaceName, matchesCommercialExclusion, normalizeCommercialText, scoreCatalogMatch } from './commercialMatching.js';
 
 type ProfileInput = {
   nombreComercial: string | null; razonSocial: string | null; rut: string | null;
@@ -237,7 +237,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
   const matchingBasis = productRows.length ? 'catalog' : 'profile_keywords';
   const profileKeywordCount = jsonList(profile?.palabras_clave).length;
   const indexStatus = { totalListings: Number(indexRows[0]?.total ?? 0), discardedListings: Number(discardedRows[0]?.total ?? 0), lastSuccessfulSyncAt: syncRows[0]?.finishedAt ?? null, lastSuccessfulSyncDate: syncRows[0]?.checkedDate ?? null };
-  const empty = { configured: products.length > 0, matchingBasis, profileKeywordCount, total: 0, high: 0, medium: 0, exploratory: 0, closingSoon: 0, candidatesEvaluated: 0, evaluation: { evaluatedListings: 0, batches: 0, queryCount, durationMs: Date.now() - startedAt, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: 0 }, coverage: { indexed: 0, limited: 0 }, indexStatus, items: [], disclaimer: 'La relevancia comercial se basa en el catálogo o las palabras clave del perfil y los datos indexados. No confirma elegibilidad; revisa las bases oficiales.' };
+  const empty = { configured: products.length > 0, matchingBasis, activeProductCount: productRows.length, profileKeywordCount, total: 0, high: 0, medium: 0, exploratory: 0, closingSoon: 0, candidatesEvaluated: 0, evaluation: { evaluatedListings: 0, batches: 0, queryCount, durationMs: Date.now() - startedAt, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: 0 }, coverage: { indexed: 0, limited: 0 }, indexStatus, items: [], disclaimer: 'La relevancia comercial se basa en el catálogo o las palabras clave del perfil y los datos indexados. No confirma elegibilidad; revisa las bases oficiales.' };
   if (!products.length) return empty;
   const profileTerms = [...new Set([...terms(String(profile?.actividad ?? '')), ...jsonList(profile?.rubros).flatMap(terms), ...jsonList(profile?.palabras_clave).flatMap(terms)])];
   for (const product of products) product.profileTerms = profileTerms;
@@ -287,8 +287,10 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
       if (unclassifiedConfiguredOffer) best.level = 'exploratory';
       if (!best || best.score < (best.level === 'exploratory' ? 30 : 25)) continue;
       const closeAt = row.fecha_cierre ? new Date(row.fecha_cierre) : null; const daysToClose = closeAt ? Math.ceil((closeAt.getTime() - Date.now()) / 86_400_000) : null;
-      const reasonTerms = [...new Set([...best.nameTerms, ...best.weakTerms, ...best.synonymHits, ...best.keywordHits])].slice(0, 4);
+      const reasonTerms = [...new Set([...best.nameTerms, ...best.weakTerms, ...best.synonymHits, ...best.keywordHits, ...best.relatedHits, ...best.applicationHits, ...best.profileHits])].slice(0, 8);
       const source = best.matchedSources?.join(', ') || 'texto de la ficha';
+      const evidenceTerms = [...new Set(reasonTerms.flatMap((value: string) => commercialTerms(value, true)))];
+      const evidence = extractCommercialEvidence(title, description, items, evidenceTerms);
       const matchReasons = [`Coincide con «${best.productName}» en ${source}${reasonTerms.length ? `: ${reasonTerms.join(', ')}.` : '.'}`];
       if (best.categoryHits.length) matchReasons.push(`Categoría del catálogo: ${best.categoryHits.join(', ')}.`);
       if (best.relatedHits.length) matchReasons.push(`Conceptos relacionados validados: ${best.relatedHits.join(', ')}.`);
@@ -305,10 +307,10 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
       if (daysToClose != null && daysToClose >= 0 && daysToClose <= 14) closingSoon++;
       if (items.trim()) indexed++; else limited++;
       const evidenceStrength = best.exactPhrase ? 2 : best.nameTerms.length ? 1 : 0;
-      topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, fecha_publicacion: row.fecha_publicacion, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, evidenceStrength, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
-      // Prioriza frase exacta y términos del nombre del producto. Las coincidencias
-      // basadas solo en términos relacionados siguen disponibles al final.
-      topResults.sort((a, b) => b.evidenceStrength - a.evidenceStrength || b.score - a.score || (a.daysToClose ?? 9999) - (b.daysToClose ?? 9999) || String(a.codigo_externo).localeCompare(String(b.codigo_externo)));
+      topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, fecha_publicacion: row.fecha_publicacion, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, evidenceStrength, evidence, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
+      // Agrupa primero relevancia alta, media y exploratoria, manteniendo la evidencia más directa arriba dentro de cada grupo.
+      const levelRank = (level: string) => level === 'high' ? 0 : level === 'medium' ? 1 : 2;
+      topResults.sort((a, b) => levelRank(a.level) - levelRank(b.level) || b.evidenceStrength - a.evidenceStrength || b.score - a.score || (a.daysToClose ?? 9999) - (b.daysToClose ?? 9999) || String(a.codigo_externo).localeCompare(String(b.codigo_externo)));
       if (!options.board && !options.includeAllItems && topResults.length > MATCH_BOARD_LIMIT) topResults.pop();
     }
   };
@@ -351,7 +353,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
     }
   }
   const durationMs=Date.now()-startedAt;
-  const value = { configured: true, matchingBasis, profileKeywordCount, total, high, medium, exploratory, closingSoon, candidatesEvaluated: evaluatedListings, indexStatus,
+  const value = { configured: true, matchingBasis, activeProductCount: productRows.length, profileKeywordCount, total, high, medium, exploratory, closingSoon, candidatesEvaluated: evaluatedListings, indexStatus,
     evaluation: { evaluatedListings, batches, queryCount, durationMs, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: Math.max(0,peakHeapUsed-initialHeap) },
     coverage: { indexed, limited }, items: topResults, disclaimer: 'Coincidencia estimada según evidencias del catálogo o las palabras clave del perfil, título, descripción y partidas. No confirma elegibilidad; revisa las bases oficiales.' };
   matchCache.set(key, { value, expires: Date.now() + 30_000 }); if (matchCache.size > 200) matchCache.clear();
