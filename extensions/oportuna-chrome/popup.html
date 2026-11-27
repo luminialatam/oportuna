@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Oportuna</title>
+    <link rel="stylesheet" href="popup.css">
+    <script src="popup.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><span class="mark">O</span><span>Oportuna</span></div>
+      <h1>Ficha de Mercado Público</h1>
+      <p id="message" role="status">Leyendo la ficha pública de esta pestaña…</p>
+      <div id="code-card" class="code-card" hidden><span>Código detectado</span><strong id="code"></strong></div>
+      <button id="open" type="button" disabled>Abrir en Oportuna</button>
+      <a href="http://127.0.0.1:5180/mercado-publico" target="_blank" rel="noreferrer">Abrir Oportuna</a>
+      <p class="privacy">Solo se lee el código visible de la pestaña activa. No se accede a cuentas, cookies ni postulaciones.</p>
+    </main>
+  </body>
+</html>

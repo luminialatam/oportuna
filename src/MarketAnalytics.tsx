@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   Activity,
   ArrowRight,
@@ -65,22 +66,21 @@ export function MarketAnalytics({
   onOpenAnalytics,
   onRetry,
 }: Props) {
+  const [topBuyers, setTopBuyers] = useState<{ buyer: string; total: number }[]>([]);
+  const [buyersError, setBuyersError] = useState('');
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/company/analytics/top-buyers', { credentials: 'same-origin', cache: 'no-store' })
+      .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'No se pudo cargar el ranking.'); return data; })
+      .then((data) => { if (active) { setTopBuyers(data.buyers ?? []); setBuyersError(''); } })
+      .catch((error) => { if (active) setBuyersError(error instanceof Error ? error.message : 'No se pudo cargar el ranking.'); });
+    return () => { active = false; };
+  }, []);
   const totalListings = summary?.total ?? 0;
   const states = summary?.estados ?? [];
   const publishedCount = states.find((s) => s.codigoEstado === 5)?.total ?? 0;
   const awardedCount = states.find((s) => s.codigoEstado === 8)?.total ?? 0;
   const desertedCount = states.find((s) => s.codigoEstado === 7)?.total ?? 0;
-
-  // Compute buyers distribution from latest listings
-  const buyerCounts: Record<string, number> = {};
-  for (const item of summary?.ultimasLicitaciones ?? []) {
-    if (item.organismo) {
-      buyerCounts[item.organismo] = (buyerCounts[item.organismo] || 0) + 1;
-    }
-  }
-  const topBuyers = Object.entries(buyerCounts)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5);
 
   return (
     <div className="space-y-6">
@@ -221,10 +221,10 @@ export function MarketAnalytics({
                 <div>
                   <h3 className="font-bold text-sm text-[#171A24] flex items-center gap-2">
                     <Building size={17} className="text-[#5636D9]" />
-                    Muestra de Compradores Recientes
+                    Cinco principales compradores · últimos 30 días
                   </h3>
                   <span className="text-[10px] text-[#8A92A6]">
-                    Basado en las últimas licitaciones devueltas por /api/resumen
+                    Según licitaciones indexadas y publicadas
                   </span>
                 </div>
                 <button
@@ -235,13 +235,13 @@ export function MarketAnalytics({
                 </button>
               </div>
 
-              {topBuyers.length > 0 ? (
+              {buyersError ? <div className="text-xs text-amber-700">{buyersError}</div> : topBuyers.length > 0 ? (
                 <div className="divide-y divide-[#E1E4EA]">
-                  {topBuyers.map(([buyer, num]) => (
+                  {topBuyers.map(({ buyer, total }) => (
                     <div key={buyer} className="py-2.5 flex items-center justify-between text-xs">
                       <span className="font-medium text-[#171A24] max-w-xs truncate">{buyer}</span>
                       <span className="px-2 py-0.5 rounded-full bg-[#F5F6F8] text-[#5D6472] font-bold">
-                        {num} en muestra
+                        {count(total)} licitaciones
                       </span>
                     </div>
                   ))}

@@ -73,7 +73,10 @@
     "test:email:playwright": "tsx server/test/emailAccess.playwright.ts",
     "test:auth-lifecycle": "tsx server/test/authLifecycle.local.integration.ts",
     "test:company-profile-validation": "tsx server/test/companyProfileValidation.local.integration.ts",
-    "test:company-profile:playwright": "tsx server/test/companyProfile.playwright.ts"
+    "test:company-profile:playwright": "tsx server/test/companyProfile.playwright.ts",
+    "test:subscriptions:local": "tsx server/test/subscriptions.local.integration.ts",
+    "test:subscriptions:api:local": "tsx server/test/subscriptions.api.local.integration.ts",
+    "test:plan-requests:api:local": "tsx server/test/planChangeRequests.api.local.integration.ts"
   },
   "dependencies": {
     "argon2": "^0.45.1",

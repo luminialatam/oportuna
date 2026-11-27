@@ -1,0 +1,14 @@
+* { box-sizing: border-box; }
+body { width: 320px; margin: 0; color: #171a24; background: #f5f6f8; font: 14px/1.45 system-ui, sans-serif; }
+main { padding: 18px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 800; color: #34208f; }
+.mark { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 8px; color: white; background: #5636d9; }
+h1 { margin: 20px 0 6px; font-size: 18px; }
+p { color: #5d6472; }
+.code-card { display: grid; gap: 3px; margin: 16px 0; padding: 12px; border: 1px solid #dcd6ff; border-radius: 12px; background: white; }
+.code-card span { color: #737d91; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.code-card strong { color: #34208f; font: 700 17px ui-monospace, monospace; }
+button { width: 100%; min-height: 42px; border: 0; border-radius: 10px; color: white; background: #5636d9; font-weight: 700; cursor: pointer; }
+button:disabled { background: #a9a1d1; cursor: wait; }
+a { display: block; margin: 13px 0; color: #5636d9; text-align: center; font-weight: 650; }
+.privacy { margin: 15px 0 0; padding-top: 12px; border-top: 1px solid #e1e4ea; font-size: 11px; }

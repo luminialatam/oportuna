@@ -1,6 +1,7 @@
 import pool from './db.js';
 import { currentCompanyContext } from './companyRequestContext.js';
 import { formatChileanRut, normalizeChileanRut } from './chileanRut.js';
+import { assertCanActivateMember } from './subscriptionService.js';
 
 export type CompanyOnboardingInput = {
   rut: string; razonSocial: string; nombreComercial: string; rubroPrincipal: string; region: string; emailContacto: string;
@@ -19,6 +20,7 @@ export async function registerCompanyForCurrentUser(input: CompanyOnboardingInpu
     await connection.beginTransaction();
     const [companies]=await connection.execute<any>('INSERT INTO companies (nombre_comercial,rut_normalized,representation_status) VALUES (?,?,\'unverified\')',[input.nombreComercial.trim(),rut]);
     const companyId=Number(companies.insertId);
+    await connection.execute("INSERT INTO company_subscriptions (company_id,plan) VALUES (?,'crece')",[companyId]);
     const regions=[...new Set([input.region.trim(),...(input.regionesOperacion??[]).map(value=>value.trim())].filter(Boolean))].slice(0,16);
     await connection.execute(`INSERT INTO commercial_profiles (company_id,razon_social,rut,email_contact,phone,address,commune,primary_region,business_description,actividad,rubros,regiones,sitio_web,palabras_clave,terminos_excluidos)
       VALUES (?,?,?,?,?,?,?,?,?,?,JSON_ARRAY(?),?,?,?,?)`,[
@@ -76,8 +78,13 @@ export async function reviewCompanyAccessRequest(requestId:number,decision:'appr
     const [rows]=await connection.query<any[]>("SELECT user_id FROM company_access_requests WHERE id=? AND company_id=? AND status='pending' FOR UPDATE",[requestId,context.companyId]);
     if(!rows[0]){await connection.rollback();return false;}
     const userId=Number(rows[0].user_id);
-    if(decision==='approve')await connection.execute(`INSERT INTO company_memberships (user_id,company_id,role,status) VALUES (?,?,?,'active')
-      ON DUPLICATE KEY UPDATE role=VALUES(role),status='active'`,[userId,context.companyId,role]);
+    if(decision==='approve'){
+      await connection.query('SELECT company_id FROM company_subscriptions WHERE company_id=? FOR UPDATE',[context.companyId]);
+      const [membership]=await connection.query<any[]>("SELECT status FROM company_memberships WHERE company_id=? AND user_id=? FOR UPDATE",[context.companyId,userId]);
+      if(membership[0]?.status!=='active')await assertCanActivateMember(connection,context.companyId);
+      await connection.execute(`INSERT INTO company_memberships (user_id,company_id,role,status) VALUES (?,?,?,'active')
+        ON DUPLICATE KEY UPDATE role=VALUES(role),status='active'`,[userId,context.companyId,role]);
+    }
     await connection.execute('UPDATE company_access_requests SET status=?,requested_role=?,reviewed_by=?,reviewed_at=UTC_TIMESTAMP() WHERE id=? AND company_id=?',[decision==='approve'?'approved':'rejected',role,reviewerId,requestId,context.companyId]);
     await connection.commit();return true;
   }catch(error){await connection.rollback();throw error;}finally{connection.release();}

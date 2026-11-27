@@ -44,6 +44,31 @@ const synonym = scoreCatalogMatch(
 assert.equal(synonym?.level, 'medium');
 assert.ok(synonym?.matchedSources.includes('título'));
 
+const vacuumSealer = { nombre: 'selladora al vacío', categoria: 'alimentos' };
+const vacuumMaintenance = scoreCatalogMatch(vacuumSealer, 'Mantención de sistemas de vacío', '', '');
+assert.equal(vacuumMaintenance?.level, 'exploratory', 'A maintenance listing sharing only «vacío» must not become a good match for a vacuum sealer.');
+assert.equal(vacuumMaintenance?.score, 48, 'The isolated vacuum term remains weak evidence.');
+const maintenanceWordOnly = scoreCatalogMatch({ nombre: 'Mantención de edificios' }, 'Mantención de sistemas de vacío', '', '');
+assert.equal(maintenanceWordOnly?.level, 'exploratory', 'The generic service word «mantención» alone cannot create a good product match.');
+assert.equal(maintenanceWordOnly?.score, 48, 'A generic service word alone is capped at weak evidence.');
+const indexedVacuumService = scoreCatalogMatch(vacuumSealer, 'MES ADQ. DE PARCHE ESTERNAL DE VACIO CON COMODATO DE EQUIPO PARA EL SERVICIO DE CARDIOCIRUGIA DEL HCSBA', '', '');
+assert.equal(indexedVacuumService?.level, 'exploratory', 'The actual Andes Organics local match driven by «vacío» alone must remain exploratory.');
+const exactVacuumSealer = scoreCatalogMatch(vacuumSealer, 'Adquisición de selladora al vacío', '', '');
+assert.equal(exactVacuumSealer?.level, 'high', 'An exact vacuum sealer phrase remains a high-confidence positive.');
+assert.equal(exactVacuumSealer?.exactPhrase, true);
+const vacuumSynonym = scoreCatalogMatch(
+  { ...vacuumSealer, sinonimos: ['selladora de bolsas al vacío'] },
+  'Adquisición de selladora de bolsas al vacío', '', '',
+);
+assert.equal(vacuumSynonym?.level, 'high', 'A complete, validated product synonym remains a strong match.');
+assert.deepEqual(vacuumSynonym?.synonymHits, ['selladora de bolsas al vacío']);
+const vacuumOnlySynonym = scoreCatalogMatch(
+  { ...vacuumSealer, sinonimos: ['vacío'] }, 'Mantención de sistemas de vacío', '', '',
+);
+assert.equal(vacuumOnlySynonym?.level, 'exploratory', 'A generic single-word synonym cannot promote unrelated maintenance.');
+assert.equal(scoreCatalogMatch(vacuumSealer, '', '', ''), null, 'Missing listing title, description and items must not yield invented evidence.');
+assert.equal(matchesCommercialExclusion('Mantención de sistemas de vacío', 'mantención de sistemas de vacío'), true, 'Explicit exclusions remain independently detectable.');
+
 const exclusionQuery = 'Molinos industriales para alimentos sin minería ni cobre';
 assert.deepEqual(parseExplicitExclusions(exclusionQuery), ['mineria', 'cobre']);
 assert.deepEqual(literalQueryTerms('Pendones sin maquinaria minera'), ['pendon']);

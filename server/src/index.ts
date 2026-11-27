@@ -30,6 +30,8 @@ import { listCompanyAccessRequests, registerCompanyForCurrentUser, requestCompan
 import { normalizeChileanRut } from './chileanRut.js';
 import { logMysqlFailure } from './mysqlDiagnostics.js';
 import { runSmtpStartupProbeOnce } from './smtpStartupProbe.js';
+import { assertCanActivateMember, changeCompanyPlan, getCompanyPlan, getCompanyPlanSummary, isPlanId, listCompanySubscriptions, listCompanyPlanRequests, listPendingCompanyPlanRequests, planCatalog, requestCompanyPlanChange, reviewCompanyPlanRequest, runLimitedListingAnalysis, SubscriptionLimitError, PendingPlanRequestError, PlanRequestConflictError, type BillingPeriod } from './subscriptionService.js';
+import { dismissOpportunity, getOpportunityFeed, markOpportunityRead, restoreOpportunity } from './opportunityFeedService.js';
 import { dismissProactiveMatch, getProactiveSearchPreferences, runCurrentCompanyProactiveSearch, runProactiveSearchPass, saveProactiveSearchPreferences, setProactiveMatchRead } from './proactiveSearchService.js';
 import { getAlertEmailPreference, saveAlertEmailPreference } from './alertEmailService.js';
 import { deletePriceBookItem, listPriceBookItems, savePriceBookItems } from './priceBookService.js';
@@ -139,6 +141,31 @@ app.post('/api/platform/users',requireDb,requireAuth,requireCsrf,requirePlatform
     next(error);
   }
 });
+app.get('/api/platform/companies',requireDb,requireAuth,requirePlatformAdmin,async(_req,res,next)=>{
+  try { res.set('Cache-Control','no-store').json({companies:await listCompanySubscriptions(),plans:Object.values(planCatalog)}); }
+  catch(error) { next(error); }
+});
+app.get('/api/platform/plan-requests',requireDb,requireAuth,requirePlatformAdmin,async(_req,res,next)=>{
+  try { res.set('Cache-Control','no-store').json({requests:await listPendingCompanyPlanRequests()}); }
+  catch(error) { next(error); }
+});
+app.patch('/api/platform/plan-requests/:requestId',requireDb,requireAuth,requireCsrf,requirePlatformAdmin,requestLimit(60,60*60_000,'plan-request-review'),async(req,res,next)=>{
+  try {
+    const requestId=z.coerce.number().int().positive().parse(req.params.requestId);
+    const body=z.object({decision:z.enum(['approved','rejected']),note:z.string().trim().max(500).nullable().optional()}).strict().parse(req.body);
+    const result=await reviewCompanyPlanRequest(requestId,body.decision,req.auth!.userId,body.note??null);
+    if(!result)return res.status(409).json({code:'PLAN_REQUEST_ALREADY_REVIEWED',error:'La solicitud ya fue resuelta o no existe.'});
+    res.set('Cache-Control','no-store').json({ok:true,request:result});
+  } catch(error) { next(error); }
+});
+app.patch('/api/platform/companies/:companyId/plan',requireDb,requireAuth,requireCsrf,requirePlatformAdmin,requestLimit(40,60*60_000,'company-plan-change'),async(req,res,next)=>{
+  try {
+    const companyId=z.coerce.number().int().positive().parse(req.params.companyId);
+    const body=z.object({plan:z.string().refine(isPlanId,'Selecciona un plan válido.'),billingPeriod:z.enum(['monthly','annual']).optional()}).strict().parse(req.body);
+    if(!await changeCompanyPlan(companyId,body.plan as keyof typeof planCatalog,req.auth!.userId,body.billingPeriod as BillingPeriod|undefined))return res.status(404).json({error:'No se encontró la empresa.'});
+    res.set('Cache-Control','no-store').json({ok:true,companyId,plan:planCatalog[body.plan as keyof typeof planCatalog]});
+  } catch(error) { next(error); }
+});
 app.get('/api/licitaciones', requireDb, async (req, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -234,6 +261,58 @@ app.get('/api/onboarding/progress',requireDb,requireAuth,requireActiveCompany,as
 app.post('/api/auth/invitations/accept',requireDb,requireAuth,requireVerifiedEmail,requireCsrf,requestLimit(6,60*60_000,'invitation-accept'),async(req,res,next)=>{try{const body=z.object({invitationToken:z.string().min(32).max(128)}).parse(req.body);const companyId=await acceptInvitationForUser(body.invitationToken,req.auth!.userId,req.auth!.email);if(!await setActiveCompany(req.auth!.id,req.auth!.userId,companyId))return res.status(403).json({error:'No fue posible activar la empresa invitada.'});const session=await getSession(getRequestSessionToken(req),getRequestCsrfToken(req));if(!session)return res.status(401).json({error:'La sesión expiró.'});res.json({authenticated:true,...session});}catch(error){next(error);}});
 app.post('/api/auth/company',requireDb,requireAuth,requireCsrf,async(req,res,next)=>{try{const body=z.object({companyId:z.coerce.number().int().positive()}).parse(req.body);if(!await setActiveCompany(req.auth!.id,req.auth!.userId,body.companyId))return res.status(403).json({error:'No tienes una membresía activa en esa empresa.'});const token=getRequestSessionToken(req);const session=await getSession(token,getRequestCsrfToken(req));if(!session)return res.status(401).json({error:'La sesión expiró.'});res.json({authenticated:true,...session});}catch(error){next(error);}});
 app.use('/api/company',requireAuth,requireCsrf,requireVerifiedEmail,requireActiveCompany);
+app.get('/api/company/plan',requireDb,async(req,res,next)=>{try{res.set('Cache-Control','no-store').json(await getCompanyPlanSummary(req.auth!.activeCompanyId!));}catch(error){next(error);}});
+app.get('/api/company/plan-requests',requireDb,requireCompanyRole('admin'),async(req,res,next)=>{try{res.set('Cache-Control','private, no-store').json({requests:await listCompanyPlanRequests(req.auth!.activeCompanyId!)});}catch(error){next(error);}});
+app.post('/api/company/plan-requests',requireDb,requireCompanyRole('admin'),requestLimit(10,60*60_000,'company-plan-request'),async(req,res,next)=>{
+  try {
+    const body=z.object({plan:z.string().refine(isPlanId,'Selecciona un plan válido.'),billingPeriod:z.enum(['monthly','annual'])}).strict().parse(req.body);
+    const id=await requestCompanyPlanChange(req.auth!.activeCompanyId!,req.auth!.userId,body.plan as keyof typeof planCatalog,body.billingPeriod);
+    res.status(201).set('Cache-Control','private, no-store').json({id,status:'pending'});
+  } catch(error) { next(error); }
+});
+app.post('/api/company/bridge/resolve',requireDb,requestLimit(12,60_000,'marketplace-bridge-resolve'),async(req,res,next)=>{
+  try {
+    const body=z.object({code:z.string().trim().min(1).max(100)}).strict().parse(req.body);
+    const detail=await getByCode(body.code);
+    const values=normalized(detail);
+    await pool.execute(`INSERT INTO licitaciones (codigo_externo,nombre,codigo_estado,fecha_cierre,fecha_publicacion,organismo,monto_estimado,moneda,payload_json,last_synced_at)
+      VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE nombre=COALESCE(VALUES(nombre),nombre),codigo_estado=COALESCE(VALUES(codigo_estado),codigo_estado),
+      fecha_cierre=COALESCE(VALUES(fecha_cierre),fecha_cierre),fecha_publicacion=COALESCE(VALUES(fecha_publicacion),fecha_publicacion),organismo=COALESCE(VALUES(organismo),organismo),
+      ${tenderAmountUpsertSql},moneda=COALESCE(VALUES(moneda),moneda),payload_json=JSON_MERGE_PATCH(payload_json,VALUES(payload_json)),last_synced_at=UTC_TIMESTAMP()`,
+    [values.codigo,values.nombre,values.estado,values.cierre,values.publicacion,values.organismo,values.monto,values.moneda,JSON.stringify(detail)]);
+    clearSearchCache();
+    try { await indexOfficialDetail(values.codigo,detail as unknown as Record<string,any>); }
+    catch(error) { console.warn(`[enrichment] bridge detail not indexed; type=${error instanceof Error?error.name:'error'}`); }
+    res.set('Cache-Control','private, no-store').json({listing:detail});
+  } catch(error) { next(error); }
+});
+app.get('/api/company/opportunities',requireDb,requestLimit(60,60_000),async(req,res,next)=>{
+  try { const filter=z.enum(['recommended','unread','discarded']).default('recommended').parse(req.query.filter);res.set('Cache-Control','private, no-store').json(await getOpportunityFeed(filter)); }
+  catch(error) { next(error); }
+});
+app.post('/api/company/opportunities/:code/read',requireDb,requestLimit(120,60_000),async(req,res,next)=>{
+  try { const code=z.string().trim().min(1).max(100).parse(req.params.code);if(!await markOpportunityRead(code))return res.status(404).json({error:'La oportunidad no está disponible en el índice.'});res.status(204).end(); }
+  catch(error) { next(error); }
+});
+app.post('/api/company/opportunities/:code/discard',requireDb,requestLimit(60,60_000),async(req,res,next)=>{
+  try { const code=z.string().trim().min(1).max(100).parse(req.params.code);if(!await dismissOpportunity(code))return res.status(404).json({error:'La oportunidad no está disponible en el índice.'});res.json({ok:true}); }
+  catch(error) { next(error); }
+});
+app.delete('/api/company/opportunities/:code/discard',requireDb,requestLimit(60,60_000),async(req,res,next)=>{
+  try { const code=z.string().trim().min(1).max(100).parse(req.params.code);if(!await restoreOpportunity(code))return res.status(404).json({error:'No se encontró un descarte para esta oportunidad.'});res.json({ok:true}); }
+  catch(error) { next(error); }
+});
+app.get('/api/company/analytics/top-buyers',requireDb,requestLimit(30,60_000),async(req,res,next)=>{
+  try {
+    const plan=await getCompanyPlan(req.auth!.activeCompanyId!);
+    if(!plan.marketAnalytics)return res.status(403).json({code:'PLAN_UPGRADE_REQUIRED',error:'Inteligencia de mercado está disponible en Vuela y Brilla.',requiredPlan:'vuela'});
+    const [buyers]=await pool.query<any[]>(`SELECT organismo buyer,COUNT(*) total FROM licitaciones
+      WHERE fecha_publicacion>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 30 DAY) AND organismo IS NOT NULL AND TRIM(organismo)<>''
+      GROUP BY organismo ORDER BY total DESC,organismo ASC LIMIT 5`);
+    res.set('Cache-Control','private, no-store').json({periodDays:30,buyers:buyers.map(row=>({buyer:String(row.buyer),total:Number(row.total)}))});
+  } catch(error) { next(error); }
+});
+
 const priceBookItemSchema=z.object({id:z.number().int().positive().optional(),name:z.string().trim().min(1).max(255),category:z.string().max(160).default(''),unit:z.string().max(40).default('unidad'),basePrice:z.number().min(0).max(1_000_000_000_000),baseCost:z.number().min(0).max(1_000_000_000_000),chargeUnit:z.enum(['unidad','m2','hora','kg','servicio','km']),widthM:z.number().min(0).max(100_000).nullable().default(null),heightM:z.number().min(0).max(100_000).nullable().default(null),specifications:z.string().max(3000).default(''),surcharges:z.array(z.object({name:z.string().trim().min(1).max(100),amount:z.number().min(0).max(1_000_000_000),kind:z.enum(['fixed','percent'])}).strict()).max(30).default([]),active:z.boolean().default(true)}).strict();
 app.get('/api/company/price-book',requireDb,requestLimit(60,60_000),async(_req,res,next)=>{try{res.set('Cache-Control','no-store').json({items:await listPriceBookItems()});}catch(error){next(error);}});
 app.put('/api/company/price-book',requireDb,requireCompanyRole('admin','collaborator'),requestLimit(20,60_000,'price-book'),async(req,res,next)=>{try{const body=z.object({items:z.array(priceBookItemSchema.omit({id:true})).min(1).max(1000)}).strict().parse(req.body);res.set('Cache-Control','no-store').json({items:await savePriceBookItems(body.items)});}catch(error){next(error);}});
@@ -251,7 +330,27 @@ app.post('/api/company/catalog/suggestions',requireCompanyRole('admin'));
 app.use('/api/company/members',requireCompanyRole('admin'));
 app.get('/api/company/members',requireDb,async(req,res,next)=>{try{const [rows]=await pool.query<any[]>(`SELECT u.id,u.first_name firstName,u.last_name lastName,u.email_normalized email,m.role,m.status,m.created_at createdAt FROM company_memberships m JOIN app_users u ON u.id=m.user_id WHERE m.company_id=? ORDER BY m.created_at,u.email_normalized`,[req.auth!.activeCompanyId]);const [invitations]=await pool.query<any[]>(`SELECT id,invited_email email,role,expires_at expiresAt,created_at createdAt FROM company_invitations WHERE company_id=? AND accepted_at IS NULL AND expires_at>UTC_TIMESTAMP() ORDER BY created_at DESC`,[req.auth!.activeCompanyId]);res.json({members:rows,invitations});}catch(error){next(error);}});
 app.post('/api/company/members/invitations',requireDb,requestLimit(20,60_000),async(req,res,next)=>{try{const body=z.object({email:z.string().trim().min(3).max(320),role:z.enum(['admin','collaborator','read_only']).default('collaborator')}).parse(req.body);const invite=await createInvitation(req.auth!.activeCompanyId!,body.email,body.role,req.auth!.userId);const link=`${appBaseUrl()}/?invitation=${encodeURIComponent(invite.token)}`;const delivery=await sendEmail({to:normalizeEmail(body.email),purpose:'invitation',subject:'Invitación para colaborar en Oportuna',text:`Te invitaron a colaborar en una empresa dentro de Oportuna. Abre este enlace para aceptar: ${link}\n\nLa invitación vence en siete días y solo puede usarla ${normalizeEmail(body.email)}.`,link});res.status(201).json({...(delivery==='simulated'?{invitationToken:invite.token}:{}),expiresAt:invite.expiresAt,delivery});}catch(error){next(error);}});
-app.patch('/api/company/members/:userId',requireDb,requestLimit(40,60_000),async(req,res,next)=>{try{const userId=z.coerce.number().int().positive().parse(req.params.userId);const body=z.object({role:z.enum(['admin','collaborator','read_only']).optional(),status:z.enum(['active','suspended']).optional()}).refine(value=>value.role!==undefined||value.status!==undefined).parse(req.body);if(userId===req.auth!.userId&&body.status==='suspended')return res.status(400).json({error:'No puedes suspender tu propia membresía activa.'});const [target]=await pool.query<any[]>(`SELECT role,status FROM company_memberships WHERE company_id=? AND user_id=? LIMIT 1`,[req.auth!.activeCompanyId,userId]);if(target[0]?.role==='admin'&&target[0]?.status==='active'&&((body.role!==undefined&&body.role!=='admin')||body.status==='suspended')){const [admins]=await pool.query<any[]>(`SELECT COUNT(*) total FROM company_memberships WHERE company_id=? AND status='active' AND role='admin'`,[req.auth!.activeCompanyId]);if(Number(admins[0].total)<=1)return res.status(409).json({error:'La empresa debe conservar al menos un administrador activo.'});}const fields:string[]=[];const values:any[]=[];if(body.role){fields.push('role=?');values.push(body.role);}if(body.status){fields.push('status=?');values.push(body.status);}const [result]=await pool.execute<any>(`UPDATE company_memberships SET ${fields.join(',')} WHERE company_id=? AND user_id=?`,[...values,req.auth!.activeCompanyId,userId]);if(!result.affectedRows)return res.status(404).json({error:'No se encontró la membresía en esta empresa.'});res.json({ok:true});}catch(error){next(error);}});
+app.patch('/api/company/members/:userId',requireDb,requestLimit(40,60_000),async(req,res,next)=>{
+  const connection=await pool.getConnection();
+  try{
+    const userId=z.coerce.number().int().positive().parse(req.params.userId);
+    const body=z.object({role:z.enum(['admin','collaborator','read_only']).optional(),status:z.enum(['active','suspended']).optional()}).refine(value=>value.role!==undefined||value.status!==undefined).parse(req.body);
+    if(userId===req.auth!.userId&&body.status==='suspended')return res.status(400).json({error:'No puedes suspender tu propia membresía activa.'});
+    const companyId=req.auth!.activeCompanyId!;
+    await connection.beginTransaction();
+    await connection.query('SELECT company_id FROM company_subscriptions WHERE company_id=? FOR UPDATE',[companyId]);
+    const [target]=await connection.query<any[]>(`SELECT role,status FROM company_memberships WHERE company_id=? AND user_id=? LIMIT 1 FOR UPDATE`,[companyId,userId]);
+    if(!target[0]){await connection.rollback();return res.status(404).json({error:'No se encontró la membresía en esta empresa.'});}
+    if(body.status==='active'&&target[0].status!=='active')await assertCanActivateMember(connection,companyId);
+    if(target[0].role==='admin'&&target[0].status==='active'&&((body.role!==undefined&&body.role!=='admin')||body.status==='suspended')){
+      const [admins]=await connection.query<any[]>(`SELECT COUNT(*) total FROM company_memberships WHERE company_id=? AND status='active' AND role='admin'`,[companyId]);
+      if(Number(admins[0].total)<=1){await connection.rollback();return res.status(409).json({error:'La empresa debe conservar al menos un administrador activo.'});}
+    }
+    const fields:string[]=[];const values:any[]=[];if(body.role){fields.push('role=?');values.push(body.role);}if(body.status){fields.push('status=?');values.push(body.status);}
+    await connection.execute(`UPDATE company_memberships SET ${fields.join(',')} WHERE company_id=? AND user_id=?`,[...values,companyId,userId]);
+    await connection.commit();res.json({ok:true});
+  }catch(error){await connection.rollback();next(error);}finally{connection.release();}
+});
 app.get('/api/company/access-requests',requireDb,requireCompanyRole('admin'),requestLimit(40,60_000),async(_req,res,next)=>{try{res.json({items:await listCompanyAccessRequests()});}catch(error){next(error);}});
 app.patch('/api/company/access-requests/:id',requireDb,requireCompanyRole('admin'),requestLimit(40,60_000),async(req,res,next)=>{try{const id=z.coerce.number().int().positive().parse(req.params.id);const body=z.object({decision:z.enum(['approve','reject']),role:z.enum(['collaborator','read_only']).default('read_only')}).parse(req.body);const ok=await reviewCompanyAccessRequest(id,body.decision,body.role,req.auth!.userId);if(!ok)return res.status(404).json({error:'La solicitud ya fue resuelta o no pertenece a esta empresa.'});res.json({ok:true});}catch(error){next(error);}});
 app.post('/api/platform/legacy-company/claim',requireDb,requireAuth,requireCsrf,requirePlatformAdmin,async(req,res,next)=>{const conn=await pool.getConnection();let committed=false;try{const body=z.object({companyId:z.coerce.number().int().positive()}).parse(req.body);await conn.beginTransaction();const [contexts]=await conn.query<any[]>('SELECT company_id FROM company_local_context WHERE singleton_id=1 FOR UPDATE');if(Number(contexts[0]?.company_id)!==body.companyId){await conn.rollback();return res.status(409).json({error:'La empresa solicitada no coincide con el contexto local pendiente.'});}const [claims]=await conn.query<any[]>('SELECT singleton_id FROM legacy_company_claims WHERE singleton_id=1 FOR UPDATE');if(claims.length){await conn.rollback();return res.status(409).json({error:'La vinculación inicial ya fue consumida.'});}const [company]=await conn.query<any[]>('SELECT id FROM companies WHERE id=? LIMIT 1',[body.companyId]);if(!company.length){await conn.rollback();return res.status(404).json({error:'No se encontró la empresa local.'});}await conn.execute("INSERT INTO company_memberships (user_id,company_id,role,status) VALUES (?,?,'admin','active')",[req.auth!.userId,body.companyId]);await conn.execute('INSERT INTO legacy_company_claims (singleton_id,company_id,claimed_by) VALUES (1,?,?)',[body.companyId,req.auth!.userId]);await conn.commit();committed=true;if(!await setActiveCompany(req.auth!.id,req.auth!.userId,body.companyId))return res.status(500).json({error:'No se pudo activar la empresa vinculada.'});const csrf=await rotateCsrf(req.auth!.id,req.auth!.userId);res.setHeader('Set-Cookie',`${csrfCookieName}=${encodeURIComponent(csrf)}; Path=/; SameSite=Lax; Max-Age=1209600${runtime.secureCookies?'; Secure':''}`);res.json({ok:true,companyId:body.companyId,csrfToken:csrf});}catch(error){if(!committed)await conn.rollback();next(error);}finally{conn.release();}});
@@ -374,13 +473,14 @@ app.post('/api/buscador/enrichment/pilot/pause',requireDb,requestLimit(3,60_000)
 app.post('/api/buscador/enrichment/pilot/resume',requireDb,requestLimit(3,60_000),async(_req,res,next)=>{try{res.json({...await resumeEnrichmentPilot(),pilot:await enrichmentPilotStatus()});}catch(error){next(error);}});
 app.post('/api/buscador/enrichment/pilot/retry',requireDb,requestLimit(2,60_000),async(_req,res,next)=>{try{res.status(202).json({...await retryEnrichmentPilotFailures(),pilot:await enrichmentPilotStatus()});}catch(error){next(error);}});
 app.get('/api/buscador/enrichment/status',requireDb,async(req,res,next)=>{try{const raw=String(req.query.codes??'').trim();const codes=raw?raw.split(',').map(code=>z.string().trim().min(1).max(100).parse(code)).slice(0,50):undefined;res.json(await enrichmentStatus(codes));}catch(error){next(error);}});
-app.post('/api/buscador/analysis/:codigo',requireDb,requireAuth,requireCsrf,requireActiveCompany,requestLimit(8,60_000),async(req,res,next)=>{try{
+app.post('/api/buscador/analysis/:codigo',requireDb,requireAuth,requireVerifiedEmail,requireCsrf,requireActiveCompany,requestLimit(8,60_000),async(req,res,next)=>{try{
   const codigo=z.string().trim().min(1).max(100).parse(req.params.codigo);
-  // Use the same current Mercado Público record shown in the detail panel, not
-  // an older local snapshot, when calculating listing coverage and match evidence.
+  const [localRows]=await pool.query<any[]>('SELECT codigo_externo FROM licitaciones WHERE codigo_externo=? LIMIT 1',[codigo]);
+  if(!localRows.length)return res.status(404).json({error:'La licitación no está disponible en la copia local.'});
   const officialListing=await getByCode(codigo);
   await indexOfficialDetail(codigo,officialListing as unknown as Record<string,any>);
-  res.set('Cache-Control','no-store').json({...await analyzeListing(codigo),source:'mercadopublico',refreshedAt:new Date().toISOString()});
+  const outcome=await runLimitedListingAnalysis(req.auth!.activeCompanyId!,req.auth!.userId,codigo,()=>analyzeListing(codigo));
+  res.set('Cache-Control','no-store').set('X-Plan-Analysis-Remaining',String(Math.max(0,outcome.limit-outcome.used))).json({...outcome.value,source:'mercadopublico',refreshedAt:new Date().toISOString()});
 }catch(error){next(error);}});
 app.use('/api/sync',requireServiceOrAdmin);
 app.post('/api/sync/licitaciones', requireDb, requestLimit(1,60_000,'sync'), async (req, res, next) => {
@@ -431,6 +531,9 @@ if (runtime.appEnv !== 'development' && ['web', 'all'].includes(runtime.processR
   });
 }
 app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if(error instanceof SubscriptionLimitError)return res.status(403).json({code:error.code,error:error.message,metric:error.metric,limit:error.limit});
+  if(error instanceof PendingPlanRequestError)return res.status(409).json({code:error.code,error:error.message});
+  if(error instanceof PlanRequestConflictError)return res.status(409).json({code:error.code,error:error.message});
   if (error instanceof z.ZodError) return res.status(400).json({ error: 'Parámetros inválidos.' });
   const cause=error as {code?:unknown};
   const dbCode=typeof cause?.code==='string'?cause.code:'';
@@ -439,7 +542,7 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
   let status=error instanceof MercadoPublicoError?error.status:500;
   let message=status<500&&error instanceof MercadoPublicoError?error.message:'No se pudo completar la solicitud.';
   if(status>=500){
-    console.error(`[api] internal_error ref=${requestId} method=${req.method} route=${req.path} type=${error instanceof Error?error.name:'unknown'} code=${dbCode||'none'}`);
+     console.error(`[api] internal_error ref=${requestId} method=${req.method} route=${req.path} type=${error instanceof Error?error.name:'unknown'} code=${dbCode||'none'}`);
     message='Ocurrió un error interno.';
     if(isOfferDraft){
       if(dbCode==='ER_NO_SUCH_TABLE'||dbCode==='ER_BAD_FIELD_ERROR'){

@@ -23,6 +23,7 @@ try {
     '014_company_product_commercial_types.sql',
     '015_saas_onboarding.sql',
     '016_email_verification.sql',
+    '018_company_subscriptions.sql',
   ]) {
     const sql = await readFile(resolve('server/migrations', migration), 'utf8');
     await connection.query(sql);

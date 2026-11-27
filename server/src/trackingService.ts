@@ -1,6 +1,7 @@
 import pool from './db.js';
 import { resolveCurrentCompanyId } from './companyService.js';
 import { evaluateAlerts } from './alertService.js';
+import { assertCanTrackOpportunity } from './subscriptionService.js';
 
 export const trackingStates = ['saved', 'evaluating', 'preparing_offer', 'submitted', 'discarded'] as const;
 
@@ -37,10 +38,25 @@ export async function saveTrackedOpportunity(codigo: string) {
   const companyId = await resolveCurrentCompanyId();
   const [listings] = await pool.query<any[]>('SELECT codigo_externo FROM licitaciones WHERE codigo_externo=? LIMIT 1', [codigo]);
   if (!listings.length) return null;
-  const [insert] = await pool.execute<any>('INSERT IGNORE INTO company_opportunity_tracking (company_id,codigo_externo) VALUES (?,?)', [companyId, codigo]);
-  const [rows] = await pool.query<any[]>('SELECT id,estado FROM company_opportunity_tracking WHERE company_id=? AND codigo_externo=?', [companyId, codigo]);
-  if (insert.affectedRows) await evaluateAlerts();
-  return { id: Number(rows[0].id), estado: rows[0].estado, created: insert.affectedRows > 0 };
+  const connection = await pool.getConnection();
+  let created = false;
+  let item: { id: number; estado: string } | null = null;
+  try {
+    await connection.beginTransaction();
+    await connection.query('SELECT company_id FROM company_subscriptions WHERE company_id=? FOR UPDATE', [companyId]);
+    const [existing] = await connection.query<any[]>('SELECT id,estado FROM company_opportunity_tracking WHERE company_id=? AND codigo_externo=? LIMIT 1 FOR UPDATE', [companyId, codigo]);
+    if (existing[0]) item = { id: Number(existing[0].id), estado: String(existing[0].estado) };
+    else {
+      await assertCanTrackOpportunity(connection, companyId);
+      const [insert] = await connection.execute<any>('INSERT INTO company_opportunity_tracking (company_id,codigo_externo) VALUES (?,?)', [companyId, codigo]);
+      item = { id: Number(insert.insertId), estado: 'saved' };
+      created = true;
+    }
+    await connection.commit();
+  } catch (error) { await connection.rollback(); throw error; }
+  finally { connection.release(); }
+  if (created) await evaluateAlerts();
+  return { ...item!, created };
 }
 
 export async function dismissTrackedOpportunity(codigo: string) {

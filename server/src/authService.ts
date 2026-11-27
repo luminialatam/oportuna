@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import argon2 from 'argon2';
 import pool from './db.js';
+import { assertCanActivateMember, assertCanInviteMember } from './subscriptionService.js';
 
 const SESSION_TTL_DAYS = 14;
 const RESET_TTL_MINUTES = 30;
@@ -130,13 +131,15 @@ export async function completeEmailVerification(token:string) {
 export async function createInvitation(companyId:number,emailInput:string,role:'admin'|'collaborator'|'read_only',createdBy:number) {
   const email=normalizeEmail(emailInput);if(!validEmail(email))throw new Error('Correo inválido.');
   const token=opaqueToken();const expires=new Date(Date.now()+7*86400000);
-  await pool.execute('INSERT INTO company_invitations (company_id,invited_email,role,token_hash,created_by,expires_at) VALUES (?,?,?,?,?,?)',[companyId,email,role,hashToken(token),createdBy,expires]);
-  return {token,expiresAt:expires.toISOString()};
+  const conn=await pool.getConnection();
+  try{await conn.beginTransaction();await conn.query('SELECT company_id FROM company_subscriptions WHERE company_id=? FOR UPDATE',[companyId]);await assertCanInviteMember(conn,companyId);await conn.execute('INSERT INTO company_invitations (company_id,invited_email,role,token_hash,created_by,expires_at) VALUES (?,?,?,?,?,?)',[companyId,email,role,hashToken(token),createdBy,expires]);await conn.commit();return {token,expiresAt:expires.toISOString()};}
+  catch(error){await conn.rollback();throw error;}finally{conn.release();}
 }
 
 export async function acceptInvitation(token:string,emailInput:string,password:string,firstName='',lastName='') {
   const email=normalizeEmail(emailInput);if(!validEmail(email)||token.length>128)throw new Error('La invitación no es válida o venció.');const passwordHash=await hashPassword(password);const conn=await pool.getConnection();
   try{await conn.beginTransaction();const [rows]=await conn.query<any[]>(`SELECT id,company_id,role,invited_email FROM company_invitations WHERE token_hash=? AND accepted_at IS NULL AND expires_at>UTC_TIMESTAMP() FOR UPDATE`,[hashToken(token)]);const invite=rows[0];if(!invite||invite.invited_email!==email)throw new Error('La invitación no es válida o venció.');
+    await conn.query('SELECT company_id FROM company_subscriptions WHERE company_id=? FOR UPDATE',[Number(invite.company_id)]);await assertCanActivateMember(conn,Number(invite.company_id));
     const [existing]=await conn.query<any[]>('SELECT id FROM app_users WHERE email_normalized=? FOR UPDATE',[email]);if(existing[0])throw new Error('Esta cuenta ya existe. Inicia sesión para aceptar la invitación.');
     const [created]=await conn.execute<any>("INSERT INTO app_users (email_normalized,first_name,last_name,password_hash,status,email_verified_at) VALUES (?,?,?,?,'active',UTC_TIMESTAMP())",[email,firstName.trim().slice(0,100),lastName.trim().slice(0,100),passwordHash]);const userId=Number(created.insertId);
     await conn.execute("INSERT INTO company_memberships (user_id,company_id,role,status) VALUES (?,?,?,'active') ON DUPLICATE KEY UPDATE role=VALUES(role),status='active'",[userId,Number(invite.company_id),invite.role]);await conn.execute('UPDATE company_invitations SET accepted_at=UTC_TIMESTAMP() WHERE id=?',[invite.id]);await conn.commit();return userId;
@@ -145,7 +148,7 @@ export async function acceptInvitation(token:string,emailInput:string,password:s
 
 export async function acceptInvitationForUser(token:string,userId:number,emailInput:string) {
   const email=normalizeEmail(emailInput);if(!validEmail(email)||token.length>128)throw new Error('La invitación no es válida o venció.');const conn=await pool.getConnection();
-  try{await conn.beginTransaction();const [rows]=await conn.query<any[]>(`SELECT id,company_id,role,invited_email FROM company_invitations WHERE token_hash=? AND accepted_at IS NULL AND expires_at>UTC_TIMESTAMP() FOR UPDATE`,[hashToken(token)]);const invite=rows[0];if(!invite||invite.invited_email!==email)throw new Error('La invitación no es válida o venció.');await conn.execute("INSERT INTO company_memberships (user_id,company_id,role,status) VALUES (?,?,?,'active') ON DUPLICATE KEY UPDATE role=VALUES(role),status='active'",[userId,Number(invite.company_id),invite.role]);await conn.execute('UPDATE company_invitations SET accepted_at=UTC_TIMESTAMP() WHERE id=?',[invite.id]);await conn.commit();return Number(invite.company_id);}catch(error){await conn.rollback();throw error;}finally{conn.release();}
+  try{await conn.beginTransaction();const [rows]=await conn.query<any[]>(`SELECT id,company_id,role,invited_email FROM company_invitations WHERE token_hash=? AND accepted_at IS NULL AND expires_at>UTC_TIMESTAMP() FOR UPDATE`,[hashToken(token)]);const invite=rows[0];if(!invite||invite.invited_email!==email)throw new Error('La invitación no es válida o venció.');await conn.query('SELECT company_id FROM company_subscriptions WHERE company_id=? FOR UPDATE',[Number(invite.company_id)]);const [current]=await conn.query<any[]>("SELECT status FROM company_memberships WHERE company_id=? AND user_id=? FOR UPDATE",[Number(invite.company_id),userId]);if(current[0]?.status!=='active')await assertCanActivateMember(conn,Number(invite.company_id));await conn.execute("INSERT INTO company_memberships (user_id,company_id,role,status) VALUES (?,?,?,'active') ON DUPLICATE KEY UPDATE role=VALUES(role),status='active'",[userId,Number(invite.company_id),invite.role]);await conn.execute('UPDATE company_invitations SET accepted_at=UTC_TIMESTAMP() WHERE id=?',[invite.id]);await conn.commit();return Number(invite.company_id);}catch(error){await conn.rollback();throw error;}finally{conn.release();}
 }
 
 export async function createPasswordReset(emailInput:string) {
