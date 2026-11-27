@@ -1110,13 +1110,15 @@ export function CompanyOpportunities({
         <>
           <p className="text-xs text-[#5D6472]">
             {data.matchingBasis === 'profile_keywords'
-              ? `Coincidencia automática usando ${Number(data.profileKeywordCount || 0)} palabras clave guardadas en Mi empresa. Se revisan hasta ${Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} fichas candidatas, priorizadas por fecha de cierre.`
-              : `Coincidencia automática usando los productos activos de tu catálogo y el perfil comercial. Se revisan hasta ${Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} fichas candidatas, priorizadas por fecha de cierre.`}
+              ? `Coincidencia automática usando ${Number(data.profileKeywordCount || 0)} palabras clave guardadas en Mi empresa. Se evaluaron ${Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones vigentes del índice local.`
+              : `Coincidencia automática usando los productos activos de tu catálogo y el perfil comercial. Se evaluaron ${Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones vigentes del índice local.`}
           </p>
-          <div className="summary-match-metrics grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <p className="text-xs text-[#5D6472]">El índice local contiene {Number(data.indexStatus?.totalListings || 0).toLocaleString('es-CL')} licitaciones. {Number(data.indexStatus?.discardedListings || 0).toLocaleString('es-CL')} descartadas de Seguimiento se excluyen. {data.indexStatus?.lastSuccessfulSyncAt ? `Última sincronización completada: ${new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santiago' }).format(new Date(data.indexStatus.lastSuccessfulSyncAt))}.` : 'No hay una sincronización completada registrada.'} Esta búsqueda solo consulta el índice local; las licitaciones publicadas en Mercado Público desde esa sincronización no aparecen hasta que se sincronicen.</p>
+          <div className="summary-match-metrics grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 text-xs">
             <div><span>Coincidencias</span><b>{Number(data.total || 0).toLocaleString('es-CL')}</b></div>
             <div><span>Alta</span><b>{Number(data.high || 0).toLocaleString('es-CL')}</b></div>
             <div><span>Media</span><b>{Number(data.medium || 0).toLocaleString('es-CL')}</b></div>
+            <div><span>Exploratorias</span><b>{Number(data.exploratory || 0).toLocaleString('es-CL')}</b></div>
             <div><span>Cierran en 14 días</span><b>{Number(data.closingSoon || 0).toLocaleString('es-CL')}</b></div>
           </div>
           {data.items?.length ? (
@@ -1177,7 +1179,7 @@ export function CompanyOpportunities({
             </div>
           ) : (
             <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472]">
-              No hay coincidencias en las licitaciones activas del índice local para los criterios comerciales guardados. La búsqueda evaluó {Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones.
+              No se encontró evidencia suficiente en las {Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones vigentes evaluadas del índice local. Esto no significa que no existan licitaciones nuevas en Mercado Público: Oportuna no consulta el portal en tiempo real; revisa la fecha de última sincronización del índice local arriba.
             </div>
           )}
           {data.items?.length > 0 && <p className="text-xs text-[#5D6472]">{board ? 'Primero aparecen las coincidencias con evidencia más directa; las basadas en términos relacionados quedan al final. ' : ''}Mostrando {Math.min(visibleCount, data.items.length)} de {data.total} oportunidades.</p>}

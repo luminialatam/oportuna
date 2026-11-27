@@ -220,12 +220,15 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
   let queryCount = 0;
   const query = (sql: string, values: unknown[] = []) => { queryCount++; return pool.query<any[]>(sql, values); };
   const companyId = await companyContext();
-  const [[profileRows], [preferenceRows], [productRows], [listingVersion], [trackingVersion]] = await Promise.all([
+  const [[profileRows], [preferenceRows], [productRows], [listingVersion], [trackingVersion], [indexRows], [discardedRows], [syncRows]] = await Promise.all([
     query('SELECT actividad,rubros,regiones,palabras_clave,terminos_excluidos,updated_at FROM commercial_profiles WHERE company_id=?', [companyId]),
     query('SELECT estados,regiones,updated_at FROM company_search_preferences WHERE company_id=?', [companyId]),
     query('SELECT id,nombre,categoria,descripcion,palabras_clave,sinonimos,terminos_relacionados,aplicaciones,exclusiones,tipos_comerciales FROM company_products WHERE company_id=? AND activo=1 ORDER BY updated_at DESC LIMIT 200', [companyId]),
     query('SELECT MAX(last_synced_at) version FROM licitaciones'),
     query('SELECT MAX(updated_at) version FROM company_opportunity_tracking WHERE company_id=?', [companyId]),
+    query('SELECT COUNT(*) total FROM licitaciones'),
+    query("SELECT COUNT(*) total FROM company_opportunity_tracking WHERE company_id=? AND estado='discarded'", [companyId]),
+    query("SELECT finished_at finishedAt,fecha_consultada checkedDate FROM sync_runs WHERE estado='completada' AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 1"),
   ]);
   const profile = profileRows[0]; const preference = preferenceRows[0];
   const products = matchingProducts(productRows, profile);
@@ -233,12 +236,14 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
   const regions = jsonList(preference?.regiones).map(normalize).filter(Boolean);
   const matchingBasis = productRows.length ? 'catalog' : 'profile_keywords';
   const profileKeywordCount = jsonList(profile?.palabras_clave).length;
-  const empty = { configured: products.length > 0, matchingBasis, profileKeywordCount, total: 0, high: 0, medium: 0, exploratory: 0, closingSoon: 0, candidatesEvaluated: 0, evaluation: { evaluatedListings: 0, batches: 0, queryCount, durationMs: Date.now() - startedAt, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: 0 }, coverage: { indexed: 0, limited: 0 }, items: [], disclaimer: 'La relevancia comercial se basa en el catálogo o las palabras clave del perfil y los datos indexados. No confirma elegibilidad; revisa las bases oficiales.' };
+  const indexStatus = { totalListings: Number(indexRows[0]?.total ?? 0), discardedListings: Number(discardedRows[0]?.total ?? 0), lastSuccessfulSyncAt: syncRows[0]?.finishedAt ?? null, lastSuccessfulSyncDate: syncRows[0]?.checkedDate ?? null };
+  const empty = { configured: products.length > 0, matchingBasis, profileKeywordCount, total: 0, high: 0, medium: 0, exploratory: 0, closingSoon: 0, candidatesEvaluated: 0, evaluation: { evaluatedListings: 0, batches: 0, queryCount, durationMs: Date.now() - startedAt, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: 0 }, coverage: { indexed: 0, limited: 0 }, indexStatus, items: [], disclaimer: 'La relevancia comercial se basa en el catálogo o las palabras clave del perfil y los datos indexados. No confirma elegibilidad; revisa las bases oficiales.' };
   if (!products.length) return empty;
   const profileTerms = [...new Set([...terms(String(profile?.actividad ?? '')), ...jsonList(profile?.rubros).flatMap(terms), ...jsonList(profile?.palabras_clave).flatMap(terms)])];
   for (const product of products) product.profileTerms = profileTerms;
   const nameKeywords = products.flatMap(product => commercialTerms(product.nombre, true).filter(term => !STOP.has(term)));
-  const keywords = [...new Set([...nameKeywords, ...products.flatMap(product => [...terms(product.nombre), ...terms(product.categoria ?? ''), ...product.palabrasClave.flatMap(terms), ...product.sinonimos.flatMap(terms), ...product.terminosRelacionados.flatMap(terms), ...product.aplicaciones.flatMap(terms)]), ...profileTerms].flatMap(commercialTermVariants))].slice(0, 90);
+  // Keep every configured term; an arbitrary cutoff dropped later profile keywords.
+  const keywords = [...new Set([...nameKeywords, ...products.flatMap(product => [...terms(product.nombre), ...terms(product.categoria ?? ''), ...product.palabrasClave.flatMap(terms), ...product.sinonimos.flatMap(terms), ...product.terminosRelacionados.flatMap(terms), ...product.aplicaciones.flatMap(terms)]), ...profileTerms].flatMap(commercialTermVariants))];
   if (!keywords.length) return empty;
   const evaluationLimit = options.evaluationLimit == null ? null : Math.max(1, Math.min(800, Math.trunc(options.evaluationLimit) || 800));
   const key = createHash('sha256').update(JSON.stringify({ companyId, products, profileUpdated: profile?.updated_at, preferenceUpdated: preference?.updated_at, listingVersion: listingVersion[0]?.version, trackingVersion: trackingVersion[0]?.version, states, regions, board: Boolean(options.board), includeAllItems: Boolean(options.includeAllItems), evaluationLimit, commercialClassification: options.commercialClassification !== false })).digest('hex');
@@ -346,7 +351,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
     }
   }
   const durationMs=Date.now()-startedAt;
-  const value = { configured: true, matchingBasis, profileKeywordCount, total, high, medium, exploratory, closingSoon, candidatesEvaluated: evaluatedListings,
+  const value = { configured: true, matchingBasis, profileKeywordCount, total, high, medium, exploratory, closingSoon, candidatesEvaluated: evaluatedListings, indexStatus,
     evaluation: { evaluatedListings, batches, queryCount, durationMs, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: Math.max(0,peakHeapUsed-initialHeap) },
     coverage: { indexed, limited }, items: topResults, disclaimer: 'Coincidencia estimada según evidencias del catálogo o las palabras clave del perfil, título, descripción y partidas. No confirma elegibilidad; revisa las bases oficiales.' };
   matchCache.set(key, { value, expires: Date.now() + 30_000 }); if (matchCache.size > 200) matchCache.clear();

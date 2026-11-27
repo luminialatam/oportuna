@@ -23,6 +23,10 @@ const sourceRow={id:1,nombre:'Computadores portátiles',categoria:'Informática'
   if(sql.includes('FROM company_search_preferences'))return [[{estados:'[5]',regiones:'[]',updated_at:'2026-11-01'}],undefined];
   if(sql.includes('FROM company_products'))return [Number(values[0])===1?[]:[sourceRow],undefined];
   if(sql.includes('MAX(last_synced_at)'))return [[{version:'2026-11-02'}],undefined];
+  if(sql.includes('SELECT COUNT(*) total FROM licitaciones'))return [[{total:1200}],undefined];
+  if(sql.includes('SELECT COUNT(*) total FROM company_opportunity_tracking'))return [[{total:7}],undefined];
+  if(sql.includes('FROM sync_runs WHERE estado=\'completada\''))return [[{finishedAt:'2026-11-02T08:00:00.000Z',checkedDate:'2026-11-02'}],undefined];
+  if(sql.includes('MAX(updated_at) version FROM company_opportunity_tracking'))return [[{version:'2026-11-02'}],undefined];
   if(sql.includes('ORDER BY l.fecha_cierre IS NULL,l.fecha_cierre ASC,l.codigo_externo LIMIT ?')){
     baselineQueries++;
     assert.equal(Number(values[values.length-1]),800,'Baseline query should reproduce the historical cap.');
@@ -49,7 +53,10 @@ try{
   const before=await runWithCompanyContext(context,()=>getCompanyMatches({includeAllItems:true,evaluationLimit:800}));
   assert.equal(before.candidatesEvaluated,800);
   assert.equal(before.total,0,'The two positives after row 800 are absent from the capped baseline.');
-  assert.equal(before.evaluation.queryCount,5,'Baseline uses four context queries and one candidate query.');
+  assert.equal(before.evaluation.queryCount,9,'Baseline includes company context, index status and one candidate query.');
+  assert.equal(before.indexStatus.totalListings,1200);
+  assert.equal(before.indexStatus.discardedListings,7);
+  assert.equal(before.indexStatus.lastSuccessfulSyncDate,'2026-11-02');
   clearCompanyMatchCache();lastCursor=0;batchQueries=0;
   const after=await runWithCompanyContext(context,()=>getCompanyMatches({includeAllItems:true}));
   assert.equal(after.candidatesEvaluated,totalRows,'Every eligible listing must be evaluated.');
@@ -58,7 +65,7 @@ try{
   assert.equal(after.items.length,2);
   assert.equal(new Set(after.items.map((item:any)=>item.codigo_externo)).size,after.items.length,'No duplicate results across pages.');
   assert.equal(after.evaluation.batches,5);
-  assert.equal(after.evaluation.queryCount,9,'Full evaluation is four context queries plus five listing batches.');
+  assert.equal(after.evaluation.queryCount,13,'Full evaluation includes context, index status and five listing batches.');
   assert.ok(after.evaluation.durationMs>=0);
   assert.ok(after.evaluation.peakHeapDeltaBytes>=0);
   assert.equal(batchQueries,5);
@@ -70,4 +77,5 @@ try{
 }finally{
   (pool as any).query=originalQuery;
   globalThis.fetch=originalFetch;
+  await pool.end();
 }
