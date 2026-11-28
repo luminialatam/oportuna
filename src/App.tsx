@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 31346)
-Total output lines: 2426
-
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
@@ -1199,7 +1196,133 @@ function App() {
     const token = window.prompt('Pega el token de invitación recibido por el Administrador:');
     if (!token?.trim()) return;
     try {
-      const next = await api<AuthState>('/api/auth/invitations/acc…1346 tokens truncated…l bg-[#F8F9FA] border border-[#E1E4EA] flex flex-col items-stretch">
+      const next = await api<AuthState>('/api/auth/invitations/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invitationToken: token.trim() }),
+      });
+      csrfToken = next.csrfToken;
+      setAuth(next);
+      goToSection('Resumen');
+      setToast('Invitación aceptada. Ya puedes acceder a la nueva empresa.');
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'No se pudo aceptar la invitación.');
+    }
+  };
+
+  const todayLabel = useMemo(
+    () => new Intl.DateTimeFormat('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()),
+    []
+  );
+  const greetingName = auth?.firstName?.trim()
+    || auth?.email.split('@')[0].split(/[._-]/)[0].replace(/^./, (letter) => letter.toLocaleUpperCase('es-CL'))
+    || 'Hola';
+
+  if (authState === 'loading') {
+    return (
+      <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
+        <div className="bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm flex items-center gap-3 text-sm text-[#171A24]">
+          <LoaderCircle className="spin text-[#5636D9]" size={20} />
+          Verificando tu sesión en Leasy…
+        </div>
+      </main>
+    );
+  }
+
+  if (authState === 'unavailable') {
+    return (
+      <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
+        <section className="w-full max-w-md bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm text-center space-y-4" aria-live="polite">
+          <h1 className="text-lg font-bold text-[#171A24]">No pudimos comprobar tu sesión</h1>
+          <p className="text-sm text-[#5D6472]">El servidor de Leasy no respondió. Tu sesión no se ha cerrado. Comprueba que la aplicación esté iniciada y vuelve a intentarlo.</p>
+          <button type="button" onClick={() => setSessionCheck((value) => value + 1)} className="w-full h-11 bg-[#5636D9] hover:bg-[#4b2ec7] text-white font-semibold rounded-xl text-sm">Volver a comprobar</button>
+        </section>
+      </main>
+    );
+  }
+
+  if (authState === 'anonymous') {
+    return <AuthGate onAuthenticated={acceptAuth} initialError={sessionNotice} />;
+  }
+
+  if (auth && !auth.emailVerified) {
+    return <EmailVerificationGate session={auth} onAuthenticated={acceptAuth} />;
+  }
+
+  if (auth?.platformRole === 'admin' && !auth.activeCompanyId && pendingLegacy !== null) {
+    return pendingLegacy === undefined ? (
+      <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
+        <div className="bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm flex items-center gap-3 text-sm text-[#171A24]">
+          <LoaderCircle className="spin text-[#5636D9]" size={20} />
+          Revisando espacio local…
+        </div>
+      </main>
+    ) : (
+      <LegacyClaim company={pendingLegacy} onClaim={() => void claimLegacy()} busy={claimBusy} error={claimError} />
+    );
+  }
+
+  if (!auth?.activeCompanyId && auth?.platformRole !== 'admin') {
+    return <NoCompanyOnboarding session={auth!} onAuthenticated={acceptAuth} />;
+  }
+
+  const navGroups = [
+    {
+      label: 'Explorar',
+      items: [
+        { name: 'Resumen', icon: LayoutDashboard },
+        { name: 'Buscar oportunidades', icon: Search },
+        { name: 'Oportunidades', icon: Sparkles },
+        { name: 'Agentes IA', icon: FileSearch },
+        { name: 'Inteligencia de mercado', icon: BarChart3 },
+        { name: 'Analítica', icon: BarChart3, subItem: true },
+      ],
+    },
+    {
+      label: 'Gestionar',
+      items: [
+        { name: 'Seguimiento', icon: Activity },
+        { name: 'Calendario', icon: CalendarDays },
+        { name: 'Alertas', icon: Bell },
+      ],
+    },
+    {
+      label: 'Espacio de trabajo',
+      items: [
+        { name: 'Mi empresa', icon: Building2 },
+        { name: 'Precios base', icon: Calculator },
+        ...(isAdmin ? [{ name: 'Equipo y accesos', icon: Users }] : []),
+        ...(isPlatformAdmin ? [{ name: 'Cuentas de usuario', icon: Users }] : []),
+        ...(isAdmin ? [{ name: 'Configuración', icon: Settings }] : []),
+      ],
+    },
+    ...(isPlatformAdmin ? [{ label: 'Herramientas internas', items: [{ name: 'Centro de Pruebas', icon: FlaskConical, isSandbox: true }] }] : []),
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#F5F6F8] text-[#171A24] antialiased flex flex-col lg:flex-row">
+      {/* SIDEBAR NAVIGATION (Desktop fixed / Mobile drawer conforming to Stitch) */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E1E4EA] p-5 flex flex-col justify-between gap-4 overflow-y-auto transition-transform duration-200 lg:translate-x-0 ${
+          mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
+        }`}
+      >
+        <div className="space-y-6">
+          {/* Brand header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <img src="/assets/leasy-app-logo.png" alt="Leasy.cl" className="block h-auto w-[180px] max-w-full object-contain" />
+            </div>
+            <button
+              onClick={() => setMobileOpen(false)}
+              className="lg:hidden p-1 text-[#5D6472] hover:bg-gray-100 rounded-lg"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Active Company Selector Pill */}
+          <div className="p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA] flex flex-col items-stretch">
             <div className="flex items-center gap-2 min-w-0">
               <Building2 size={16} className="text-[#5636D9] shrink-0" />
               <div className="min-w-0">
