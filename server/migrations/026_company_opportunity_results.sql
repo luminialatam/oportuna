@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS company_opportunity_results (
   awarded_amount DECIMAL(18,2) NULL,
   actual_cost DECIMAL(18,2) NULL,
   currency CHAR(3) NOT NULL DEFAULT 'CLP',
+  source_type ENUM('official','company') NOT NULL DEFAULT 'company',
   source_url VARCHAR(2048) NULL,
   decided_at DATE NULL,
   notes VARCHAR(2000) NULL,

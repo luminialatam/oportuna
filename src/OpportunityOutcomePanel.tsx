@@ -7,6 +7,7 @@ export type OpportunityOutcome = {
   awardedAmount: number | null;
   actualCost: number | null;
   currency: 'CLP' | 'USD' | 'EUR' | 'UTM';
+  sourceType: 'official' | 'company';
   sourceUrl: string | null;
   decidedAt: string | null;
   notes: string | null;
@@ -21,7 +22,7 @@ export const outcomeLabels: Record<OpportunityOutcome['outcome'], string> = {
   not_submitted: 'No presentada',
 };
 
-const blank = { outcome: 'not_awarded' as OpportunityOutcome['outcome'], offerAmount: '', awardedAmount: '', actualCost: '', currency: 'CLP' as OpportunityOutcome['currency'], sourceUrl: '', decidedAt: '', notes: '' };
+const blank = { outcome: 'not_awarded' as OpportunityOutcome['outcome'], offerAmount: '', awardedAmount: '', actualCost: '', currency: 'CLP' as OpportunityOutcome['currency'], sourceType: 'company' as OpportunityOutcome['sourceType'], sourceUrl: '', decidedAt: '', notes: '' };
 const moneyLabel = (amount: number, currency: OpportunityOutcome['currency']) => currency === 'UTM'
   ? `${new Intl.NumberFormat('es-CL',{maximumFractionDigits:2}).format(amount)} UTM`
   : new Intl.NumberFormat('es-CL',{style:'currency',currency,maximumFractionDigits:0}).format(amount);
@@ -29,7 +30,7 @@ const moneyLabel = (amount: number, currency: OpportunityOutcome['currency']) =>
 export function OpportunityOutcomePanel({ trackingId, outcome, csrfToken, onSaved }: { trackingId: number; outcome: OpportunityOutcome | null; csrfToken: string; onSaved: () => void }) {
   const [form, setForm] = useState(() => outcome ? {
     outcome: outcome.outcome, offerAmount: outcome.offerAmount?.toString() ?? '', awardedAmount: outcome.awardedAmount?.toString() ?? '',
-    actualCost: outcome.actualCost?.toString() ?? '', currency: outcome.currency, sourceUrl: outcome.sourceUrl ?? '',
+    actualCost: outcome.actualCost?.toString() ?? '', currency: outcome.currency, sourceType: outcome.sourceType, sourceUrl: outcome.sourceUrl ?? '',
     decidedAt: outcome.decidedAt?.slice(0, 10) ?? '', notes: outcome.notes ?? '',
   } : blank);
   const [busy, setBusy] = useState(false);
@@ -41,7 +42,7 @@ export function OpportunityOutcomePanel({ trackingId, outcome, csrfToken, onSave
     try {
       const response = await fetch(`/api/company/tracking/${trackingId}/result`, {
         method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-        body: JSON.stringify({ outcome: form.outcome, offerAmount: amount(form.offerAmount), awardedAmount: amount(form.awardedAmount), actualCost: amount(form.actualCost), currency: form.currency, sourceUrl: form.sourceUrl.trim() || null, decidedAt: form.decidedAt || null, notes: form.notes.trim() || null }),
+        body: JSON.stringify({ outcome: form.outcome, offerAmount: amount(form.offerAmount), awardedAmount: amount(form.awardedAmount), actualCost: amount(form.actualCost), currency: form.currency, sourceType: form.sourceType, sourceUrl: form.sourceUrl.trim() || null, decidedAt: form.decidedAt || null, notes: form.notes.trim() || null }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'No se pudo guardar el resultado.');
@@ -55,6 +56,7 @@ export function OpportunityOutcomePanel({ trackingId, outcome, csrfToken, onSave
     <p className="text-[11px] leading-4 text-[#687184]">Registra el resultado conocido y su fuente. El monto estimado del comprador no se usa como oferta ni como venta.</p>
     <div className="grid gap-2 sm:grid-cols-2">
       <label className="grid gap-1 text-[11px] font-semibold text-[#596174]">Resultado<select className={field} value={form.outcome} onChange={event => set('outcome', event.target.value)}>{Object.entries(outcomeLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label className="grid gap-1 text-[11px] font-semibold text-[#596174]">Origen del dato<select className={field} value={form.sourceType} onChange={event => set('sourceType', event.target.value)}><option value="company">Ingresado por la empresa</option><option value="official">Verificado en fuente oficial</option></select></label>
       <label className="grid gap-1 text-[11px] font-semibold text-[#596174]">Moneda<select className={field} value={form.currency} onChange={event => set('currency', event.target.value)}>{['CLP','USD','EUR','UTM'].map(value => <option key={value}>{value}</option>)}</select></label>
       <label className="grid gap-1 text-[11px] font-semibold text-[#596174]">Monto ofertado<input className={field} type="number" min="0" step="0.01" value={form.offerAmount} onChange={event => set('offerAmount', event.target.value)} placeholder="Opcional" /></label>
       <label className="grid gap-1 text-[11px] font-semibold text-[#596174]">Monto adjudicado<input className={field} type="number" min="0" step="0.01" value={form.awardedAmount} onChange={event => set('awardedAmount', event.target.value)} placeholder="Opcional" /></label>

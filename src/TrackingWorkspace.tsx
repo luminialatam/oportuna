@@ -440,7 +440,7 @@ export function TrackingWorkspace({
                           {dateLabel(item.listing.fechaCierre)}
                         </span>
                       </div>
-                      {item.outcome && <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-900"><b>{outcomeLabels[item.outcome.outcome]}</b>{item.outcome.awardedAmount !== null && <span> · {new Intl.NumberFormat('es-CL',{style:'currency',currency:item.outcome.currency,maximumFractionDigits:0}).format(item.outcome.awardedAmount)}</span>}</div>}
+                      {item.outcome && <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-900"><b>{outcomeLabels[item.outcome.outcome]}</b>{item.outcome.awardedAmount !== null && <span> · {outcomeMoney(item.outcome.awardedAmount,item.outcome.currency)}</span>}<p className="mt-1 text-[10px] text-emerald-800">{item.outcome.sourceType === 'official' ? 'Verificado en fuente oficial' : 'Ingresado por la empresa'}{item.outcome.decidedAt ? ` · ${dateLabel(item.outcome.decidedAt)}` : ''}{item.outcome.sourceUrl && <> · <a href={item.outcome.sourceUrl} target="_blank" rel="noreferrer" className="underline">Ver respaldo</a></>}</p></div>}
 
                       {/* Stage selector dropdown */}
                       <div className="pt-1">

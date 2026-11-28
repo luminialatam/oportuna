@@ -9,6 +9,7 @@ export type TrackingOutcomeInput = {
   awardedAmount: number | null;
   actualCost: number | null;
   currency: TrackingCurrency;
+  sourceType: 'official' | 'company';
   sourceUrl: string | null;
   decidedAt: string | null;
   notes: string | null;
@@ -17,6 +18,7 @@ export type TrackingOutcomeInput = {
 export function validateTrackingOutcome(input: TrackingOutcomeInput): TrackingOutcomeInput {
   if (!trackingOutcomes.includes(input.outcome)) throw new Error('Selecciona un resultado válido.');
   if (!trackingCurrencies.includes(input.currency)) throw new Error('Selecciona una moneda válida.');
+  if (!['official','company'].includes(input.sourceType)) throw new Error('Selecciona un origen válido para el resultado.');
   for (const [label, value] of [['ofertado', input.offerAmount], ['adjudicado', input.awardedAmount], ['costo real', input.actualCost]] as const) {
     if (value !== null && (!Number.isFinite(value) || value < 0 || value > 9999999999999999)) {
       throw new Error(`El monto ${label} debe ser un número no negativo válido.`);

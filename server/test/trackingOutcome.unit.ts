@@ -3,7 +3,7 @@ import { outcomeSummary, validateTrackingOutcome, type TrackingOutcomeInput } fr
 
 const valid: TrackingOutcomeInput = {
   outcome: 'awarded', offerAmount: 1_200_000, awardedAmount: 1_100_000, actualCost: 800_000,
-  currency: 'CLP', sourceUrl: 'https://www.mercadopublico.cl/licitaciones/123', decidedAt: '2026-11-28', notes: 'Revisado en acta oficial',
+  currency: 'CLP', sourceType: 'official', sourceUrl: 'https://www.mercadopublico.cl/licitaciones/123', decidedAt: '2026-11-28', notes: 'Revisado en acta oficial',
 };
 
 assert.deepEqual(validateTrackingOutcome(valid), valid);
