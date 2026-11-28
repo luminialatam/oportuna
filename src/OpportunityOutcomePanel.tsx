@@ -53,7 +53,7 @@ export function OpportunityOutcomePanel({ trackingId, outcome, csrfToken, onSave
   const field = 'h-9 rounded-lg border border-[#D8DCE6] bg-white px-2.5 text-xs text-[#202534] focus:border-[#5636D9] focus:outline-none';
   return <form onSubmit={(event) => void save(event)} className="space-y-3 rounded-xl border border-[#DED8FF] bg-[#FAF9FF] p-3" aria-label="Registrar resultado comercial">
     <div className="flex items-center gap-2 text-xs font-bold text-[#34304B]"><FileCheck2 size={15} className="text-[#5636D9]" /> Resultado de la postulación</div>
-    <p className="text-[11px] leading-4 text-[#687184]">Registra el resultado conocido y su fuente. El monto estimado del comprador no se usa como oferta ni como venta.</p>
+    <p className="text-[11px] leading-4 text-[#687184]">Registra el resultado conocido y su fuente. Elegir «fuente oficial» indica una verificación manual; Leasy no consulta ni verifica adjudicaciones automáticamente. El monto estimado del comprador no se usa como oferta ni como venta.</p>
     <div className="grid gap-2 sm:grid-cols-2">
       <label className="grid gap-1 text-[11px] font-semibold text-[#596174]">Resultado<select className={field} value={form.outcome} onChange={event => set('outcome', event.target.value)}>{Object.entries(outcomeLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label className="grid gap-1 text-[11px] font-semibold text-[#596174]">Origen del dato<select className={field} value={form.sourceType} onChange={event => set('sourceType', event.target.value)}><option value="company">Ingresado por la empresa</option><option value="official">Verificado en fuente oficial</option></select></label>
