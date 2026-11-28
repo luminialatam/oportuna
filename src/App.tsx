@@ -1310,7 +1310,7 @@ function App() {
           {/* Brand header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <img src="/assets/leasy-app-logo.png" alt="Leasy.cl" className="block h-auto w-[150px] max-w-full object-contain" />
+              <img src="/assets/leasy-app-logo.png" alt="Leasy.cl" className="block h-auto w-[180px] max-w-full object-contain" />
             </div>
             <button
               onClick={() => setMobileOpen(false)}
@@ -1441,7 +1441,6 @@ function App() {
               <Menu size={18} />
             </button>
             <div className="flex items-center gap-2 text-xs text-[#5D6472]">
-              <span>/</span>
               <span className="font-semibold text-[#5636D9]">{section}</span>
             </div>
           </div>
