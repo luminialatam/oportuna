@@ -1092,7 +1092,7 @@ export function CompanyOpportunities({
             </span>
           </div>
           <p className="text-xs text-[#5D6472] mt-0.5">
-            Oportuna cruza las licitaciones activas del índice local con tus productos y palabras clave comerciales. El puntaje de 0 a 100 mide evidencia textual; no predice una adjudicación.
+            Leasy.cl cruza las licitaciones activas del índice local con tus productos y palabras clave comerciales. El puntaje de 0 a 100 mide evidencia textual; no predice una adjudicación.
           </p>
         </div>
         <div className="flex items-center gap-4 shrink-0">
@@ -1114,7 +1114,7 @@ export function CompanyOpportunities({
         <div role="alert" className="company-match-error">
           <div className="space-y-1">
             <p className="company-match-error-title">No pudimos cargar las coincidencias.</p>
-            <p>{error} El resto de Oportuna sigue disponible.</p>
+            <p>{error} El resto de Leasy sigue disponible.</p>
             {errorReference && <p className="company-match-error-reference">Folio para soporte: {errorReference}</p>}
           </div>
           <button onClick={() => setReloadKey((key) => key + 1)} className="company-match-retry">Intentar de nuevo</button>
@@ -1209,7 +1209,7 @@ export function CompanyOpportunities({
             </div>
           ) : (
             <div className="summary-match-empty py-8 text-center text-xs text-[#5D6472]">
-              No se encontró evidencia suficiente en las {Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones vigentes evaluadas del índice local. Esto no significa que no existan licitaciones nuevas en Mercado Público: Oportuna no consulta el portal en tiempo real; revisa la fecha de última sincronización del índice local arriba.
+              No se encontró evidencia suficiente en las {Number(data.candidatesEvaluated || 0).toLocaleString('es-CL')} licitaciones vigentes evaluadas del índice local. Esto no significa que no existan licitaciones nuevas en Mercado Público: Leasy no consulta el portal en tiempo real; revisa la fecha de última sincronización del índice local arriba.
             </div>
           )}
           {data.items?.length > 0 && <p className="text-xs text-[#5D6472]">{board ? 'Primero aparecen las coincidencias con evidencia más directa; las basadas en términos relacionados quedan al final. ' : ''}Mostrando {Math.min(visibleCount, data.items.length)} de {data.total} oportunidades.</p>}

@@ -31,10 +31,10 @@ export function ProactiveSearchControls({csrfToken,canManageCompany}:{csrfToken:
   const schedulerMessage=value?.scheduler.processScheduler
     ?'Las búsquedas periódicas están habilitadas en el servidor.'
     :value?.scheduler.externalEndpoint
-      ?'La búsqueda periódica depende de una tarea de actualización configurada para Oportuna. También puedes ejecutar una búsqueda manual desde esta página.'
+      ?'La búsqueda periódica depende de una tarea de actualización configurada para Leasy. También puedes ejecutar una búsqueda manual desde esta página.'
       :'No hay una tarea periódica disponible ahora. Puedes ejecutar búsquedas manuales desde Alertas.';
   return <section className="rounded-2xl border border-[#D9D1FF] bg-white p-5 shadow-sm" aria-labelledby="proactive-search-heading">
-    <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#f0edff] text-[#5636D9]"><BellRing size={19}/></span><div><h2 id="proactive-search-heading" className="font-bold text-[#171A24]">Búsqueda automática por perfil</h2><p className="mt-1 max-w-3xl text-sm text-[#5D6472]">Oportuna compara el perfil comercial y los productos de tu empresa con las licitaciones activas del índice local. Las nuevas coincidencias aparecen en Alertas con una explicación. Esta búsqueda no consulta Mercado Público en tiempo real.</p></div></div>
+    <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#f0edff] text-[#5636D9]"><BellRing size={19}/></span><div><h2 id="proactive-search-heading" className="font-bold text-[#171A24]">Búsqueda automática por perfil</h2><p className="mt-1 max-w-3xl text-sm text-[#5D6472]">Leasy compara el perfil comercial y los productos de tu empresa con las licitaciones activas del índice local. Las nuevas coincidencias aparecen en Alertas con una explicación. Esta búsqueda no consulta Mercado Público en tiempo real.</p></div></div>
     {!value&&!error&&<p className="mt-4 flex items-center gap-2 text-sm text-[#5D6472]" role="status"><LoaderCircle size={16} className="animate-spin"/>Cargando preferencia…</p>}
     {error&&<p className="mt-4 text-sm text-red-700" role="alert">{error}</p>}
     {value&&<>
@@ -51,7 +51,7 @@ export function ProactiveSearchControls({csrfToken,canManageCompany}:{csrfToken:
           <label className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-[#303747]"><input type="checkbox" checked={emailPreference.enabled} disabled={saving||!emailPreference.verified} onChange={event=>void saveEmailPreference(event.target.checked)}/>{emailPreference.enabled?'Activo':'Desactivado'}</label>
         </div>
         {!emailPreference.verified&&<p className="mt-3 text-sm text-amber-800">Verifica tu correo para activar estos avisos.</p>}
-        {!value.enabled&&emailPreference.enabled&&<p className="mt-3 text-sm text-amber-800">Activa también la búsqueda automática para que Oportuna detecte nuevas coincidencias.</p>}
+        {!value.enabled&&emailPreference.enabled&&<p className="mt-3 text-sm text-amber-800">Activa también la búsqueda automática para que Leasy detecte nuevas coincidencias.</p>}
       </div>}
     </>}
   </section>;

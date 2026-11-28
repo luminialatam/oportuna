@@ -165,7 +165,7 @@ export function NoCompanyOnboarding({
           <div className="w-12 h-12 rounded-xl bg-[#f0edff] text-[#5636D9] flex items-center justify-center mb-3">
             <Building2 size={24} />
           </div>
-          <h1 className="text-2xl font-bold text-[#171A24]">Conecta tu empresa en Oportuna</h1>
+          <h1 className="text-2xl font-bold text-[#171A24]">Conecta tu empresa en Leasy</h1>
           <p className="text-sm text-[#5D6472] mt-1">
             Hola {session.firstName}. Registra los datos de tu empresa o solicita acceso a una
             existente.

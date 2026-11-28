@@ -397,7 +397,7 @@ function ListingDetailModal({
             <>
               {listing._source !== 'mercadopublico' && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-                  No se pudo cargar el detalle oficial desde Mercado Público. Se muestran los datos resumidos guardados en Oportuna.
+                  No se pudo cargar el detalle oficial desde Mercado Público. Se muestran los datos resumidos guardados en Leasy.
                   {listing._detailError ? <span className="block mt-1 text-amber-800">{listing._detailError}</span> : null}
                 </div>
               )}
@@ -647,7 +647,7 @@ function ListingDetailModal({
 
                   <details className="rounded-xl border border-[#E1E4EA] bg-white px-4 py-3">
                     <summary className="cursor-pointer font-semibold text-[#344054]">Alcance y criterios de esta evaluación</summary>
-                    <p className="mt-2 text-sm leading-relaxed text-[#667085]">La coincidencia compara texto del catálogo con la licitación y no estima la probabilidad de adjudicación. El resumen puede usar IA generativa. Oportuna no revisa las bases ni sus anexos; valida requisitos y condiciones en la fuente oficial antes de cotizar.</p>
+                    <p className="mt-2 text-sm leading-relaxed text-[#667085]">La coincidencia compara texto del catálogo con la licitación y no estima la probabilidad de adjudicación. El resumen puede usar IA generativa. Leasy no revisa las bases ni sus anexos; valida requisitos y condiciones en la fuente oficial antes de cotizar.</p>
                   </details>
 
                   {(analysis.interpretation?.technicalNotes?.length > 0 || analysis.interpretation?.administrativeNotes?.length > 0) && (
@@ -1222,7 +1222,7 @@ function App() {
       <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
         <div className="bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm flex items-center gap-3 text-sm text-[#171A24]">
           <LoaderCircle className="spin text-[#5636D9]" size={20} />
-          Verificando tu sesión en Oportuna…
+          Verificando tu sesión en Leasy…
         </div>
       </main>
     );
@@ -1233,7 +1233,7 @@ function App() {
       <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
         <section className="w-full max-w-md bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm text-center space-y-4" aria-live="polite">
           <h1 className="text-lg font-bold text-[#171A24]">No pudimos comprobar tu sesión</h1>
-          <p className="text-sm text-[#5D6472]">El servidor de Oportuna no respondió. Tu sesión no se ha cerrado. Comprueba que la aplicación esté iniciada y vuelve a intentarlo.</p>
+          <p className="text-sm text-[#5D6472]">El servidor de Leasy no respondió. Tu sesión no se ha cerrado. Comprueba que la aplicación esté iniciada y vuelve a intentarlo.</p>
           <button type="button" onClick={() => setSessionCheck((value) => value + 1)} className="w-full h-11 bg-[#5636D9] hover:bg-[#4b2ec7] text-white font-semibold rounded-xl text-sm">Volver a comprobar</button>
         </section>
       </main>
@@ -1309,14 +1309,8 @@ function App() {
         <div className="space-y-6">
           {/* Brand header */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[#5636D9] text-white flex items-center justify-center font-black text-sm tracking-tight shadow-sm">
-                O
-              </div>
-              <div>
-                <strong className="font-bold text-base text-[#171A24] tracking-tight block">Oportuna</strong>
-                <span className="text-[10px] text-[#8A92A6] block leading-none">Mercado Público</span>
-              </div>
+            <div className="flex items-center">
+              <img src="/assets/leasy-app-logo.png" alt="Leasy.cl" className="block h-auto w-[150px] max-w-full object-contain" />
             </div>
             <button
               onClick={() => setMobileOpen(false)}
@@ -1447,7 +1441,7 @@ function App() {
               <Menu size={18} />
             </button>
             <div className="flex items-center gap-2 text-xs text-[#5D6472]">
-              <span className="font-bold text-[#171A24]">Oportuna</span>
+              <img src="/assets/leasy-app-logo.png" alt="Leasy.cl" className="block h-auto w-[112px] object-contain" />
               <span>/</span>
               <span className="font-semibold text-[#5636D9]">{section}</span>
             </div>
@@ -1688,7 +1682,7 @@ function App() {
                 <div className="summary-search-copy">
                   <span className="summary-search-eyebrow"><Sparkles size={14} /> Búsqueda en Mercado Público</span>
                   <h2>Encuentra oportunidades para tu negocio</h2>
-                  <p>Busca licitaciones y compras ágiles con los filtros y criterios disponibles en Oportuna.</p>
+                  <p>Busca licitaciones y compras ágiles con los filtros y criterios disponibles en Leasy.</p>
                 </div>
                 <form className="summary-feature-search" onSubmit={beginSummarySearch} role="search">
                   <Search size={18} aria-hidden="true" />
