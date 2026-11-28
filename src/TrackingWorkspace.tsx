@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { TrackingCalendar } from './TrackingCalendar';
 import { OpportunityTeamPanel } from './OpportunityTeamPanel';
+import { OpportunityOutcomePanel, outcomeLabels, type OpportunityOutcome } from './OpportunityOutcomePanel';
 import {
   Activity,
   AlertTriangle,
@@ -21,6 +22,7 @@ export type Tracked = {
   codigo: string;
   estado: string;
   notes: string;
+  outcome: OpportunityOutcome | null;
   listing: {
     nombre: string | null;
     codigoEstado: number | null;
@@ -54,7 +56,10 @@ async function request<T>(url: string, options?: RequestInit, csrfToken = ''): P
 
 const dateLabel = (value: string | null) => {
   if (!value) return '—';
-  const parsed = new Date(value);
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value);
   return Number.isNaN(parsed.getTime())
     ? '—'
     : new Intl.DateTimeFormat('es-CL', {
@@ -72,6 +77,10 @@ const money = (value: string | number | null, currency: string | null) => {
     maximumFractionDigits: 0,
   }).format(Number(value));
 };
+
+const outcomeMoney = (value: number, currency: OpportunityOutcome['currency']) => currency === 'UTM'
+  ? `${new Intl.NumberFormat('es-CL',{maximumFractionDigits:2}).format(value)} UTM`
+  : new Intl.NumberFormat('es-CL',{style:'currency',currency,maximumFractionDigits:0}).format(value);
 
 export function TrackingWorkspace({
   onOpen,
@@ -99,6 +108,7 @@ export function TrackingWorkspace({
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [activeNotesId, setActiveNotesId] = useState<number | null>(null);
   const [activeTeamCode, setActiveTeamCode] = useState<string | null>(null);
+  const [activeOutcomeId, setActiveOutcomeId] = useState<number | null>(null);
   const pipelineTotal = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const exploreOpportunities = onExplore ?? (() => window.location.assign('/buscar'));
 
@@ -280,6 +290,12 @@ export function TrackingWorkspace({
         </div>
       )}
 
+      {!loading && !error && items.some(item => item.outcome) && <section className="rounded-xl border border-[#DED8FF] bg-[#FAF9FF] p-4" aria-label="Resultados registrados en el tablero">
+        <div className="flex flex-wrap items-baseline justify-between gap-2"><h2 className="text-sm font-bold text-[#25243A]">Aprendizaje comercial</h2><span className="text-[11px] text-[#687184]">Resultados registrados en las oportunidades cargadas (máx. 500)</span></div>
+        <div className="mt-3 flex flex-wrap gap-2">{Object.entries(outcomeLabels).map(([key,label]) => { const count = items.filter(item => item.outcome?.outcome === key).length; return count ? <span key={key} className="rounded-full border border-[#E1E4EA] bg-white px-2.5 py-1 text-[11px] text-[#475569]"><b>{count}</b> {label}</span> : null; })}</div>
+        {(() => { const recorded = items.flatMap(item => item.outcome ? [item.outcome] : []); const clp = recorded.filter(result => result.outcome === 'awarded' && result.currency === 'CLP' && result.awardedAmount !== null && result.actualCost !== null); return clp.length ? <p className="mt-3 text-xs text-[#475569]">Diferencia bruta registrada en CLP: <b>{outcomeMoney(clp.reduce((sum,result) => sum + Number(result.awardedAmount) - Number(result.actualCost),0),'CLP')}</b> <span className="text-[#687184]">({clp.length} adjudicaciones con monto y costo; no representa utilidad neta)</span></p> : null; })()}
+      </section>}
+
       {loading ? (
         <div className="p-12 text-center text-sm text-[#5D6472] bg-white rounded-xl border border-[#E1E4EA]">
           <LoaderCircle size={24} className="spin mx-auto text-[#5636D9] mb-2" />
@@ -427,6 +443,7 @@ export function TrackingWorkspace({
                           {dateLabel(item.listing.fechaCierre)}
                         </span>
                       </div>
+                      {item.outcome && <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-900"><b>{outcomeLabels[item.outcome.outcome]}</b>{item.outcome.awardedAmount !== null && <span> · {outcomeMoney(item.outcome.awardedAmount,item.outcome.currency)}</span>}<p className="mt-1 text-[10px] text-emerald-800">{item.outcome.sourceType === 'official' ? 'Verificado en fuente oficial' : 'Ingresado por la empresa'}{item.outcome.decidedAt ? ` · ${dateLabel(item.outcome.decidedAt)}` : ''}{item.outcome.sourceUrl && <> · <a href={item.outcome.sourceUrl} target="_blank" rel="noreferrer" className="underline">Ver respaldo</a></>}</p></div>}
 
                       {/* Stage selector dropdown */}
                       <div className="pt-1">
@@ -466,6 +483,8 @@ export function TrackingWorkspace({
                       </div>
                       <button type="button" onClick={() => setActiveTeamCode(activeTeamCode === item.codigo ? null : item.codigo)} className="text-left text-xs font-semibold text-[#5636D9] hover:underline">{activeTeamCode === item.codigo ? 'Ocultar equipo e historial' : 'Responsable, participantes e historial'}</button>
                       {activeTeamCode === item.codigo && <OpportunityTeamPanel code={item.codigo} csrfToken={csrfToken} canEdit={canEditTeam} />}
+                      <button type="button" onClick={() => setActiveOutcomeId(activeOutcomeId === item.id ? null : item.id)} className="text-left text-xs font-semibold text-[#5636D9] hover:underline">{activeOutcomeId === item.id ? 'Ocultar resultado' : item.outcome ? 'Editar resultado y economía real' : 'Registrar resultado'}</button>
+                      {activeOutcomeId === item.id && <OpportunityOutcomePanel trackingId={item.id} outcome={item.outcome} csrfToken={csrfToken} onSaved={() => { void load(); onChanged(); setNotice('Resultado comercial guardado.'); }} />}
 
                       {/* Expanded notes */}
                       {activeNotesId === item.id && (
@@ -555,6 +574,7 @@ export function TrackingWorkspace({
                     </td>
                     <td className="py-3 px-4 text-right space-x-2">
                       <button type="button" onClick={() => setActiveTeamCode(activeTeamCode === item.codigo ? null : item.codigo)} className="text-[#5636D9] font-semibold hover:underline">Equipo</button>
+                      <button type="button" onClick={() => setActiveOutcomeId(activeOutcomeId === item.id ? null : item.id)} className="text-[#5636D9] font-semibold hover:underline">Resultado</button>
                       <button
                         onClick={() => onOpen(item.codigo)}
                         className="text-[#5636D9] font-semibold hover:underline"
@@ -570,7 +590,7 @@ export function TrackingWorkspace({
                       </button>
                     </td>
                   </tr>
-                  {activeTeamCode === item.codigo && <tr><td colSpan={7} className="bg-[#FAF9FF] p-3"><OpportunityTeamPanel code={item.codigo} csrfToken={csrfToken} canEdit={canEditTeam} /></td></tr>}
+                  {(activeTeamCode === item.codigo || activeOutcomeId === item.id) && <tr><td colSpan={7} className="bg-[#FAF9FF] p-3 space-y-3">{activeTeamCode === item.codigo && <OpportunityTeamPanel code={item.codigo} csrfToken={csrfToken} canEdit={canEditTeam} />}{activeOutcomeId === item.id && <OpportunityOutcomePanel trackingId={item.id} outcome={item.outcome} csrfToken={csrfToken} onSaved={() => { void load(); onChanged(); setNotice('Resultado comercial guardado.'); }} />}</td></tr>}
                   </Fragment>
                 ))}
               </tbody>
