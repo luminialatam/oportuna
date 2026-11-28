@@ -757,6 +757,7 @@ function App() {
   }, [userMenuOpen]);
   const [health, setHealth] = useState<Health | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [summaryMatches, setSummaryMatches] = useState<any>(null);
   const [companyPlan, setCompanyPlan] = useState<any>(null);
   const [companyPlanCompanyId, setCompanyPlanCompanyId] = useState<number | null>(null);
   const [config, setConfig] = useState<any>(null);
@@ -1742,29 +1743,37 @@ function App() {
                 <article className="summary-evolution-panel xl:col-span-4">
                   <div className="summary-section-heading">
                     <div>
-                      <h2>Evolución de oportunidades</h2>
-                      <p>Distribución actual por estado en el índice local</p>
+                      <h2>Panorama por modalidad de compra</h2>
+                      <p>Coincidencias del perfil en el índice local</p>
                     </div>
-                    <button onClick={() => goToSection('Inteligencia de mercado')} className="summary-text-link">Ver analítica <ArrowRight size={14} /></button>
+                    <button onClick={() => goToSection('Oportunidades')} className="summary-text-link">Ver todas <ArrowRight size={14} /></button>
                   </div>
-                  {summary?.estados?.length ? (
-                    <div className="summary-state-chart" aria-label="Licitaciones actuales por estado">
-                      {summary.estados.map((state) => {
-                        const denominator = summary.estados.reduce((sum, entry) => sum + Number(entry.total || 0), 0);
-                        const share = denominator ? Math.round((Number(state.total || 0) / denominator) * 100) : 0;
-                        const label = state.codigoEstado == null ? 'Sin estado' : statusNames[state.codigoEstado] || `Estado ${state.codigoEstado}`;
-                        return (
-                          <div className="summary-state-row" key={state.codigoEstado ?? 'unknown'}>
-                            <div className="summary-state-label"><span>{label}</span><b>{Number(state.total || 0).toLocaleString('es-CL')}</b></div>
-                            <div className="summary-state-track" role="img" aria-label={`${label}: ${share}%`}><span style={{ width: `${share}%` }} /></div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="summary-empty-state">No hay distribución por estado disponible.</div>
-                  )}
-                  <p className="summary-chart-note">Esta vista muestra el estado actual. El endpoint de Resumen todavía no entrega una serie histórica por mes.</p>
+                  {(() => {
+                    const buckets = new Map<string, { total: number; score: number }>([
+                      ['Licitación Pública', { total: 0, score: 0 }],
+                      ['Compra Ágil', { total: 0, score: 0 }],
+                      ['Convenio Marco', { total: 0, score: 0 }],
+                      ['Otras modalidades', { total: 0, score: 0 }],
+                    ]);
+                    for (const item of summaryMatches?.items ?? []) {
+                      const code = String(item.codigo_externo ?? '').toUpperCase();
+                      const modality = /(?:^|-)COT\d*$/.test(code) ? 'Compra Ágil'
+                        : /(?:^|-)CM\d*$/.test(code) ? 'Convenio Marco'
+                          : /(?:^|-)L(?:1|E|P|Q|R|S)\d*$/.test(code) ? 'Licitación Pública' : 'Otras modalidades';
+                      const bucket = buckets.get(modality)!;
+                      bucket.total += 1;
+                      bucket.score += Number(item.score || 0);
+                    }
+                    const rows = [...buckets.entries()];
+                    const max = Math.max(1, ...rows.map(([, value]) => value.total));
+                    return summaryMatches?.items ? <div className="summary-modality-chart" aria-label="Coincidencias recomendadas por modalidad de compra">
+                      {rows.map(([label, value]) => <div className="summary-modality-row" key={label}>
+                        <div className="summary-modality-caption"><span>{label}</span><b>{value.total.toLocaleString('es-CL')} {value.total === 1 ? 'oportunidad' : 'oportunidades'}{value.total > 0 && <small> · Match prom. {Math.round(value.score / value.total)} pts</small>}</b></div>
+                        <div className="summary-modality-track" role="img" aria-label={`${label}: ${value.total} oportunidades`}><span style={{ width: `${value.total ? Math.max(4, value.total / max * 100) : 0}%` }} /></div>
+                      </div>)}
+                    </div> : <div className="summary-empty-state">Cargando coincidencias de tu empresa…</div>;
+                  })()}
+                  <p className="summary-chart-note">Conteo dentro de las coincidencias evaluadas para tu empresa. La modalidad se identifica por el código de Mercado Público; el puntaje es evidencia textual, no una probabilidad de adjudicación.</p>
                 </article>
               </section>
 
@@ -1773,6 +1782,8 @@ function App() {
                 onConfigure={() => goToSection('Mi empresa')}
                 onOpenListing={(code) => void openDetail(code)}
                 onViewAll={() => goToSection('Oportunidades')}
+                onDataLoaded={setSummaryMatches}
+                summaryCards
               />
             </div>
           )}
