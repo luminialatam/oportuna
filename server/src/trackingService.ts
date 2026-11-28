@@ -3,6 +3,7 @@ import { resolveCurrentCompanyId } from './companyService.js';
 import { evaluateAlerts } from './alertService.js';
 import { assertCanTrackOpportunity } from './subscriptionService.js';
 import { recordCompanyActivity } from './collaborationService.js';
+import { validateTrackingOutcome, type TrackingOutcomeInput } from './trackingOutcome.js';
 
 export const trackingStates = ['saved', 'evaluating', 'preparing_offer', 'submitted', 'discarded'] as const;
 
@@ -12,15 +13,33 @@ export async function listTrackedOpportunities(filters: { estado?: string; q?: s
   if (filters.estado && trackingStates.includes(filters.estado as any)) { where.push('t.estado=?'); values.push(filters.estado); }
   const q = filters.q?.trim().slice(0, 120);
   if (q) { where.push('(l.nombre LIKE ? OR l.codigo_externo LIKE ? OR l.organismo LIKE ?)'); values.push(`%${q}%`, `%${q}%`, `%${q}%`); }
-  const [rows] = await pool.query<any[]>(`SELECT t.id,t.codigo_externo,t.estado,t.notes,t.created_at,t.updated_at,l.nombre,l.codigo_estado,l.fecha_cierre,l.organismo,l.monto_estimado,l.moneda
+  const [rows] = await pool.query<any[]>(`SELECT t.id,t.codigo_externo,t.estado,t.notes,t.created_at,t.updated_at,l.nombre,l.codigo_estado,l.fecha_cierre,l.organismo,l.monto_estimado,l.moneda,
+      r.outcome,r.offer_amount offerAmount,r.awarded_amount awardedAmount,r.actual_cost actualCost,r.currency resultCurrency,r.source_url sourceUrl,r.decided_at decidedAt,r.notes resultNotes
     FROM company_opportunity_tracking t JOIN licitaciones l ON l.codigo_externo=t.codigo_externo
+    LEFT JOIN company_opportunity_results r ON r.tracking_id=t.id AND r.company_id=t.company_id
     WHERE ${where.join(' AND ')} ORDER BY FIELD(t.estado,'evaluating','preparing_offer','submitted','saved','discarded'),t.updated_at DESC LIMIT 500`, values);
   if (!rows.length) return [];
   const ids = rows.map(row => Number(row.id));
   const [dates] = await pool.query<any[]>(`SELECT id,tracking_id,label,due_at,notes,completed FROM company_opportunity_dates WHERE company_id=? AND tracking_id IN (${ids.map(() => '?').join(',')}) ORDER BY due_at,id`, [companyId, ...ids]);
   const byTracking = new Map<number, any[]>();
   for (const date of dates) { const key = Number(date.tracking_id); const list = byTracking.get(key) ?? []; list.push({ id: Number(date.id), label: date.label, dueAt: date.due_at, notes: date.notes ?? '', completed: Boolean(date.completed) }); byTracking.set(key, list); }
-  return rows.map(row => ({ id: Number(row.id), codigo: row.codigo_externo, estado: row.estado, notes: row.notes ?? '', createdAt: row.created_at, updatedAt: row.updated_at, listing: { nombre: row.nombre, codigoEstado: row.codigo_estado, fechaCierre: row.fecha_cierre, organismo: row.organismo, montoEstimado: row.monto_estimado, moneda: row.moneda }, dates: byTracking.get(Number(row.id)) ?? [] }));
+  return rows.map(row => ({ id: Number(row.id), codigo: row.codigo_externo, estado: row.estado, notes: row.notes ?? '', createdAt: row.created_at, updatedAt: row.updated_at,
+    outcome: row.outcome ? { outcome: String(row.outcome), offerAmount: row.offerAmount == null ? null : Number(row.offerAmount), awardedAmount: row.awardedAmount == null ? null : Number(row.awardedAmount), actualCost: row.actualCost == null ? null : Number(row.actualCost), currency: String(row.resultCurrency), sourceUrl: row.sourceUrl ?? null, decidedAt: row.decidedAt ?? null, notes: row.resultNotes ?? null } : null,
+    listing: { nombre: row.nombre, codigoEstado: row.codigo_estado, fechaCierre: row.fecha_cierre, organismo: row.organismo, montoEstimado: row.monto_estimado, moneda: row.moneda }, dates: byTracking.get(Number(row.id)) ?? [] }));
+}
+
+export async function saveTrackingOutcome(trackingId: number, userId: number, rawInput: TrackingOutcomeInput) {
+  const companyId = await resolveCurrentCompanyId();
+  const input = validateTrackingOutcome(rawInput);
+  const code = await getTrackingCode(trackingId, companyId);
+  if (!code) return false;
+  await pool.execute<any>(`INSERT INTO company_opportunity_results
+    (tracking_id,company_id,outcome,offer_amount,awarded_amount,actual_cost,currency,source_url,decided_at,notes,recorded_by)
+    SELECT id,company_id,?,?,?,?,?,?,?,?,? FROM company_opportunity_tracking WHERE id=? AND company_id=?
+    ON DUPLICATE KEY UPDATE outcome=VALUES(outcome),offer_amount=VALUES(offer_amount),awarded_amount=VALUES(awarded_amount),actual_cost=VALUES(actual_cost),currency=VALUES(currency),source_url=VALUES(source_url),decided_at=VALUES(decided_at),notes=VALUES(notes),recorded_by=VALUES(recorded_by)`,
+    [input.outcome,input.offerAmount,input.awardedAmount,input.actualCost,input.currency,input.sourceUrl,input.decidedAt,input.notes,userId,trackingId,companyId]);
+  await recordCompanyActivity(code, 'tracking_result_recorded', `Se registró el resultado «${input.outcome}» en el espacio de la empresa.`, { sourceUrl: input.sourceUrl, decidedAt: input.decidedAt });
+  return true;
 }
 
 export async function getTrackedCounts() {
