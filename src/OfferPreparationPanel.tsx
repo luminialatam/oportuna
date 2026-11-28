@@ -186,7 +186,7 @@ export function OfferPreparationPanel({
     }
   };
   const runDocumentAnalysis = async (documentIndex: number, file?: File) => {
-    if (!documentAnalysisConsent) { setDocumentAnalysisError('Confirma que autorizas enviar el texto extraído al proveedor Groq configurado por Oportuna.'); return; }
+    if (!documentAnalysisConsent) { setDocumentAnalysisError('Confirma que autorizas enviar el texto extraído al proveedor Groq configurado por Leasy.'); return; }
     if (documentAnalysisIndex !== null) return;
     setDocumentAnalysisError('');
     setSaving(true);
@@ -504,7 +504,7 @@ export function OfferPreparationPanel({
           }}>Agregar referencia</button>
         </div>
         <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
-          <label className="flex items-start gap-2 text-sm text-[#344054]"><input type="checkbox" className="mt-1 h-4 w-4 accent-[#5636D9]" checked={documentAnalysisConsent} onChange={event => setDocumentAnalysisConsent(event.target.checked)} /><span><strong>Autorizar análisis con IA</strong><span className="mt-1 block text-[#667085]">El texto extraído se enviará al proveedor Groq configurado por Oportuna. Solo se guarda el resultado con sus citas, no el archivo ni el texto completo.</span></span></label>
+          <label className="flex items-start gap-2 text-sm text-[#344054]"><input type="checkbox" className="mt-1 h-4 w-4 accent-[#5636D9]" checked={documentAnalysisConsent} onChange={event => setDocumentAnalysisConsent(event.target.checked)} /><span><strong>Autorizar análisis con IA</strong><span className="mt-1 block text-[#667085]">El texto extraído se enviará al proveedor Groq configurado por Leasy. Solo se guarda el resultado con sus citas, no el archivo ni el texto completo.</span></span></label>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="min-w-0 flex-1 text-sm font-medium text-[#344054]">Analizar archivo local
               <input type="file" accept=".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" disabled={!canEdit || documentAnalysisIndex !== null} onChange={event => { setSelectedDocumentFile(event.target.files?.[0] ?? null); setDocumentAnalysisError(''); }} className="mt-1 block w-full rounded-md border border-[#D0D5DD] bg-white px-2 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-[#F2F0FF] file:px-2 file:py-1 file:text-[#5636D9]" />

@@ -74,7 +74,7 @@ export function CommercialAgents({
         </p>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Capacidades de los asistentes de Oportuna">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Capacidades de los asistentes de Leasy">
         {agents.map(({ icon: Icon, name, status, description, output, limitation, tone }) => (
           <article key={name} className="rounded-xl border border-[#E1E4EA] bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-2">

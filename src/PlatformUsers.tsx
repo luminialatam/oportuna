@@ -142,7 +142,7 @@ export function PlatformUsers({ csrfToken }: { csrfToken: string }) {
             <ShieldCheck size={15} /> Administración de plataforma
           </div>
           <h1 className="text-2xl font-bold text-[#171A24]">Cuentas de usuario</h1>
-          <p className="mt-1 text-sm text-[#5D6472]">Consulta y crea cuentas de clientes y administradores de Oportuna.</p>
+          <p className="mt-1 text-sm text-[#5D6472]">Consulta y crea cuentas de clientes y administradores de Leasy.</p>
         </div>
         <div className="flex items-center gap-2 rounded-xl border border-[#E1E4EA] bg-white px-4 py-3 text-sm font-semibold text-[#303747]">
           <Users size={17} className="text-[#5636D9]" /> {total} cuentas
