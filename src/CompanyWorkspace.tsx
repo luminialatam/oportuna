@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import {
+  ArrowRight,
   Building2,
   CheckCircle2,
   Info,
@@ -990,6 +991,8 @@ export function CompanyOpportunities({
   actionLabel = 'Ver ficha',
   viewAllLabel = 'Ver oportunidades',
   board = false,
+  summaryCards = false,
+  onDataLoaded,
   csrfToken,
 }: {
   onConfigure: () => void;
@@ -998,6 +1001,8 @@ export function CompanyOpportunities({
   actionLabel?: string;
   viewAllLabel?: string;
   board?: boolean;
+  summaryCards?: boolean;
+  onDataLoaded?: (data: any) => void;
   csrfToken: string;
 }) {
   const [data, setData] = useState<any>(null);
@@ -1039,6 +1044,7 @@ export function CompanyOpportunities({
       .then((val) => {
         if (live) {
           setData(val);
+          onDataLoaded?.(val);
           setVisibleCount(board ? 30 : 6);
         }
       })
@@ -1063,7 +1069,7 @@ export function CompanyOpportunities({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [board, reloadKey]);
+  }, [board, onDataLoaded, reloadKey]);
 
   const lastSyncAt = data?.indexStatus?.lastSuccessfulSyncAt;
   const syncTimestamp = lastSyncAt ? new Date(lastSyncAt).getTime() : Number.NaN;
@@ -1079,13 +1085,13 @@ export function CompanyOpportunities({
   ];
 
   return (
-    <section className="summary-matches-panel bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-4">
+    <section className={`summary-matches-panel bg-white rounded-xl border border-[#E1E4EA] p-5 shadow-sm space-y-4${summaryCards ? ' is-summary-cards' : ''}`}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E1E4EA] pb-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-bold text-sm text-[#171A24] flex items-center gap-2">
               <Sparkles size={16} className="text-[#5636D9]" />
-              Mejores coincidencias para tu empresa
+              {summaryCards ? 'Oportunidades recomendadas hoy' : 'Mejores coincidencias para tu empresa'}
             </h3>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#f0edff] text-[#5636D9] whitespace-nowrap">
               Match personalizado
@@ -1148,7 +1154,34 @@ export function CompanyOpportunities({
             <div><span>Cierran en 14 días</span><b>{Number(data.closingSoon || 0).toLocaleString('es-CL')}</b></div>
           </div>
           {data.items?.length ? (
-            <div className="summary-matches-table-wrap">
+            summaryCards ? <div className="summary-recommended-cards">
+              {visibleMatches.map((item: any) => {
+                const code = String(item.codigo_externo ?? '').toUpperCase();
+                const modality = /(?:^|-)COT\d*$/.test(code) ? 'Compra Ágil'
+                  : /(?:^|-)CM\d*$/.test(code) ? 'Convenio Marco'
+                    : /(?:^|-)L(?:1|E|P|Q|R|S)\d*$/.test(code) ? 'Licitación Pública' : 'Modalidad no informada';
+                const closing = item.fecha_cierre ? new Date(item.fecha_cierre) : null;
+                const closingLabel = closing && Number.isFinite(closing.getTime())
+                  ? new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }).format(closing)
+                  : 'Sin fecha informada';
+                const amount = item.monto_estimado == null || item.monto_estimado === '' ? 'Monto no informado'
+                  : new Intl.NumberFormat('es-CL', { style: 'currency', currency: item.moneda || 'CLP', maximumFractionDigits: 0 }).format(Number(item.monto_estimado));
+                const score = Math.max(0, Math.min(100, Number(item.score || 0)));
+                return <article className="summary-recommended-card" key={item.codigo_externo}>
+                  <div className="summary-recommended-card-top"><span className="summary-modality-pill">{modality}</span><span className={`summary-match-level level-${item.level || 'exploratory'}`}>{item.level === 'high' ? 'Alta' : item.level === 'medium' ? 'Media' : 'Exploratoria'}</span></div>
+                  <button type="button" className="summary-recommended-title" onClick={() => onOpenListing?.(item.codigo_externo)}>{item.nombre || 'Nombre no disponible'}</button>
+                  <p className="summary-recommended-code">{item.codigo_externo}</p>
+                  <p className="summary-recommended-buyer">{item.organismo || 'Organismo comprador no informado'}</p>
+                  <div className="summary-recommended-facts"><span><small>CIERRE</small><b>{closingLabel}</b></span><span><small>MONTO ESTIMADO</small><b>{amount}</b></span></div>
+                  <div className="summary-recommended-score"><div><span>Compatibilidad por evidencia</span><b>{score} pts</b></div><span className="summary-recommended-score-track"><i style={{ width: `${score}%` }} /></span></div>
+                  {item.evidence?.length > 0 && <p className="summary-recommended-evidence">Coincide con {item.productName || 'tu perfil'}: “{item.evidence[0].text}”</p>}
+                  <div className="summary-recommended-actions">
+                    <button type="button" className="summary-recommended-follow" disabled={Boolean(dismissingCode)} onClick={() => void dismissMatch(item.codigo_externo)} title="Descartar esta coincidencia">{dismissingCode === item.codigo_externo ? 'Actualizando…' : 'Descartar'}</button>
+                    <button type="button" className="summary-recommended-open" onClick={() => onOpenListing?.(item.codigo_externo)}>{actionLabel} <ArrowRight size={14}/></button>
+                  </div>
+                </article>;
+              })}
+            </div> : <div className="summary-matches-table-wrap">
               <table className="summary-matches-table">
                 <thead><tr><th>Licitación y texto de respaldo</th><th>Comprador</th><th>Cierre</th><th>Monto estimado</th><th>Puntaje</th><th>Acción</th></tr></thead>
                 {relevanceGroups.map((group) => group.items.length > 0 && <tbody key={group.level}>

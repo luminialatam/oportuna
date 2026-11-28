@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 31346)
+Total output lines: 2426
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
@@ -757,6 +760,7 @@ function App() {
   }, [userMenuOpen]);
   const [health, setHealth] = useState<Health | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [summaryMatches, setSummaryMatches] = useState<any>(null);
   const [companyPlan, setCompanyPlan] = useState<any>(null);
   const [companyPlanCompanyId, setCompanyPlanCompanyId] = useState<number | null>(null);
   const [config, setConfig] = useState<any>(null);
@@ -1195,133 +1199,7 @@ function App() {
     const token = window.prompt('Pega el token de invitación recibido por el Administrador:');
     if (!token?.trim()) return;
     try {
-      const next = await api<AuthState>('/api/auth/invitations/accept', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invitationToken: token.trim() }),
-      });
-      csrfToken = next.csrfToken;
-      setAuth(next);
-      goToSection('Resumen');
-      setToast('Invitación aceptada. Ya puedes acceder a la nueva empresa.');
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : 'No se pudo aceptar la invitación.');
-    }
-  };
-
-  const todayLabel = useMemo(
-    () => new Intl.DateTimeFormat('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()),
-    []
-  );
-  const greetingName = auth?.firstName?.trim()
-    || auth?.email.split('@')[0].split(/[._-]/)[0].replace(/^./, (letter) => letter.toLocaleUpperCase('es-CL'))
-    || 'Hola';
-
-  if (authState === 'loading') {
-    return (
-      <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
-        <div className="bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm flex items-center gap-3 text-sm text-[#171A24]">
-          <LoaderCircle className="spin text-[#5636D9]" size={20} />
-          Verificando tu sesión en Leasy…
-        </div>
-      </main>
-    );
-  }
-
-  if (authState === 'unavailable') {
-    return (
-      <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
-        <section className="w-full max-w-md bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm text-center space-y-4" aria-live="polite">
-          <h1 className="text-lg font-bold text-[#171A24]">No pudimos comprobar tu sesión</h1>
-          <p className="text-sm text-[#5D6472]">El servidor de Leasy no respondió. Tu sesión no se ha cerrado. Comprueba que la aplicación esté iniciada y vuelve a intentarlo.</p>
-          <button type="button" onClick={() => setSessionCheck((value) => value + 1)} className="w-full h-11 bg-[#5636D9] hover:bg-[#4b2ec7] text-white font-semibold rounded-xl text-sm">Volver a comprobar</button>
-        </section>
-      </main>
-    );
-  }
-
-  if (authState === 'anonymous') {
-    return <AuthGate onAuthenticated={acceptAuth} initialError={sessionNotice} />;
-  }
-
-  if (auth && !auth.emailVerified) {
-    return <EmailVerificationGate session={auth} onAuthenticated={acceptAuth} />;
-  }
-
-  if (auth?.platformRole === 'admin' && !auth.activeCompanyId && pendingLegacy !== null) {
-    return pendingLegacy === undefined ? (
-      <main className="min-h-screen bg-[#F5F6F8] flex items-center justify-center p-4">
-        <div className="bg-white p-6 rounded-2xl border border-[#E1E4EA] shadow-sm flex items-center gap-3 text-sm text-[#171A24]">
-          <LoaderCircle className="spin text-[#5636D9]" size={20} />
-          Revisando espacio local…
-        </div>
-      </main>
-    ) : (
-      <LegacyClaim company={pendingLegacy} onClaim={() => void claimLegacy()} busy={claimBusy} error={claimError} />
-    );
-  }
-
-  if (!auth?.activeCompanyId && auth?.platformRole !== 'admin') {
-    return <NoCompanyOnboarding session={auth!} onAuthenticated={acceptAuth} />;
-  }
-
-  const navGroups = [
-    {
-      label: 'Explorar',
-      items: [
-        { name: 'Resumen', icon: LayoutDashboard },
-        { name: 'Buscar oportunidades', icon: Search },
-        { name: 'Oportunidades', icon: Sparkles },
-        { name: 'Agentes IA', icon: FileSearch },
-        { name: 'Inteligencia de mercado', icon: BarChart3 },
-        { name: 'Analítica', icon: BarChart3, subItem: true },
-      ],
-    },
-    {
-      label: 'Gestionar',
-      items: [
-        { name: 'Seguimiento', icon: Activity },
-        { name: 'Calendario', icon: CalendarDays },
-        { name: 'Alertas', icon: Bell },
-      ],
-    },
-    {
-      label: 'Espacio de trabajo',
-      items: [
-        { name: 'Mi empresa', icon: Building2 },
-        { name: 'Precios base', icon: Calculator },
-        ...(isAdmin ? [{ name: 'Equipo y accesos', icon: Users }] : []),
-        ...(isPlatformAdmin ? [{ name: 'Cuentas de usuario', icon: Users }] : []),
-        ...(isAdmin ? [{ name: 'Configuración', icon: Settings }] : []),
-      ],
-    },
-    ...(isPlatformAdmin ? [{ label: 'Herramientas internas', items: [{ name: 'Centro de Pruebas', icon: FlaskConical, isSandbox: true }] }] : []),
-  ];
-
-  return (
-    <div className="min-h-screen bg-[#F5F6F8] text-[#171A24] antialiased flex flex-col lg:flex-row">
-      {/* SIDEBAR NAVIGATION (Desktop fixed / Mobile drawer conforming to Stitch) */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E1E4EA] p-5 flex flex-col justify-between gap-4 overflow-y-auto transition-transform duration-200 lg:translate-x-0 ${
-          mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
-        }`}
-      >
-        <div className="space-y-6">
-          {/* Brand header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <img src="/assets/leasy-app-logo.png" alt="Leasy.cl" className="block h-auto w-[180px] max-w-full object-contain" />
-            </div>
-            <button
-              onClick={() => setMobileOpen(false)}
-              className="lg:hidden p-1 text-[#5D6472] hover:bg-gray-100 rounded-lg"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          {/* Active Company Selector Pill */}
-          <div className="p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E1E4EA] flex flex-col items-stretch">
+      const next = await api<AuthState>('/api/auth/invitations/acc…1346 tokens truncated…l bg-[#F8F9FA] border border-[#E1E4EA] flex flex-col items-stretch">
             <div className="flex items-center gap-2 min-w-0">
               <Building2 size={16} className="text-[#5636D9] shrink-0" />
               <div className="min-w-0">
@@ -1742,29 +1620,37 @@ function App() {
                 <article className="summary-evolution-panel xl:col-span-4">
                   <div className="summary-section-heading">
                     <div>
-                      <h2>Evolución de oportunidades</h2>
-                      <p>Distribución actual por estado en el índice local</p>
+                      <h2>Panorama por modalidad de compra</h2>
+                      <p>Coincidencias del perfil en el índice local</p>
                     </div>
-                    <button onClick={() => goToSection('Inteligencia de mercado')} className="summary-text-link">Ver analítica <ArrowRight size={14} /></button>
+                    <button onClick={() => goToSection('Oportunidades')} className="summary-text-link">Ver todas <ArrowRight size={14} /></button>
                   </div>
-                  {summary?.estados?.length ? (
-                    <div className="summary-state-chart" aria-label="Licitaciones actuales por estado">
-                      {summary.estados.map((state) => {
-                        const denominator = summary.estados.reduce((sum, entry) => sum + Number(entry.total || 0), 0);
-                        const share = denominator ? Math.round((Number(state.total || 0) / denominator) * 100) : 0;
-                        const label = state.codigoEstado == null ? 'Sin estado' : statusNames[state.codigoEstado] || `Estado ${state.codigoEstado}`;
-                        return (
-                          <div className="summary-state-row" key={state.codigoEstado ?? 'unknown'}>
-                            <div className="summary-state-label"><span>{label}</span><b>{Number(state.total || 0).toLocaleString('es-CL')}</b></div>
-                            <div className="summary-state-track" role="img" aria-label={`${label}: ${share}%`}><span style={{ width: `${share}%` }} /></div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="summary-empty-state">No hay distribución por estado disponible.</div>
-                  )}
-                  <p className="summary-chart-note">Esta vista muestra el estado actual. El endpoint de Resumen todavía no entrega una serie histórica por mes.</p>
+                  {(() => {
+                    const buckets = new Map<string, { total: number; score: number }>([
+                      ['Licitación Pública', { total: 0, score: 0 }],
+                      ['Compra Ágil', { total: 0, score: 0 }],
+                      ['Convenio Marco', { total: 0, score: 0 }],
+                      ['Otras modalidades', { total: 0, score: 0 }],
+                    ]);
+                    for (const item of summaryMatches?.items ?? []) {
+                      const code = String(item.codigo_externo ?? '').toUpperCase();
+                      const modality = /(?:^|-)COT\d*$/.test(code) ? 'Compra Ágil'
+                        : /(?:^|-)CM\d*$/.test(code) ? 'Convenio Marco'
+                          : /(?:^|-)L(?:1|E|P|Q|R|S)\d*$/.test(code) ? 'Licitación Pública' : 'Otras modalidades';
+                      const bucket = buckets.get(modality)!;
+                      bucket.total += 1;
+                      bucket.score += Number(item.score || 0);
+                    }
+                    const rows = [...buckets.entries()];
+                    const max = Math.max(1, ...rows.map(([, value]) => value.total));
+                    return summaryMatches?.items ? <div className="summary-modality-chart" aria-label="Coincidencias recomendadas por modalidad de compra">
+                      {rows.map(([label, value]) => <div className="summary-modality-row" key={label}>
+                        <div className="summary-modality-caption"><span>{label}</span><b>{value.total.toLocaleString('es-CL')} {value.total === 1 ? 'oportunidad' : 'oportunidades'}{value.total > 0 && <small> · Match prom. {Math.round(value.score / value.total)} pts</small>}</b></div>
+                        <div className="summary-modality-track" role="img" aria-label={`${label}: ${value.total} oportunidades`}><span style={{ width: `${value.total ? Math.max(4, value.total / max * 100) : 0}%` }} /></div>
+                      </div>)}
+                    </div> : <div className="summary-empty-state">Cargando coincidencias de tu empresa…</div>;
+                  })()}
+                  <p className="summary-chart-note">Conteo dentro de las coincidencias evaluadas para tu empresa. La modalidad se identifica por el código de Mercado Público; el puntaje es evidencia textual, no una probabilidad de adjudicación.</p>
                 </article>
               </section>
 
@@ -1773,6 +1659,8 @@ function App() {
                 onConfigure={() => goToSection('Mi empresa')}
                 onOpenListing={(code) => void openDetail(code)}
                 onViewAll={() => goToSection('Oportunidades')}
+                onDataLoaded={setSummaryMatches}
+                summaryCards
               />
             </div>
           )}

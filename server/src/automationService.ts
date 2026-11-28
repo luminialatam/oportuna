@@ -20,7 +20,9 @@ export async function listAutomationRules() {
 
 export function automationSchedulerStatus() {
   const runtime = loadRuntimeConfig();
-  return { enabled: ['all', 'alert-worker'].includes(runtime.processRole) && runtime.alertSchedulerEnabled, cadenceMinutes: 5, timezone: 'America/Santiago' };
+  const internal = ['all', 'alert-worker'].includes(runtime.processRole) && runtime.alertSchedulerEnabled;
+  const external = runtime.appEnv === 'production' && runtime.processRole === 'web' && Boolean(process.env.SYNC_API_TOKEN?.trim());
+  return { enabled: internal || external, runner: internal ? 'worker' : external ? 'GitHub Actions' : null, cadenceMinutes: 5, timezone: 'America/Santiago' };
 }
 
 export async function saveAutomationRule(input: { id?: number; name: string; triggerType: AutomationTrigger; conditions: AutomationConditions; actions: AutomationActions }) {
