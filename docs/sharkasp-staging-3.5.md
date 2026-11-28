@@ -1,6 +1,6 @@
 # Oportuna — preparación de staging en SharkASP (Fase 3.5)
 
-> Documento histórico. El procedimiento vigente de staging aislado, modo seguro de empaquetado y migraciones 001–018 está en [sharkasp-staging-3.7.md](./sharkasp-staging-3.7.md). La URL temporal observada en esta fase pertenece al sitio existente y no debe usarse como staging.
+> Documento histórico de la fase 3.5; no usar sus pasos de migración como procedimiento actual. La guía vigente de destino aislado, verificación y migración hasta 025 está en [sharkasp-staging-3.7.md](./sharkasp-staging-3.7.md). La URL temporal observada en esta fase pertenece al sitio existente y no debe usarse como staging.
 
 Estado: preparación local, sin acceso al panel, publicación ni importación de datos. HTTPS del dominio provisional se verificó de forma pública; no se usó el dominio HTTP con credenciales.
 
@@ -94,7 +94,7 @@ La aplicación permite iniciar roles separados: `web`, `sync-worker`, `enrichmen
 
 ## MySQL de staging
 
-Crear una base distinta de la local, con usuario exclusivo de privilegio mínimo y TLS verificado. No importar el dump ni registros locales; la base comienza sin usuarios, empresas ni licitaciones. Aplicar las migraciones ascendentes del proyecto, consecutivamente desde 001 hasta la última de la versión (001–018 en esta candidata), desde un proceso controlado, con respaldo del schema de staging y registro del resultado. Excluir `012_authentication.down.sql`. No habilitar sincronización hasta revisar presupuesto/consumo de la API y aprobar explícitamente poblar staging desde la fuente oficial. La migración 013 se requiere por los límites compartidos en entornos no-development.
+Esta sección describe el plan histórico de la fase 3.5, que no llegó a ejecutarse en staging. Para una instalación inicial, la guía vigente usa el plan completo hasta 025 únicamente sobre un esquema aislado y vacío. Para un staging ya poblado, inspecciona primero el esquema y aplica solo la 025 si falta y su estructura es compatible; consulta [sharkasp-staging-3.7.md](./sharkasp-staging-3.7.md). Nunca ejecutes este plan histórico como actualización de una base existente. Excluir `012_authentication.down.sql` en cualquier instalación inicial.
 
 Confirmar con SharkASP: versión/compatibilidad MySQL 8, host y puerto, acceso de red desde la aplicación, TLS obligatorio, certificado CA que debe usarse en `DB_SSL_CA`, límites de conexiones, cuotas/espacio, backups y procedimiento de restauración probado. `DB_SSL=true` en Oportuna valida el certificado; no usar `rejectUnauthorized=false` para ocultar un problema de CA.
 
@@ -114,7 +114,7 @@ Confirmar con SharkASP: versión/compatibilidad MySQL 8, host y puerto, acceso d
 ## Plan de staging y rollback
 
 1. Confirmar los puntos anteriores y HTTPS antes de crear credenciales de staging. Aprovisionar un hostname/base MySQL vacíos y aislados.
-2. Ejecutar las migraciones 001–018 en la base de staging, verificando cada versión y restauración de prueba. Crear/activar administrador de staging solo con procedimiento autorizado y datos de prueba.
+2. Seguir el procedimiento de migración actualizado en [sharkasp-staging-3.7.md](./sharkasp-staging-3.7.md); esta guía histórica no especifica el lote vigente. Crear/activar administrador de staging solo con procedimiento autorizado y datos de prueba.
 3. Construir el paquete; desplegar web con flags de scheduler desactivados. Verificar `/`, recarga de rutas de React, `/api/health`, cookies, sesión, CSRF, CORS, MySQL TLS y ausencia de secretos en assets/logs.
 4. Validar staging con datos mínimos autorizados. Habilitar la primera sincronización solo después de una autorización separada. Activar workers únicamente cuando el hosting confirme su supervisión y hayan pasado pruebas idempotentes.
 5. Rollback: detener/revertir proceso web a la versión anterior (mantener paquete de build anterior fuera de la raíz activa); no revertir migraciones con pérdida de datos. Respaldar antes de cada migración; preferir migraciones aditivas hacia adelante. Si la app no inicia, mantener workers apagados y no iniciar sync. Restaurar exclusivamente la base de staging desde su backup, nunca sustituir la base local.

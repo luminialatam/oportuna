@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { TrackingCalendar } from './TrackingCalendar';
+import { OpportunityTeamPanel } from './OpportunityTeamPanel';
 import {
   Activity,
   AlertTriangle,
@@ -78,12 +79,14 @@ export function TrackingWorkspace({
   csrfToken,
   calendar = false,
   onExplore,
+  canEditTeam = true,
 }: {
   onOpen: (codigo: string) => void;
   onChanged: () => void;
   csrfToken: string;
   calendar?: boolean;
   onExplore?: () => void;
+  canEditTeam?: boolean;
 }) {
   const [items, setItems] = useState<Tracked[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -95,6 +98,7 @@ export function TrackingWorkspace({
   const [query, setQuery] = useState('');
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [activeNotesId, setActiveNotesId] = useState<number | null>(null);
+  const [activeTeamCode, setActiveTeamCode] = useState<string | null>(null);
   const pipelineTotal = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const exploreOpportunities = onExplore ?? (() => window.location.assign('/buscar'));
 
@@ -460,6 +464,8 @@ export function TrackingWorkspace({
                           Ficha <ArrowRight size={12} />
                         </button>
                       </div>
+                      <button type="button" onClick={() => setActiveTeamCode(activeTeamCode === item.codigo ? null : item.codigo)} className="text-left text-xs font-semibold text-[#5636D9] hover:underline">{activeTeamCode === item.codigo ? 'Ocultar equipo e historial' : 'Responsable, participantes e historial'}</button>
+                      {activeTeamCode === item.codigo && <OpportunityTeamPanel code={item.codigo} csrfToken={csrfToken} canEdit={canEditTeam} />}
 
                       {/* Expanded notes */}
                       {activeNotesId === item.id && (
@@ -515,6 +521,7 @@ export function TrackingWorkspace({
               </thead>
               <tbody className="divide-y divide-[#E1E4EA]">
                 {items.map((item) => (
+                  <Fragment key={item.id}>
                   <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                     <td className="py-3 px-4">
                       <button
@@ -547,6 +554,7 @@ export function TrackingWorkspace({
                       </select>
                     </td>
                     <td className="py-3 px-4 text-right space-x-2">
+                      <button type="button" onClick={() => setActiveTeamCode(activeTeamCode === item.codigo ? null : item.codigo)} className="text-[#5636D9] font-semibold hover:underline">Equipo</button>
                       <button
                         onClick={() => onOpen(item.codigo)}
                         className="text-[#5636D9] font-semibold hover:underline"
@@ -562,6 +570,8 @@ export function TrackingWorkspace({
                       </button>
                     </td>
                   </tr>
+                  {activeTeamCode === item.codigo && <tr><td colSpan={7} className="bg-[#FAF9FF] p-3"><OpportunityTeamPanel code={item.codigo} csrfToken={csrfToken} canEdit={canEditTeam} /></td></tr>}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

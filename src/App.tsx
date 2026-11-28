@@ -226,6 +226,7 @@ function ListingDetailModal({
   companyId,
   userId,
   csrfToken,
+  canEditTeam,
   loading = false,
   saved,
   saving,
@@ -240,6 +241,7 @@ function ListingDetailModal({
   companyId: number;
   userId: number;
   csrfToken: string;
+  canEditTeam: boolean;
   loading?: boolean;
   saved: boolean | null;
   saving: boolean;
@@ -684,6 +686,7 @@ function ListingDetailModal({
               companyId={companyId}
               userId={userId}
               csrfToken={csrfToken}
+              canEdit={canEditTeam}
             />
           )}
             </>
@@ -1621,7 +1624,7 @@ function App() {
           {section === 'Seguridad' && <SecurityPage session={auth} />}
           {section === 'Plan y suscripción' && <SubscriptionPage csrfToken={auth.csrfToken} canRequest={auth.role === 'admin'} onPlanLoaded={setCompanyPlan} />}
           {section === 'Mercado Público' && <MarketPublicoBridge code={new URLSearchParams(location.search).get('codigo') ?? ''} csrfToken={auth.csrfToken} companyName={auth.memberships.find(membership => membership.companyId === auth.activeCompanyId)?.companyName || 'Empresa activa'} canSave={auth.role === 'admin' || auth.role === 'collaborator'} onSaved={() => goToSection('Seguimiento')} />}
-          {section === 'Oportunidades' && <OpportunityInbox csrfToken={auth.csrfToken} onOpen={(code) => void openDetail(code)} onSave={saveOpportunity} />}
+          {section === 'Oportunidades' && <OpportunityInbox csrfToken={auth.csrfToken} canManage={auth.role === 'admin' || auth.role === 'collaborator'} onOpen={(code) => void openDetail(code)} onSave={saveOpportunity} />}
 
           {section === 'Resumen' && (
             <div className="summary-page space-y-6">
@@ -2242,6 +2245,7 @@ function App() {
               onOpen={(code) => void openDetail(code)}
               onChanged={() => void refreshAlertCounts()}
               csrfToken={auth.csrfToken}
+              canEditTeam={auth.role === 'admin' || auth.role === 'collaborator'}
             />
           )}
 
@@ -2287,6 +2291,7 @@ function App() {
               error={alertsError}
               csrfToken={auth.csrfToken}
               canManageCompany={auth.role === 'admin'}
+              canManageAutomation={auth.role === 'admin' || auth.role === 'collaborator'}
             />
           )}
 
@@ -2396,6 +2401,7 @@ function App() {
           companyId={auth.activeCompanyId ?? 0}
           userId={auth.userId}
           csrfToken={auth.csrfToken}
+          canEditTeam={auth.role === 'admin' || auth.role === 'collaborator'}
           loading={detailLoading}
           saved={selectedSaved}
           saving={detailSaving}

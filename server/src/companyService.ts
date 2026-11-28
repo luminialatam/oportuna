@@ -280,14 +280,14 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
         if (options.commercialClassification !== false && commercialIntentMatchesOffer(intent, product.tiposComerciales) === false) continue;
         if (product.source === 'profile' && !hasProfileKeywordEvidence(product.nombre, title, description, items)) continue;
         const score = scoreCatalogMatch(product, title, description, items); if (!score) continue;
-        if (!best || score.score > best.score) best = { ...score, productName: product.nombre, offerTypes: product.tiposComerciales };
+        if (!best || score.score > best.score) best = { ...score, productName: product.nombre, offerTypes: product.tiposComerciales, exclusionTermsChecked: globalExclusions.length + product.exclusiones.length };
       }
       if (!best) continue;
       const unclassifiedConfiguredOffer = options.commercialClassification !== false && best.offerTypes.length > 0 && intent.length === 0;
       if (unclassifiedConfiguredOffer) best.level = 'exploratory';
       if (!best || best.score < (best.level === 'exploratory' ? 30 : 25)) continue;
       const closeAt = row.fecha_cierre ? new Date(row.fecha_cierre) : null; const daysToClose = closeAt ? Math.ceil((closeAt.getTime() - Date.now()) / 86_400_000) : null;
-      const reasonTerms = [...new Set([...best.nameTerms, ...best.weakTerms, ...best.synonymHits, ...best.keywordHits, ...best.relatedHits, ...best.applicationHits, ...best.profileHits])].slice(0, 8);
+      const reasonTerms = [...new Set([...best.nameTerms, ...best.weakTerms, ...best.categoryHits, ...best.synonymHits, ...best.keywordHits, ...best.relatedHits, ...best.applicationHits, ...best.profileHits])].slice(0, 10);
       const source = best.matchedSources?.join(', ') || 'texto de la ficha';
       const evidenceTerms = [...new Set(reasonTerms.flatMap((value: string) => commercialTerms(value, true)))];
       const evidence = extractCommercialEvidence(title, description, items, evidenceTerms);
@@ -297,6 +297,17 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
       if (best.applicationHits.length) matchReasons.push(`Aplicación registrada: ${best.applicationHits.join(', ')}.`);
       if (best.profileHits.length) matchReasons.push(`Coincidencia con el perfil comercial: ${best.profileHits.join(', ')}.`);
       if (best.exactPhrase) matchReasons.push('Frase del catálogo encontrada como coincidencia directa.');
+      const preferredRegion = row.region ? jsonList(preference?.regiones).find(region => normalize(String(row.region)).includes(normalize(region))) ?? null : null;
+      if (preferredRegion) matchReasons.push(`La región informada coincide con la preferencia «${preferredRegion}»; es contexto geográfico y no aumenta el puntaje comercial.`);
+      if (row.organismo) matchReasons.push(`Organismo comprador informado: ${row.organismo}; se muestra como contexto y no aumenta el puntaje comercial.`);
+      const matchKind = best.exactPhrase ? 'exact_phrase' : best.level === 'exploratory' ? 'exploratory'
+        : best.categoryHits.length || best.relatedHits.length || best.applicationHits.length || best.profileHits.length ? 'catalog_context' : 'term_match';
+      const literalTerms = [...new Set(evidence.flatMap((entry: any) => entry.matchedTerms))];
+      const explanation = matchKind === 'exact_phrase'
+        ? `La frase «${best.productName}» aparece en ${source}. El puntaje resume evidencia textual y no es una probabilidad de adjudicación.`
+        : matchKind === 'exploratory'
+          ? `Hay señales parciales del catálogo (${literalTerms.length ? literalTerms.join(', ') : reasonTerms.join(', ')}) en ${source}, pero no una frase exacta. Revisa la ficha antes de considerarla compatible.`
+          : `Se encontraron términos del catálogo (${literalTerms.length ? literalTerms.join(', ') : reasonTerms.join(', ')}) en ${source}. El puntaje resume la cantidad y ubicación de esa evidencia; no es una probabilidad de adjudicación.`;
       if (intent.length) {
         const detected = [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))];
         matchReasons.push(`Tipo de contratación detectado: ${detected.join(', ')} (${[...new Set(intent.map(item => item.source))].join(', ')}).`);
@@ -307,7 +318,7 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
       if (daysToClose != null && daysToClose >= 0 && daysToClose <= 14) closingSoon++;
       if (items.trim()) indexed++; else limited++;
       const evidenceStrength = best.exactPhrase ? 2 : best.nameTerms.length ? 1 : 0;
-      topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, fecha_publicacion: row.fecha_publicacion, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, evidenceStrength, evidence, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
+      topResults.push({ codigo_externo: row.codigo_externo, nombre: title, codigo_estado: row.codigo_estado, fecha_cierre: row.fecha_cierre, fecha_publicacion: row.fecha_publicacion, organismo: row.organismo, monto_estimado: row.monto_estimado, moneda: row.moneda, region: row.region, score: best.score, level: best.level, matchKind, explanation, matchedTerms: literalTerms, matchedCategories: best.categoryHits, matchedProfileTerms: best.profileHits, preferredRegion, exclusionsChecked: true, exclusionTermsChecked: best.exclusionTermsChecked, evidenceStrength, evidence, productName: best.productName, contractingTypes: [...new Set(intent.map(item => commercialOfferTypeLabels[item.type]))], coverageStatus: items.trim() ? 'indexed' : 'limited', evidenceSources: best.matchedSources, matchReasons, daysToClose });
       // Agrupa primero relevancia alta, media y exploratoria, manteniendo la evidencia más directa arriba dentro de cada grupo.
       const levelRank = (level: string) => level === 'high' ? 0 : level === 'medium' ? 1 : 2;
       topResults.sort((a, b) => levelRank(a.level) - levelRank(b.level) || b.evidenceStrength - a.evidenceStrength || b.score - a.score || (a.daysToClose ?? 9999) - (b.daysToClose ?? 9999) || String(a.codigo_externo).localeCompare(String(b.codigo_externo)));

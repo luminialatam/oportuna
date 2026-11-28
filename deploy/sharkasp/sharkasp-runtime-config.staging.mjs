@@ -7,9 +7,10 @@ const database = {
   user: process.env.DB_USER?.trim() ?? '',
 };
 
-const isLegacySharedDatabase = database.host.toLowerCase() === 'mysql1002.site4now.net'
-  && database.port === '3306'
-  && database.name === 'db_ac9392_licitapp';
+const normalizedHost = database.host.toLowerCase().replace(/\.$/, '');
+const normalizedDatabase = database.name.toLowerCase();
+const isLegacySharedDatabase = normalizedHost === 'mysql1002.site4now.net'
+  || normalizedDatabase === 'db_ac9392_licitapp';
 
 export const fixedEnvironment = Object.freeze({
   APP_ENV: 'staging',

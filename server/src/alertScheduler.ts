@@ -2,6 +2,7 @@ import pool from './db.js';
 import { evaluateAlertsForCompany } from './alertService.js';
 import { loadRuntimeConfig } from './runtimeConfig.js';
 import { runProactiveSearchPass } from './proactiveSearchService.js';
+import { runAutomationPass } from './automationService.js';
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
@@ -21,6 +22,8 @@ async function evaluateAllCompanies() {
     for (const row of companies) await evaluateAlertsForCompany(Number(row.company_id));
     const proactive=await runProactiveSearchPass();
     if(proactive.companies||proactive.failed)console.info(`[alert-worker] proactive_search companies=${proactive.companies} created=${proactive.created} failed=${proactive.failed}`);
+    const automations=await runAutomationPass();
+    if(automations.rules||automations.failed)console.info(`[alert-worker] automations rules=${automations.rules} checked=${automations.checked} executed=${automations.executed} failed=${automations.failed}`);
   } catch (error) {
     console.warn(`[alert-worker] evaluación interrumpida; tipo=${error instanceof Error ? error.name : 'error'}`);
   } finally {

@@ -14,11 +14,9 @@ const migrationsDirectory = join(dirname(fileURLToPath(import.meta.url)), '..', 
 function getMigrationFiles() {
   const files = readdirSync(migrationsDirectory)
     .filter((name) => /^\d{3}_.+\.sql$/.test(name) && !name.endsWith('.down.sql'))
-    .sort((left, right) => Number(left.slice(0, 3)) - Number(right.slice(0, 3)));
-  const versions = files.map((name) => Number(name.slice(0, 3)));
-  const hasContiguousVersions = versions.every((version, index) => version === index + 1);
-  if (!files.length || !hasContiguousVersions) {
-    throw new Error('Las migraciones deben tener versiones consecutivas desde 001.');
+    .sort((left, right) => Number(left.slice(0, 3)) - Number(right.slice(0, 3)) || left.localeCompare(right));
+  if (!files.length || new Set(files).size !== files.length) {
+    throw new Error('No hay migraciones o existen nombres de migración duplicados.');
   }
   return files;
 }
@@ -85,10 +83,10 @@ async function main() {
   if (!TARGET.host || !TARGET.database || !TARGET.user) {
     throw new Error('Define STAGING_DB_HOST, STAGING_DB_NAME y STAGING_DB_USER para seleccionar una base de staging aislada.');
   }
-  if (TARGET.host.toLowerCase() === 'mysql1002.site4now.net'
-    && TARGET.port === 3306
-    && TARGET.database === 'db_ac9392_licitapp') {
-    throw new Error('El destino corresponde a la base compartida existente; se bloqueó la conexión de staging.');
+  const targetHost = TARGET.host.toLowerCase().replace(/\.$/, '');
+  const targetDatabase = TARGET.database.toLowerCase();
+  if (targetHost === 'mysql1002.site4now.net' || targetDatabase === 'db_ac9392_licitapp') {
+    throw new Error('El destino coincide con el host o esquema de producción conocido; se bloqueó la conexión de staging.');
   }
   if (!Number.isInteger(TARGET.port) || TARGET.port < 1 || TARGET.port > 65535) throw new Error('STAGING_DB_PORT no es válido.');
   const sslMode = process.env.STAGING_DB_SSL_MODE?.trim().toUpperCase() || 'VERIFY_IDENTITY';

@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { ProactiveSearchControls } from './ProactiveSearchControls';
+import { AutomationRulesPanel } from './AutomationRulesPanel';
 
 export type AlertItem = {
   id: number;
@@ -226,6 +227,7 @@ export function AlertsPage({
   error,
   csrfToken,
   canManageCompany,
+  canManageAutomation,
   canRunSearch,
   onRunSearch,
   onGoToTracking,
@@ -241,6 +243,7 @@ export function AlertsPage({
   error: string;
   csrfToken: string;
   canManageCompany: boolean;
+  canManageAutomation: boolean;
   canRunSearch: boolean;
   onRunSearch: () => Promise<{ evaluated: number; created: number; configured: boolean; locked: boolean }>;
   onGoToTracking: () => void;
@@ -436,6 +439,7 @@ export function AlertsPage({
           )}
       </div>
       <details className="rounded-xl border border-[#E1E4EA] bg-white px-4 py-3"><summary className="cursor-pointer text-sm font-semibold text-[#4C5568]">Configuración de búsqueda automática</summary><div className="mt-3"><ProactiveSearchControls csrfToken={csrfToken} canManageCompany={canManageCompany}/></div></details>
+      <AutomationRulesPanel csrfToken={csrfToken} canManage={canManageAutomation} />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import pool from './db.js';
 import { resolveCurrentCompanyId } from './companyService.js';
 import { evaluateAlerts } from './alertService.js';
 import { assertCanTrackOpportunity } from './subscriptionService.js';
+import { recordCompanyActivity } from './collaborationService.js';
 
 export const trackingStates = ['saved', 'evaluating', 'preparing_offer', 'submitted', 'discarded'] as const;
 
@@ -55,7 +56,7 @@ export async function saveTrackedOpportunity(codigo: string) {
     await connection.commit();
   } catch (error) { await connection.rollback(); throw error; }
   finally { connection.release(); }
-  if (created) await evaluateAlerts();
+  if (created) { await recordCompanyActivity(codigo, 'tracking_started', 'Se guardó la oportunidad en Seguimiento.'); await evaluateAlerts(); }
   return { ...item!, created };
 }
 
@@ -65,7 +66,7 @@ export async function dismissTrackedOpportunity(codigo: string) {
   if (!listings.length) return false;
   await pool.execute('INSERT IGNORE INTO company_opportunity_tracking (company_id,codigo_externo) VALUES (?,?)', [companyId, codigo]);
   const [result] = await pool.execute<any>("UPDATE company_opportunity_tracking SET estado='discarded' WHERE company_id=? AND codigo_externo=?", [companyId, codigo]);
-  if (result.affectedRows) await evaluateAlerts();
+  if (result.affectedRows) { await recordCompanyActivity(codigo, 'tracking_discarded', 'Se descartó la oportunidad desde Seguimiento.'); await evaluateAlerts(); }
   return true;
 }
 
@@ -76,14 +77,26 @@ export async function updateTrackedOpportunity(id: number, input: { estado?: str
   if (input.notes !== undefined) { fields.push('notes=?'); values.push(input.notes); }
   if (!fields.length) return false;
   const [result] = await pool.execute<any>(`UPDATE company_opportunity_tracking SET ${fields.join(',')} WHERE id=? AND company_id=?`, [...values, id, companyId]);
-  if (result.affectedRows) await evaluateAlerts();
+  if (result.affectedRows) {
+    const code = await getTrackingCode(id, companyId);
+    if (code && input.estado) await recordCompanyActivity(code, 'tracking_status_changed', `Se cambió el estado de seguimiento a «${input.estado}».`);
+    if (code && input.notes !== undefined) await recordCompanyActivity(code, 'tracking_note_updated', 'Se actualizó una nota interna de seguimiento.');
+    await evaluateAlerts();
+  }
   return result.affectedRows > 0;
+}
+
+async function getTrackingCode(id: number, companyId: number) {
+  const [rows] = await pool.query<any[]>('SELECT codigo_externo FROM company_opportunity_tracking WHERE id=? AND company_id=? LIMIT 1', [id, companyId]);
+  return rows[0]?.codigo_externo ? String(rows[0].codigo_externo) : null;
 }
 
 export async function deleteTrackedOpportunity(id: number) {
   const companyId = await resolveCurrentCompanyId();
+  const code = await getTrackingCode(id, companyId);
   const [result] = await pool.execute<any>('DELETE FROM company_opportunity_tracking WHERE id=? AND company_id=?', [id, companyId]);
   if (result.affectedRows) await evaluateAlerts();
+  if (result.affectedRows && code) await recordCompanyActivity(code, 'tracking_removed', 'Se quitó la oportunidad del tablero de Seguimiento.');
   return result.affectedRows > 0;
 }
 
@@ -91,6 +104,7 @@ export async function addTrackedDate(trackingId: number, input: { label: string;
   const companyId = await resolveCurrentCompanyId();
   const [result] = await pool.execute<any>('INSERT INTO company_opportunity_dates (tracking_id,company_id,label,due_at,notes) SELECT id,company_id,?,?,? FROM company_opportunity_tracking WHERE id=? AND company_id=?', [input.label, input.dueAt, input.notes ?? null, trackingId, companyId]);
   if (result.affectedRows) await evaluateAlerts();
+  if (result.affectedRows) { const code = await getTrackingCode(trackingId, companyId); if (code) await recordCompanyActivity(code, 'task_created', 'Se agregó una tarea de seguimiento.', { label: input.label, dueAt: input.dueAt }); }
   return result.affectedRows ? Number(result.insertId) : null;
 }
 
@@ -103,6 +117,7 @@ export async function updateTrackedDate(trackingId: number, dateId: number, inpu
   if (!fields.length) return false;
   const [result] = await pool.execute<any>(`UPDATE company_opportunity_dates SET ${fields.join(',')} WHERE id=? AND tracking_id=? AND company_id=?`, [...values, dateId, trackingId, companyId]);
   if (result.affectedRows) await evaluateAlerts();
+  if (result.affectedRows) { const code = await getTrackingCode(trackingId, companyId); if (code) await recordCompanyActivity(code, input.completed === undefined ? 'task_updated' : 'task_completion_changed', input.completed === undefined ? 'Se actualizó una tarea de seguimiento.' : input.completed ? 'Se completó una tarea de seguimiento.' : 'Se reabrió una tarea de seguimiento.'); }
   return result.affectedRows > 0;
 }
 
@@ -110,5 +125,6 @@ export async function deleteTrackedDate(trackingId: number, dateId: number) {
   const companyId = await resolveCurrentCompanyId();
   const [result] = await pool.execute<any>('DELETE FROM company_opportunity_dates WHERE id=? AND tracking_id=? AND company_id=?', [dateId, trackingId, companyId]);
   if (result.affectedRows) await evaluateAlerts();
+  if (result.affectedRows) { const code = await getTrackingCode(trackingId, companyId); if (code) await recordCompanyActivity(code, 'task_deleted', 'Se eliminó una tarea de seguimiento.'); }
   return result.affectedRows > 0;
 }
