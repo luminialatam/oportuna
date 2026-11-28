@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { z } from 'zod';
+
+const runtimeRequire = createRequire(import.meta.url);
 
 export const MAX_OFFER_DOCUMENT_BYTES = 10 * 1024 * 1024;
 export const MAX_OFFER_DOCUMENTS_PER_DRAFT = 10;
@@ -113,7 +116,13 @@ export async function extractOfferDocument(buffer: Buffer, filename: string): Pr
   if (extension === 'pdf' && buffer.subarray(0, 1024).includes(Buffer.from('%PDF-'))) {
     // Load large parsers only when a person analyzes a document. IIS must be
     // able to bind and serve health/static requests before these are needed.
-    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    let pdfjs: typeof import('pdfjs-dist/legacy/build/pdf.mjs');
+    try {
+      pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    } catch {
+      pdfjs = await import(new URL('../../vendor/pdfjs-dist.mjs', import.meta.url).href);
+    }
+    const { getDocument } = pdfjs;
     let document: any;
     const warnings: string[] = [];
     const chunks: OfferDocumentChunk[] = [];
@@ -155,7 +164,12 @@ export async function extractOfferDocument(buffer: Buffer, filename: string): Pr
   if (extension === 'docx' && buffer.readUInt32LE(0) === 0x04034b50) {
     assertSafeDocxArchive(buffer);
     try {
-      const mammoth = (await import('mammoth')).default;
+      let mammoth: { extractRawText(options: { buffer: Buffer }): Promise<{ value: string }> };
+      try {
+        mammoth = (await import('mammoth')).default as typeof mammoth;
+      } catch {
+        mammoth = runtimeRequire('../../vendor/mammoth.cjs') as typeof mammoth;
+      }
       const extracted = await mammoth.extractRawText({ buffer });
       const paragraphs = normalizeText(extracted.value);
       if (!paragraphs) throw new OfferDocumentAnalysisError('NO_TEXT', 'El DOCX no contiene texto extraíble.');

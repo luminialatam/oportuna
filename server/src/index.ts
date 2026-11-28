@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import multer from 'multer';
+import { createRequire } from 'node:module';
+import type multerFactory from 'multer';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +42,14 @@ import { automationSchedulerStatus, dismissAutomationNotification, listAutomatio
 import { analyzeOfferDocumentText, extractOfferDocument, fetchOfficialOfferDocument, MAX_OFFER_DOCUMENT_BYTES, MAX_OFFER_DOCUMENTS_PER_DRAFT, OfferDocumentAnalysisError } from './offerDocumentAnalysis.js';
 
 const app = express();
+const runtimeRequire = createRequire(import.meta.url);
+const multer = (() => {
+  try {
+    return runtimeRequire('multer');
+  } catch {
+    return runtimeRequire('../../vendor/multer.cjs');
+  }
+})() as typeof multerFactory;
 const runtime = loadRuntimeConfig();
 app.disable('x-powered-by');
 app.set('trust proxy',runtime.trustProxyHops || false);

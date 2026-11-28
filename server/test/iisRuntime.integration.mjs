@@ -3,15 +3,52 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { existsSync, readFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const appRoot = resolve(process.argv[2] ?? '');
 assert.ok(process.platform === 'win32' && process.arch === 'x64', 'IIS runtime reproduction must run on Windows x64.');
 assert.ok(appRoot !== process.cwd() && existsSync(join(appRoot, 'package.json')), 'Pass the downloaded Linux-built application artifact path.');
-for (const file of ['sharkasp-bootstrap.mjs', 'sharkasp-runtime-config.mjs', 'dist/index.html', 'dist-server/server/src/index.js', 'node_modules/argon2/package.json', 'web.config']) {
+for (const file of ['sharkasp-bootstrap.mjs', 'sharkasp-runtime-config.mjs', 'dist/index.html', 'dist-server/server/src/index.js', 'dist-server/vendor/multer.cjs', 'dist-server/vendor/mammoth.cjs', 'dist-server/vendor/pdfjs-dist.mjs', 'dist-server/vendor/pdf.worker.mjs', 'node_modules/argon2/package.json', 'web.config']) {
   assert.ok(existsSync(join(appRoot, file)), `Deployment artifact is missing ${file}.`);
 }
+
+// The FTP production workflow intentionally excludes node_modules. Simulate the
+// previous site's installed dependency tree so newly added parsers must load
+// from the package's compiled vendor files rather than the CI runner's copy.
+for (const packageName of ['multer', 'mammoth', 'pdfjs-dist']) {
+  await rm(join(appRoot, 'node_modules', packageName), { recursive: true, force: true });
+  assert.equal(existsSync(join(appRoot, 'node_modules', packageName)), false);
+}
+
+const analysis = await import(pathToFileURL(join(appRoot, 'dist-server/server/src/offerDocumentAnalysis.js')).href);
+const sampleDocx = readFileSync(join(process.cwd(), 'server/test/fixtures/offer-analysis-sample.docx'));
+const parsedDocx = await analysis.extractOfferDocument(sampleDocx, 'sample.docx');
+assert.ok(parsedDocx.chunks.some((chunk) => chunk.text.includes('certificado de garantía')), 'bundled Mammoth must read DOCX without server node_modules');
+
+function makeMinimalPdf(text) {
+  const stream = `BT /F1 12 Tf 72 720 Td (${text.replace(/[\\()]/g, '\\$&')}) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(Buffer.byteLength(pdf, 'latin1'));
+    pdf += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'latin1');
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return Buffer.from(pdf, 'latin1');
+}
+const parsedPdf = await analysis.extractOfferDocument(makeMinimalPdf('IIS bundled PDF parser verification.'), 'sample.pdf');
+assert.ok(parsedPdf.chunks.some((chunk) => chunk.text.includes('IIS bundled PDF parser verification')), 'bundled PDF.js must read PDF without server node_modules');
 
 const config = readFileSync(join(appRoot, 'web.config'), 'utf8');
 assert.match(config, /<add\s+name=["']httpPlatformHandler["']\s+path=["']\*["']\s+verb=["']\*["']\s+modules=["']httpPlatformHandler["']/i, 'IIS must route requests to HttpPlatformHandler.');
