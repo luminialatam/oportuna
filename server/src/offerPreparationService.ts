@@ -8,13 +8,38 @@ function context() {
   return { companyId: current.companyId, userId: current.userId };
 }
 
+// Older per-user drafts are a compatibility fallback. On databases created from
+// migrations that already have the collaborative workspace but never had the
+// legacy table, an empty workspace should behave like an empty draft.
+async function getLegacyDraftRows(companyId: number, code: string) {
+  try {
+    const [rows] = await pool.query<any[]>(
+      'SELECT draft_json,updated_at FROM company_offer_drafts WHERE company_id=? AND codigo_externo=? ORDER BY updated_at DESC,user_id LIMIT 1', [companyId, code],
+    );
+    return rows;
+  } catch (error) {
+    if ((error as { code?: unknown })?.code === 'ER_NO_SUCH_TABLE') return [];
+    throw error;
+  }
+}
+
+async function deleteLegacyDraftRows(companyId: number, userId: number, code: string) {
+  try {
+    const [result] = await pool.execute<any>(
+      'DELETE FROM company_offer_drafts WHERE company_id=? AND user_id=? AND codigo_externo=?', [companyId, userId, code],
+    );
+    return result;
+  } catch (error) {
+    if ((error as { code?: unknown })?.code === 'ER_NO_SUCH_TABLE') return { affectedRows: 0 };
+    throw error;
+  }
+}
+
 export async function getOfferDraft(code: string) {
   const { companyId, userId } = context();
   let [rows] = await pool.query<any[]>('SELECT draft_json,updated_at,deleted_at FROM company_offer_workspaces WHERE company_id=? AND codigo_externo=? LIMIT 1', [companyId, code]);
   if (rows[0]?.deleted_at) return { draft: null, updatedAt: null };
-  if (!rows.length) [rows] = await pool.query<any[]>(
-    'SELECT draft_json,updated_at FROM company_offer_drafts WHERE company_id=? AND codigo_externo=? ORDER BY updated_at DESC,user_id LIMIT 1', [companyId, code],
-  );
+  if (!rows.length) rows = await getLegacyDraftRows(companyId, code);
   if (!rows.length) return { draft: null, updatedAt: null };
   let draft: unknown = rows[0].draft_json;
   if (typeof draft === 'string') {
@@ -47,7 +72,7 @@ export async function deleteOfferDraft(code: string) {
   const { companyId, userId } = context();
   const [shared] = await pool.execute<any>(`INSERT INTO company_offer_workspaces(company_id,codigo_externo,draft_json,created_by_user_id,updated_by_user_id,deleted_at)
     VALUES(?,?,JSON_OBJECT(),?,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE deleted_at=UTC_TIMESTAMP(),updated_by_user_id=VALUES(updated_by_user_id),updated_at=UTC_TIMESTAMP()`, [companyId, code, userId, userId]);
-  const [legacy] = await pool.execute<any>('DELETE FROM company_offer_drafts WHERE company_id=? AND user_id=? AND codigo_externo=?', [companyId, userId, code]);
+  const legacy = await deleteLegacyDraftRows(companyId, userId, code);
   const deleted = Number(legacy.affectedRows) > 0 || Number(shared.affectedRows) > 0;
   if (deleted) await recordCompanyActivity(code, 'offer_draft_deleted', 'Se eliminó el borrador de preparación.');
   return deleted;
