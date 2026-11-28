@@ -6,7 +6,7 @@ import { clearCompanyMatchCache, getCompanyMatches } from '../src/companyService
 const originalQuery=pool.query;
 const originalFetch=globalThis.fetch;
 globalThis.fetch=(async()=>{throw new Error('Match tests must remain local.');}) as typeof fetch;
-const pageSize=250;
+const pageSize=1_000;
 const totalRows=1_050;
 const futureClose='2026-12-01T18:00:00.000Z';
 const rows=Array.from({length:totalRows},(_,index)=>({
@@ -33,6 +33,7 @@ const sourceRow={id:1,nombre:'Computadores portátiles',categoria:'Informática'
     return [rows.slice(0,800),undefined];
   }
   if(sql.includes('FROM (SELECT l.id FROM licitaciones l')){
+    await new Promise(resolve=>setTimeout(resolve,2));
     assert.match(sql,/l\.codigo_estado IN \(\?\)/,'Status filter must remain in each batch.');
     assert.match(sql,/l\.id>\?/,'Keyset pagination must advance by the last listing ID.');
     assert.match(sql,/LIMIT \?/,'Every database page must have a bounded size.');
@@ -64,16 +65,24 @@ try{
   assert.equal(after.high+after.medium+after.exploratory,after.total,'Match levels must partition matches.');
   assert.equal(after.items.length,2);
   assert.equal(new Set(after.items.map((item:any)=>item.codigo_externo)).size,after.items.length,'No duplicate results across pages.');
-  assert.equal(after.evaluation.batches,5);
-  assert.equal(after.evaluation.queryCount,13,'Full evaluation includes context, index status and five listing batches.');
+  assert.equal(after.evaluation.batches,2);
+  assert.equal(after.evaluation.queryCount,10,'Full evaluation includes context, index status and two listing batches.');
   assert.ok(after.evaluation.durationMs>=0);
   assert.ok(after.evaluation.peakHeapDeltaBytes>=0);
-  assert.equal(batchQueries,5);
+  assert.equal(batchQueries,2);
+  clearCompanyMatchCache();lastCursor=0;batchQueries=0;
+  const concurrent=await Promise.all([
+    runWithCompanyContext(context,()=>getCompanyMatches({includeAllItems:true})),
+    runWithCompanyContext(context,()=>getCompanyMatches({board:true})),
+  ]);
+  assert.equal(batchQueries,2,'Parallel inbox and board requests share one scoring pass.');
+  assert.equal(concurrent[0].items.length,concurrent[1].items.length,'Presentation options do not change the shared scored result.');
+  assert.equal(concurrent[0].evaluation.durationMs,concurrent[1].evaluation.durationMs,'Both callers receive the same calculation.');
   const isolated=await runWithCompanyContext({...context,companyId:1},()=>getCompanyMatches());
   assert.equal(isolated.configured,false,'An empty tenant must not inherit another company catalog.');
   assert.equal(isolated.total,0);
   assert.equal(baselineQueries,1);
-  console.log('PASS simulated full Match: 1,050 bounded rows, 800-row baseline comparison, two late matches recovered, stable keyset batches, metrics and tenant isolation.');
+  console.log('PASS simulated full Match: 1,050 bounded rows, 800-row baseline comparison, late matches recovered, coalesced inbox/board requests, metrics and tenant isolation.');
 }finally{
   (pool as any).query=originalQuery;
   globalThis.fetch=originalFetch;
