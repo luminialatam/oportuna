@@ -56,7 +56,10 @@ async function request<T>(url: string, options?: RequestInit, csrfToken = ''): P
 
 const dateLabel = (value: string | null) => {
   if (!value) return '—';
-  const parsed = new Date(value);
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value);
   return Number.isNaN(parsed.getTime())
     ? '—'
     : new Intl.DateTimeFormat('es-CL', {
