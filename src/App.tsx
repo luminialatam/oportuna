@@ -1441,7 +1441,6 @@ function App() {
               <Menu size={18} />
             </button>
             <div className="flex items-center gap-2 text-xs text-[#5D6472]">
-              <img src="/assets/leasy-app-logo.png" alt="Leasy.cl" className="block h-auto w-[112px] object-contain" />
               <span>/</span>
               <span className="font-semibold text-[#5636D9]">{section}</span>
             </div>
