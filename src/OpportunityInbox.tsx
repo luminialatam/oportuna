@@ -100,10 +100,12 @@ export function OpportunityInbox({
 
   const load = useCallback(async () => {
     const currentRequest = ++requestId.current;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 45_000);
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`/api/company/opportunities?filter=${filter}`, { credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetch(`/api/company/opportunities?filter=${filter}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
       const data = await response.json() as Feed;
       if (!response.ok) throw new Error((data as any).error || 'No se pudieron cargar las oportunidades.');
       if (currentRequest !== requestId.current) return;
@@ -119,8 +121,11 @@ export function OpportunityInbox({
         ...(filter === 'discarded' ? { discarded: total } : {}),
       }));
     } catch (cause) {
-      if (currentRequest === requestId.current) setError(cause instanceof Error ? cause.message : 'No se pudieron cargar las oportunidades.');
+      if (currentRequest === requestId.current) setError(cause instanceof DOMException && cause.name === 'AbortError'
+        ? 'La consulta está tardando más de lo esperado. Puedes volver a intentarlo.'
+        : cause instanceof Error ? cause.message : 'No se pudieron cargar las oportunidades.');
     } finally {
+      window.clearTimeout(timeout);
       if (currentRequest === requestId.current) setLoading(false);
     }
   }, [filter]);

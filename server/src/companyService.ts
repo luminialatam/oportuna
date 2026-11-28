@@ -17,6 +17,7 @@ type ProductInput = {
 };
 type CacheValue = { expires: number; value: any };
 const matchCache = new Map<string, CacheValue>();
+const matchInFlight = new Map<string, Promise<any>>();
 const GENERIC = new Set('servicio servicios equipo equipos equipamiento industrial industriales comercial comerciales producto productos suministro suministros compra compras adquisicion adquisiciones varios varias gestion integral general publico publica chile empresa licitacion licitaciones'.split(' '));
 const STOP = new Set('de del la el los las un una unos unas en y o por para con a al como sus que'.split(' '));
 const cleanList = (value: unknown): string[] => {
@@ -209,7 +210,7 @@ export async function suggestCommercialTerms(input: { nombre: string; categoria:
   return { configured: true, provider: 'groq' as const, directSynonyms: valid(parsed.directSynonyms), relatedTerms: valid(parsed.relatedTerms), applications: valid(parsed.applications) };
 }
 
-const MATCH_BATCH_SIZE = 250;
+const MATCH_BATCH_SIZE = 1000;
 const MATCH_MAX_DURATION_MS = 30_000;
 const MATCH_BOARD_LIMIT = 30;
 
@@ -246,11 +247,22 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
   const keywords = [...new Set([...nameKeywords, ...products.flatMap(product => [...terms(product.nombre), ...terms(product.categoria ?? ''), ...product.palabrasClave.flatMap(terms), ...product.sinonimos.flatMap(terms), ...product.terminosRelacionados.flatMap(terms), ...product.aplicaciones.flatMap(terms)]), ...profileTerms].flatMap(commercialTermVariants))];
   if (!keywords.length) return empty;
   const evaluationLimit = options.evaluationLimit == null ? null : Math.max(1, Math.min(800, Math.trunc(options.evaluationLimit) || 800));
-  const key = createHash('sha256').update(JSON.stringify({ companyId, products, profileUpdated: profile?.updated_at, preferenceUpdated: preference?.updated_at, listingVersion: listingVersion[0]?.version, trackingVersion: trackingVersion[0]?.version, states, regions, board: Boolean(options.board), includeAllItems: Boolean(options.includeAllItems), evaluationLimit, commercialClassification: options.commercialClassification !== false })).digest('hex');
+  // Both the board and the inbox consume the same full scored result. Keep
+  // presentation options out of the computation key so parallel requests share it.
+  const key = createHash('sha256').update(JSON.stringify({ companyId, products, profileUpdated: profile?.updated_at, preferenceUpdated: preference?.updated_at, listingVersion: listingVersion[0]?.version, trackingVersion: trackingVersion[0]?.version, states, regions, evaluationLimit, commercialClassification: options.commercialClassification !== false })).digest('hex');
   const visibleMatches = (result: CacheValue['value']) =>
     options.board || options.includeAllItems ? result : { ...result, items: result.items.slice(0, 6) };
   const cached = matchCache.get(key);
   if (cached && cached.expires > Date.now()) return visibleMatches(cached.value);
+  const activeMatch = matchInFlight.get(key);
+  if (activeMatch) return visibleMatches(await activeMatch);
+  let resolveMatch!: (value: any) => void;
+  let rejectMatch!: (reason: unknown) => void;
+  const sharedMatch = new Promise<any>((resolve, reject) => { resolveMatch = resolve; rejectMatch = reject; });
+  // Avoid an unhandled rejection when this was the only request for this key.
+  void sharedMatch.catch(() => undefined);
+  matchInFlight.set(key, sharedMatch);
+  try {
   const statusFilter = states.length ? states : [5];
   const filterValues: unknown[] = [...statusFilter];
   const filters = [`l.codigo_estado IN (${statusFilter.map(() => '?').join(',')})`, `(l.fecha_cierre IS NULL OR l.fecha_cierre>=UTC_TIMESTAMP())`];
@@ -368,7 +380,14 @@ export async function getCompanyMatches(options: { includeAllItems?: boolean; bo
     evaluation: { evaluatedListings, batches, queryCount, durationMs, batchSize: MATCH_BATCH_SIZE, peakHeapDeltaBytes: Math.max(0,peakHeapUsed-initialHeap) },
     coverage: { indexed, limited }, items: topResults, disclaimer: 'Coincidencia estimada según evidencias del catálogo o las palabras clave del perfil, título, descripción y partidas. No confirma elegibilidad; revisa las bases oficiales.' };
   matchCache.set(key, { value, expires: Date.now() + 30_000 }); if (matchCache.size > 200) matchCache.clear();
+  resolveMatch(value);
   return visibleMatches(value);
+  } catch (error) {
+    rejectMatch(error);
+    throw error;
+  } finally {
+    if (matchInFlight.get(key) === sharedMatch) matchInFlight.delete(key);
+  }
 }
 
-export function clearCompanyMatchCache() { matchCache.clear(); }
+export function clearCompanyMatchCache() { matchCache.clear(); matchInFlight.clear(); }
